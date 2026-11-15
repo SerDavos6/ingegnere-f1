@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Analisi giri</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --grid:#1f262e; --txt:#e8edf2; --dim:#8b96a2;
+          --sel:#3987e5; --ref:#d95926; --brake:#e5484d; --gas:#0ca30c; --part:#fab219; --coast:#5b6672; --accent:#e10600; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { overflow-anchor:none; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:1300px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:15px; max-width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  #laps { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; }
+  .chip { flex:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:7px 10px; font-size:13px; text-align:left; color:var(--txt); }
+  .chip b { display:block; font-size:12px; color:var(--dim); font-weight:600; }
+  .chip.sel { border-color:var(--sel); box-shadow:inset 0 0 0 1px var(--sel); }
+  .chip.ref { border-color:var(--ref); box-shadow:inset 0 0 0 1px var(--ref); }
+  .chip .tag { font-size:10px; margin-left:4px; color:var(--dim); }
+  .chip.invalid span.mono { text-decoration:line-through; color:var(--dim); }
+  .sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; }
+  .sum .v { font-size:22px; font-weight:600; margin-top:2px; }
+  .good { color:#4cc38a; } .bad { color:#ff6b72; }
+  .layout { display:grid; grid-template-columns:1fr; gap:10px; }
+  @media (min-width: 900px) { .layout { grid-template-columns: 420px 1fr; } }
+  #mapwrap { position:relative; }
+  #map { width:100%; aspect-ratio:1/1; display:block; touch-action:none; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--dim); margin-top:6px; align-items:center; }
+  .legend i { display:inline-block; width:14px; height:4px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { background:transparent; color:var(--dim); border:0; padding:7px 10px; font-size:13px; font-weight:600; }
+  .seg button.on { background:#232a32; color:var(--txt); }
+  .charts { display:flex; flex-direction:column; gap:2px; }
+  .chart { position:relative; }
+  .chart .title { position:absolute; left:46px; top:2px; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; pointer-events:none; }
+  .chart canvas { width:100%; display:block; touch-action:pan-y; }
+  #readout { display:flex; gap:14px; flex-wrap:wrap; font-size:13px; min-height:40px; align-content:flex-start; }
+  #readout span { color:var(--dim); } #readout b { font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  #zones { overflow-x:auto; }
+  th, td { white-space:nowrap; padding:7px 6px; text-align:right; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  th:first-child, td:first-child { text-align:left; }
+  tr.click { cursor:pointer; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; }
+  .key { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); }
+  .key i { width:16px; height:3px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Analisi giri</h1>
+  <select id="session"></select>
+</header>
+
+<div id="content">
+  <div class="card">
+    <div class="lbl" style="margin-bottom:6px">Scegli il giro da analizzare · tieni premuto per usarlo come confronto</div>
+    <div id="laps"></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <span class="key"><i style="background:var(--sel)"></i>Giro selezionato</span>
+      <span class="key"><i style="background:var(--ref)"></i>Confronto</span>
+      <label class="key">Confronta con <select id="refsel"></select></label>
+    </div>
+  </div>
+
+  <div class="sum" style="margin-top:10px" id="sum"></div>
+
+  <div class="layout" style="margin-top:10px">
+    <div class="card" id="mapwrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="lbl">Mappa pista</div>
+        <div class="seg" id="mapmode"><button data-m="input" class="on">Freno / gas</button><button data-m="delta">Dove perdi</button></div>
+      </div>
+      <canvas id="map"></canvas>
+      <div class="legend" id="maplegend"></div>
+    </div>
+    <div class="card">
+      <div id="readout" class="mono"></div>
+      <div class="charts" id="charts"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px">Staccate · confronto con il riferimento del coach</div>
+    <div id="zones"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000); return m + ":" + ((ms%60000)/1000).toFixed(3).padStart(6,"0"); };
+const sgn = (x, d=3) => (x > 0 ? "+" : x < 0 ? "−" : "±") + Math.abs(x).toFixed(d);
+
+let sessions = [], cur = null, selLap = null, refLap = null, sel = null, ref = null, cursor = null, mapMode = "input";
+const cache = {};
+
+// ------------------------------------------------------------ dati
+async function getLap(sid, n) {
+  const k = sid + "/" + n;
+  if (!cache[k]) cache[k] = fetch(`/api/lap?s=${encodeURIComponent(sid)}&l=${n}`).then(r => r.ok ? r.json() : null);
+  return cache[k];
+}
+function interp(tr, key, d) {
+  const D = tr.d; let lo = 0, hi = D.length - 1;
+  if (d <= D[0]) return tr[key][0];
+  if (d >= D[hi]) return tr[key][hi];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D[m] <= d) lo = m; else hi = m; }
+  const f = (d - D[lo]) / (D[hi] - D[lo]);
+  return tr[key][lo] + (tr[key][hi] - tr[key][lo]) * f;
+}
+function deltaSeries() {
+  if (!sel || !ref) return null;
+  return sel.trace.d.map((d, i) => sel.trace.t[i] - interp(ref.trace, "t", d));
+}
+
+// --------------------------------------------------------- sessioni
+async function loadSessions() {
+  sessions = await fetch("/api/sessions").then(r => { if (r.status === 401) { location.href = "/login"; return []; } return r.json(); }).catch(() => []);
+  const s = $("session");
+  s.innerHTML = "";
+  if (!sessions.length) {
+    $("content").innerHTML = '<div class="card empty">Nessun giro salvato. Fai qualche giro completo e torna qui.</div>';
+    return;
+  }
+  for (const x of sessions) {
+    const o = document.createElement("option");
+    const dt = new Date(x.started * 1000).toLocaleString("it-IT", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
+    o.value = x.id; o.textContent = `${x.track} · ${x.session} · ${dt} · ${x.laps.length} giri`;
+    s.appendChild(o);
+  }
+  s.onchange = () => pickSession(s.value);
+  pickSession(sessions[0].id);
+}
+function bestLap(s) {
+  const v = s.laps.filter(l => l.valid);
+  return (v.length ? v : s.laps).reduce((a, b) => b.ms < a.ms ? b : a);
+}
+function pickSession(id) {
+  cur = sessions.find(s => s.id === id);
+  const best = bestLap(cur);
+  const last = cur.laps[cur.laps.length - 1];
+  refLap = best.lap;
+  selLap = last.lap !== best.lap ? last.lap : (cur.laps.find(l => l.lap !== best.lap) || best).lap;
+  const r = $("refsel"); r.innerHTML = "";
+  for (const l of cur.laps) {
+    const o = document.createElement("option");
+    o.value = l.lap; o.textContent = `Giro ${l.lap} · ${fmt(l.ms)}${l.lap === best.lap ? " (migliore)" : ""}`;
+    r.appendChild(o);
+  }
+  r.onchange = () => { refLap = +r.value; load(); };
+  load();
+}
+function renderChips() {
+  const best = bestLap(cur);
+  const box = $("laps"); box.innerHTML = "";
+  for (const l of cur.laps) {
+    const b = document.createElement("button");
+    b.className = "chip" + (l.lap === selLap ? " sel" : "") + (l.lap === refLap && l.lap !== selLap ? " ref" : "") + (l.valid ? "" : " invalid");
+    b.innerHTML = `<b>Giro ${l.lap}${l.lap === best.lap ? '<span class="tag">★ migliore</span>' : ""}${l.valid ? "" : '<span class="tag">non valido</span>'}</b><span class="mono">${fmt(l.ms)}</span>`;
+    b.onclick = () => { selLap = l.lap; load(); };
+    let t; b.onpointerdown = () => t = setTimeout(() => { refLap = l.lap; $("refsel").value = l.lap; load(); }, 550);
+    b.onpointerup = b.onpointerleave = () => clearTimeout(t);
+    box.appendChild(b);
+  }
+  $("refsel").value = refLap;
+}
+async function load() {
+  renderChips();
+  [sel, ref] = await Promise.all([getLap(cur.id, selLap), getLap(cur.id, refLap)]);
+  if (!sel) return;
+  cursor = null;
+  renderSummary(); drawMap(); drawCharts(); renderZones(); renderReadout();
+}
+
+// ---------------------------------------------------------- riepilogo
+function renderSummary() {
+  const d = ref ? (sel.ms - ref.ms) / 1000 : 0;
+  const sec = k => sel[k] ? fmt(sel[k]).replace(/^0:/, "") : "-";
+  const sd = k => (ref && sel[k] && ref[k]) ? `<span class="${sel[k] <= ref[k] ? "good" : "bad"}" style="font-size:13px"> ${sgn((sel[k]-ref[k])/1000)}</span>` : "";
+  $("sum").innerHTML = `
+    <div class="card"><div class="lbl">Giro ${sel.lap}${sel.valid ? "" : " · non valido"}</div><div class="v mono">${fmt(sel.ms)}</div></div>
+    <div class="card"><div class="lbl">vs giro ${refLap}</div><div class="v mono ${d <= 0 ? "good" : "bad"}">${selLap === refLap ? "—" : sgn(d)}</div></div>
+    <div class="card"><div class="lbl">Settore 1</div><div class="v mono">${sec("s1")}${sd("s1")}</div></div>
+    <div class="card"><div class="lbl">Settore 2</div><div class="v mono">${sec("s2")}${sd("s2")}</div></div>
+    <div class="card"><div class="lbl">Settore 3</div><div class="v mono">${sec("s3")}${sd("s3")}</div></div>
+    <div class="card"><div class="lbl">Gomme · posizione</div><div class="v">${sel.compound || "-"} <span style="font-size:14px;color:var(--dim)">${sel.tyre_age ?? ""}g · P${sel.position || "-"}</span></div></div>`;
+}
+
+// ------------------------------------------------------------- mappa
+function setupCanvas(c, h) {
+  // Ridimensiona il canvas solo quando cambia davvero: ridisegnare mentre si scorre
+  // non deve mai toccare il layout della pagina.
+  const dpr = window.devicePixelRatio || 1;
+  if (h && c.style.height !== h + "px") c.style.height = h + "px";
+  const w = c.clientWidth, H = c.clientHeight;
+  const pw = Math.round(w * dpr), ph = Math.round(H * dpr);
+  if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, H);
+  return [ctx, w, H];
+}
+// Il browser genera "movimenti" finti del mouse mentre la pagina scorre con la rotella:
+// li ignoro, così scorrendo non si ridisegna nulla.
+let lastPt = null;
+function realMove(e) {
+  if (e.pointerType === "mouse" && e.type === "pointermove" && lastPt && lastPt[0] === e.screenX && lastPt[1] === e.screenY) return false;
+  lastPt = [e.screenX, e.screenY];
+  return true;
+}
+let mapXY = null;
+function drawMap() {
+  const c = $("map"), [ctx, W, H] = setupCanvas(c);
+  const tr = sel.trace, n = tr.d.length;
+  let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+  for (let i = 0; i < n; i++) { minx = Math.min(minx, tr.x[i]); maxx = Math.max(maxx, tr.x[i]); minz = Math.min(minz, tr.z[i]); maxz = Math.max(maxz, tr.z[i]); }
+  const pad = 22, s = Math.min((W - 2*pad) / (maxx - minx || 1), (H - 2*pad) / (maxz - minz || 1));
+  const ox = (W - (maxx - minx) * s) / 2, oz = (H - (maxz - minz) * s) / 2;
+  const P = i => [ox + (tr.x[i] - minx) * s, oz + (tr.z[i] - minz) * s];
+  mapXY = { P, n };
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // base
+  ctx.strokeStyle = "#232a32"; ctx.lineWidth = 12; ctx.beginPath();
+  for (let i = 0; i < n; i++) { const [x, y] = P(i); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+  // colori
+  const delta = mapMode === "delta" ? deltaSeries() : null;
+  ctx.lineWidth = 5;
+  for (let i = 1; i < n; i++) {
+    let col;
+    if (mapMode === "input") {
+      const b = tr.brk[i], t = tr.thr[i];
+      col = b > 0.1 ? css("--brake") : t > 0.95 ? css("--gas") : t > 0.05 ? css("--part") : css("--coast");
+    } else if (delta) {
+      const k = Math.max(0, i - 5), slope = (delta[i] - delta[k]);   // variazione su ~15 m
+      col = slope > 0.004 ? css("--brake") : slope < -0.004 ? css("--gas") : "#3a434d";
+    } else col = "#3a434d";
+    const [x0, y0] = P(i - 1), [x1, y1] = P(i);
+    ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  }
+  // partenza
+  const [sx, sy] = P(0);
+  ctx.fillStyle = "#fff"; ctx.fillRect(sx - 2, sy - 8, 4, 16);
+  // numeri staccate
+  ctx.font = "600 11px -apple-system, Roboto, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const z of (sel.zones || [])) {
+    const i = Math.min(n - 1, Math.round((z.at - tr.d[0]) / 3));
+    if (i < 0) continue;
+    const [x, y] = P(i);
+    ctx.fillStyle = "#0b0d10"; ctx.beginPath(); ctx.arc(x + 12, y - 12, 9, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#5b6672"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#e8edf2"; ctx.fillText(z.n, x + 12, y - 11.5);
+  }
+  // cursore
+  if (cursor != null) {
+    const i = Math.max(0, Math.min(n - 1, Math.round((cursor - tr.d[0]) / 3)));
+    const [x, y] = P(i);
+    ctx.fillStyle = css("--sel"); ctx.strokeStyle = "#14181d"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  $("maplegend").innerHTML = mapMode === "input"
+    ? `<span><i style="background:var(--brake)"></i>Freno</span><span><i style="background:var(--gas)"></i>Gas pieno</span><span><i style="background:var(--part)"></i>Gas parziale</span><span><i style="background:var(--coast)"></i>Rilascio</span>`
+    : (ref && selLap !== refLap ? `<span><i style="background:var(--brake)"></i>Perdi tempo</span><span><i style="background:var(--gas)"></i>Guadagni</span><span><i style="background:#3a434d"></i>Uguale</span> <span>rispetto al giro ${refLap}</span>` : `<span>Scegli un giro di confronto diverso</span>`);
+}
+$("mapmode").onclick = e => {
+  const m = e.target.dataset.m; if (!m) return;
+  mapMode = m;
+  for (const b of $("mapmode").children) b.classList.toggle("on", b.dataset.m === m);
+  drawMap();
+};
+function mapPointer(e) {
+  if (!mapXY || !realMove(e)) return;
+  const r = $("map").getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < mapXY.n; i += 2) { const [x, y] = mapXY.P(i); const dd = (x-mx)**2 + (y-my)**2; if (dd < bd) { bd = dd; best = i; } }
+  if (bd < 900) { cursor = sel.trace.d[best]; redrawCursor(); }
+}
+$("map").addEventListener("pointermove", mapPointer);
+$("map").addEventListener("pointerdown", mapPointer);
+
+// ------------------------------------------------------------ grafici
+const CHARTS = [
+  { key: "delta", title: "Delta (s)", h: 90, delta: true },
+  { key: "v", title: "Velocità (km/h)", h: 150 },
+  { key: "thr", title: "Gas (%)", h: 80, pct: true },
+  { key: "brk", title: "Freno (%)", h: 80, pct: true },
+  { key: "gear", title: "Marcia", h: 80, step: true },
+];
+const L = 44, R = 8, T = 26, B = 16;
+function buildCharts() {
+  const box = $("charts"); box.innerHTML = "";
+  for (const ch of CHARTS) {
+    const d = document.createElement("div"); d.className = "chart";
+    d.innerHTML = `<div class="title">${ch.title}</div><canvas></canvas>`;
+    box.appendChild(d); ch.canvas = d.querySelector("canvas");
+    const move = e => { if (!realMove(e)) return; const r = ch.canvas.getBoundingClientRect(); const x = e.clientX - r.left;
+      const [d0, d1] = xDomain(); cursor = d0 + (x - L) / (r.width - L - R) * (d1 - d0); cursor = Math.max(d0, Math.min(d1, cursor)); redrawCursor(); };
+    ch.canvas.addEventListener("pointermove", move);
+    ch.canvas.addEventListener("pointerdown", move);
+  }
+}
+function xDomain() { const D = sel.trace.d; return [D[0], D[D.length - 1]]; }
+function niceTicks(lo, hi, n) {
+  const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(s => s >= step0);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+function drawChart(ch) {
+  const [ctx, W, H] = setupCanvas(ch.canvas, ch.h);
+  const [d0, d1] = xDomain();
+  const X = d => L + (d - d0) / (d1 - d0) * (W - L - R);
+  let series = [];
+  if (ch.delta) {
+    const ds = deltaSeries();
+    if (ds && selLap !== refLap) series = [{ d: sel.trace.d, y: ds, col: css("--sel") }];
+  } else {
+    const k = ch.key, mul = ch.pct ? 100 : 1;
+    if (ref && refLap !== selLap) series.push({ d: ref.trace.d, y: ref.trace[k].map(v => v * mul), col: css("--ref") });
+    series.push({ d: sel.trace.d, y: sel.trace[k].map(v => v * mul), col: css("--sel") });
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const s of series) for (const v of s.y) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (ch.pct) { lo = 0; hi = 100; }
+  if (ch.delta) { const m = Math.max(0.1, Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; }
+  if (ch.key === "v") { lo = Math.max(0, Math.floor(lo / 50) * 50); hi = Math.ceil(hi / 50) * 50; }
+  if (ch.step) { lo = 0; hi = 8; }
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  const Y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  ch.Y = Y; ch.X = X; ch.series = series;
+  // griglia e assi
+  ctx.font = "11px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--dim"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (const v of niceTicks(lo, hi, ch.h > 100 ? 4 : 2)) {
+    const y = Math.round(Y(v)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.fillText(ch.delta ? (v > 0 ? "+" : "") + v.toFixed(Math.abs(v) < 1 ? 2 : 1) : v, L - 6, y);
+  }
+  if (ch.delta) { ctx.strokeStyle = "#5b6672"; ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(W - R, Y(0)); ctx.stroke(); }
+  if (ch === CHARTS[CHARTS.length - 1]) {
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    for (const v of niceTicks(d0, d1, 6)) ctx.fillText(v >= 1000 ? (v/1000) + " km" : v + " m", X(v), H);
+  }
+  // linee
+  ctx.lineWidth = 2; ctx.lineJoin = "round";
+  for (const s of series) {
+    ctx.strokeStyle = s.col; ctx.beginPath();
+    for (let i = 0; i < s.d.length; i++) {
+      const x = X(s.d[i]), y = Y(s.y[i]);
+      if (!i) ctx.moveTo(x, y);
+      else if (ch.step) { ctx.lineTo(x, Y(s.y[i - 1])); ctx.lineTo(x, y); }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  if (ch.delta && !series.length) { ctx.textAlign = "center"; ctx.fillText("scegli un giro di confronto diverso", (L + W) / 2, H / 2); }
+  // cursore
+  if (cursor != null) {
+    const x = Math.round(X(cursor)) + .5;
+    ctx.strokeStyle = "#8b96a2"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, T - 6); ctx.lineTo(x, H - B); ctx.stroke();
+    for (const s of series) {
+      const v = interp({ d: s.d, y: s.y }, "y", cursor);
+      ctx.fillStyle = s.col; ctx.strokeStyle = "#14181d"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, Y(v), 4.5, 0, 7); ctx.fill(); ctx.stroke();
+    }
+  }
+}
+function drawCharts() { for (const ch of CHARTS) drawChart(ch); }
+function renderReadout() {
+  if (cursor == null) { $("readout").innerHTML = '<span>Tocca o scorri un grafico o la mappa per leggere i valori</span>'; return; }
+  const s = k => Math.round(interp(sel.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1));
+  const r = k => ref && refLap !== selLap ? Math.round(interp(ref.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1)) : null;
+  const pair = (lab, k, u) => `<span>${lab}</span> <b style="color:var(--sel)">${s(k)}${u}</b>${r(k) != null ? ` <b style="color:var(--ref)">${r(k)}${u}</b>` : ""}`;
+  const ds = deltaSeries(); let dtxt = "";
+  if (ds && refLap !== selLap) { const v = interp({ d: sel.trace.d, y: ds }, "y", cursor); dtxt = `<span>Delta</span> <b class="${v <= 0 ? "good" : "bad"}">${sgn(v, 2)}</b>`; }
+  $("readout").innerHTML = `<span>${Math.round(cursor)} m</span>${dtxt}${pair("Vel", "v", "")}${pair("Gas", "thr", "%")}${pair("Freno", "brk", "%")}${pair("Marcia", "gear", "")}`;
+}
+let raf = 0;
+function redrawCursor() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; drawCharts(); drawMap(); renderReadout(); });
+}
+
+// ------------------------------------------------------------ staccate
+function renderZones() {
+  const z = sel.zones || [];
+  if (!z.length) { $("zones").innerHTML = '<div class="empty">Nessun dato sulle staccate per questo giro (serve un giro di riferimento del coach).</div>'; return; }
+  const f = (v0, u, inv) => { if (v0 == null) return "-"; const v = Math.round(v0);
+    return `<span class="${v === 0 ? "" : (inv ? v > 0 : v < 0) ? "bad" : "good"}">${v > 0 ? "+" : ""}${v}${u}</span>`; };
+  let h = `<table><tr><th>Staccata</th><th>Tempo</th><th>Frenata</th><th>V. minima</th><th>Gas pieno</th></tr>`;
+  for (const r of z) {
+    h += `<tr class="click" data-at="${r.at}"><td>${r.n}</td>
+      <td class="mono ${r.loss > 0.03 ? "bad" : r.loss < -0.03 ? "good" : ""}">${sgn(r.loss)}</td>
+      <td class="mono">${r.brake_delta == null ? "-" : (r.brake_delta < 0 ? Math.round(-r.brake_delta) + " m prima" : r.brake_delta > 0 ? Math.round(r.brake_delta) + " m dopo" : "uguale")}</td>
+      <td class="mono">${f(r.vmin_delta, " km/h")}</td>
+      <td class="mono">${f(r.full_delta, " m", true)}</td></tr>`;
+  }
+  h += `</table><div style="font-size:12px;color:var(--dim);margin-top:6px">Tocca una riga per evidenziarla sulla mappa e sui grafici. "Gas pieno" positivo = torni sul gas più tardi.</div>`;
+  $("zones").innerHTML = h;
+  for (const tr of $("zones").querySelectorAll("tr.click")) tr.onclick = () => { cursor = +tr.dataset.at; redrawCursor(); };
+}
+
+buildCharts();
+loadSessions();
+let rt, lastW = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (window.innerWidth === lastW) return;
+  lastW = window.innerWidth;
+  clearTimeout(rt); rt = setTimeout(() => sel && (drawMap(), drawCharts()), 150);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d10">
+<title>Ingegnere di pista</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#7d8894;
+          --good:#2fd17a; --bad:#ff4d5e; --warn:#ffb020; --accent:#e10600; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); height:100%;
+    font-family: -apple-system, "SF Pro Text", Roboto, "Segoe UI", sans-serif; }
+  body { padding: max(10px, env(safe-area-inset-top)) 12px 12px; display:flex; flex-direction:column; gap:10px; }
+  .mono { font-family: "SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  header { display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; }
+  header h1 b { color:var(--accent); }
+  #track { color:var(--dim); font-size:13px; flex:1; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); }
+  .dot.on { background:var(--good); box-shadow:0 0 8px var(--good); }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  #delta { font-size:56px; font-weight:700; line-height:1.05; }
+  #delta.good { color:var(--good); } #delta.bad { color:var(--bad); }
+  .big { font-size:26px; font-weight:600; }
+  .row { display:flex; justify-content:space-between; align-items:baseline; margin-top:4px; }
+  .row span { white-space:nowrap; } .row span:first-child { color:var(--dim); font-size:13px; }
+  .tyres { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+  .tyre { border-radius:8px; padding:6px; text-align:center; font-size:13px; background:#1b2128; }
+  .tyre b { display:block; font-size:18px; }
+  .bars { display:flex; gap:6px; margin-top:6px; height:8px; }
+  .bars div { flex:1; background:#1b2128; border-radius:4px; overflow:hidden; }
+  .bars i { display:block; height:100%; width:0; }
+  #thr i { background:var(--good); } #brk i { background:var(--bad); }
+  #log { flex:1; min-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+  .m { padding:8px 10px; border-radius:10px; background:var(--panel); border-left:3px solid var(--line); font-size:15px; line-height:1.35; }
+  .m.consiglio { border-color:#3aa0ff; } .m.avviso { border-color:var(--warn); }
+  .m.giro { border-color:var(--good); } .m.ingegnere { border-color:var(--accent); background:#1d1416; }
+  .m small { color:var(--dim); font-size:11px; display:block; }
+  .ask { display:flex; gap:8px; }
+  .heard { font-size:14px; color:var(--dim); min-height:20px; text-align:center; }
+  .heard.armed { color:#7fc3ff; font-weight:600; } .heard.sent { color:var(--good); } .heard.err { color:var(--warn); }
+  .mic { display:grid; grid-template-columns: 1.4fr 1fr; gap:8px; }
+  .mic button { padding:16px 12px; font-size:17px; }
+  #ptt.rec { background:#5a1d24; border-color:var(--bad); }
+  #listen.on { background:#173d27; border-color:var(--good); }
+  details summary { cursor:pointer; font-weight:600; font-size:14px; color:var(--dim); }
+  .set { display:flex; flex-direction:column; gap:10px; margin-top:10px; font-size:13px; color:var(--dim); }
+  .set p { line-height:1.4; } .set b { color:var(--txt); }
+  .set label { display:flex; flex-direction:column; gap:4px; }
+  .dim { color:var(--dim); font-size:13px; }
+  input { flex:1; min-width:0; background:var(--panel); border:1px solid var(--line); color:var(--txt);
+          border-radius:10px; padding:12px; font-size:16px; }
+  button { white-space:nowrap; background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px;
+           padding:12px 14px; font-size:15px; font-weight:600; }
+  button.primary { background:var(--accent); border-color:var(--accent); }
+  #voice.on { background:#173d27; border-color:var(--good); }
+  #invalid { color:var(--bad); font-weight:700; display:none; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { background:transparent; border:0; border-radius:0; color:var(--dim); padding:8px 10px; font-size:13px; }
+  .seg button.on { background:#232a32; color:var(--txt); }
+  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .bar a { color:var(--txt); text-decoration:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:13px; font-weight:600; }
+  #race { display:none; }
+  .rival { display:flex; justify-content:space-between; align-items:baseline; margin-top:6px; font-size:15px; }
+  .rival .who { color:var(--dim); font-size:12px; width:74px; flex:none; text-transform:uppercase; letter-spacing:.06em; }
+  .rival .nm { flex:1; font-weight:600; }
+  .rival .gp { font-size:20px; font-weight:700; }
+  .tag { font-size:11px; color:var(--dim); margin-left:6px; font-weight:500; }
+  #sc { display:none; background:#4d3a12; border:1px solid var(--warn); color:#ffd27a; text-align:center; font-weight:800; letter-spacing:.1em; border-radius:10px; padding:8px; }
+  .info { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--dim); margin-top:8px; }
+  .info b { color:var(--txt); font-weight:600; }
+  @media (orientation: landscape) and (min-width: 700px) {
+    body { display:grid; grid-template-columns: 1.1fr 1fr; grid-template-rows:auto 1fr auto; }
+    header { grid-column: 1 / 3; } #log { grid-row: 2 / 4; grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="dot" title="telemetria"></div>
+  <h1><b>F1</b> Ingegnere</h1>
+  <div id="track">in attesa della PS5…</div>
+  <button id="voice">🔇 Attiva voce</button>
+</header>
+
+<div class="bar">
+  <span class="lbl">Ingegnere parla</span>
+  <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
+  <a href="/analisi">📈 Analisi giri</a>
+</div>
+<div id="sc">SAFETY CAR</div>
+
+<div class="main">
+  <div class="grid">
+    <div class="card" style="grid-column:1/3">
+      <div class="lbl">Delta sul giro migliore <span id="invalid">· GIRO NON VALIDO</span></div>
+      <div id="delta" class="mono">--.--</div>
+      <div class="bars"><div id="thr"><i></i></div><div id="brk"><i></i></div></div>
+    </div>
+    <div class="card">
+      <div class="lbl">Giro <span id="lapn">-</span> · P<span id="pos">-</span></div>
+      <div class="big mono" id="cur">--:--.---</div>
+      <div class="row"><span>Ultimo</span><span class="mono" id="last">--:--.---</span></div>
+      <div class="row"><span>Migliore</span><span class="mono" id="best">--:--.---</span></div>
+    </div>
+    <div class="card">
+      <div class="lbl">Auto</div>
+      <div class="big mono" style="display:flex;justify-content:space-between"><span><span id="spd">0</span><small style="font-size:12px;color:var(--dim)"> km/h</small></span><span id="gear">N</span></div>
+      <div class="row"><span>Carburante</span><span class="mono" id="fuel">-</span></div>
+      <div class="row"><span>ERS</span><span class="mono" id="ers">-</span></div>
+    </div>
+    <div class="card" style="grid-column:1/3">
+      <div class="lbl">Gomme <span id="comp"></span> · temperatura / usura</div>
+      <div class="tyres">
+        <div class="tyre" id="t2"><b>-</b><span>-</span></div><div class="tyre" id="t3"><b>-</b><span>-</span></div>
+        <div class="tyre" id="t0"><b>-</b><span>-</span></div><div class="tyre" id="t1"><b>-</b><span>-</span></div>
+      </div>
+    </div>
+    <div class="card" id="race" style="grid-column:1/3">
+      <div class="lbl">Gara · <span id="rpos">P-</span> · <span id="rlaps">-</span></div>
+      <div class="rival"><span class="who">Davanti</span><span class="nm" id="ahn">-</span><span class="gp mono" id="ahg">-</span></div>
+      <div class="rival"><span class="who">Dietro</span><span class="nm" id="bhn">-</span><span class="gp mono" id="bhg">-</span></div>
+      <div class="info"><span>Meteo <b id="wx">-</b></span><span id="rain"></span><span>Finestra pit <b id="pitw">-</b></span><span>Soste <b id="stops">0</b></span></div>
+    </div>
+    <div class="card" id="wxcard" style="grid-column:1/3;display:none">
+      <div class="info" style="margin-top:0"><span>Meteo <b id="wx2">-</b></span><span id="rain2"></span><span>Pista <b id="ttemp">-</b></span></div>
+    </div>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<div id="heard" class="heard"></div>
+<div class="mic">
+  <button id="ptt" class="primary">🎙️ Parla</button>
+  <button id="listen">👂 Radio: off</button>
+</div>
+<div class="ask">
+  <input id="q" placeholder="Scrivi una domanda…" enterkeyhint="send">
+  <button id="send">Chiedi</button>
+  <button id="debrief" title="Debrief">📋</button>
+</div>
+<details class="card" id="settings">
+  <summary>⚙️ Impostazioni ingegnere</summary>
+  <div class="set">
+    <p>Le domande tipiche (box, rientro, meteo, gomme, distacchi, carburante) hanno sempre una risposta gratuita.
+       Per le <b>domande libere</b> serve una chiave AI: <b>Gemini</b> ha un piano gratuito
+       (crea la chiave su aistudio.google.com → Get API key).</p>
+    <label>Chiave Gemini <input id="gkey" placeholder="incolla qui la chiave" autocomplete="off"></label>
+    <label>Chiave Claude (facoltativa, a pagamento) <input id="akey" placeholder="sk-ant-…" autocomplete="off"></label>
+    <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1"></label>
+    <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="primary">Salva</button><span id="setinfo" class="dim"></span></div>
+    <p id="gamehint"></p>
+    <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="color:var(--txt)">Esci</a></p>
+  </div>
+</details>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000); return m + ":" + ((ms%60000)/1000).toFixed(3).padStart(6,"0"); };
+
+// ---------- voce (sintesi) ----------
+// I browser bloccano l'audio finché non tocchi la pagina: la voce resta "attiva"
+// (memorizzato sul telefono) e si sblocca da sola al primo tocco in un punto qualsiasi.
+const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+let voiceWanted = store.get("voce", "on") === "on", voiceUnlocked = false, itVoice = null, speakQ = [], lastSpokeEnd = 0;
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  itVoice = vs.find(v => v.lang === "it-IT" && /Alice|Federica|Luca|Google/i.test(v.name)) || vs.find(v => v.lang.startsWith("it")) || null;
+}
+if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+const voiceOn = () => voiceWanted && voiceUnlocked;
+function speaking() { return ("speechSynthesis" in window && speechSynthesis.speaking) || Date.now() - lastSpokeEnd < 700; }
+function say(text, prio) {
+  if (!voiceOn()) return;
+  if (prio >= 2) speakQ = speakQ.filter(x => x.prio >= 2);
+  speakQ.push({text, prio, t: Date.now()});
+  pump();
+}
+function pump() {
+  if (speechSynthesis.speaking || !speakQ.length) return;
+  const it = speakQ.shift();
+  if (Date.now() - it.t > 8000) return pump();   // avviso vecchio: ormai inutile
+  const u = new SpeechSynthesisUtterance(it.text);
+  u.lang = "it-IT"; if (itVoice) u.voice = itVoice; u.rate = 1.1;
+  u.onend = u.onerror = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
+  speechSynthesis.speak(u);
+}
+let wakeLock = null;
+async function keepAwake() {
+  try { if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
+function unlockVoice(greet) {
+  if (voiceUnlocked) return;
+  voiceUnlocked = true;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(greet ? "Ingegnere collegato." : " ");
+  u.lang = "it-IT"; if (itVoice) u.voice = itVoice; if (!greet) u.volume = 0;
+  speechSynthesis.speak(u);
+  keepAwake();
+  showVoice();
+}
+function showVoice() {
+  const b = $("voice");
+  b.classList.toggle("on", voiceOn());
+  b.textContent = !voiceWanted ? "🔇 Voce spenta" : voiceUnlocked ? "🔊 Voce attiva" : "👆 Tocca per la voce";
+}
+["pointerdown", "keydown"].forEach(ev => document.addEventListener(ev, e => {
+  if (voiceWanted && !voiceUnlocked && e.target.id !== "voice") unlockVoice(true);
+}, { capture: true }));
+$("voice").onclick = () => {
+  if (voiceWanted && !voiceUnlocked) { unlockVoice(true); return; }
+  voiceWanted = !voiceWanted;
+  store.set("voce", voiceWanted ? "on" : "off");
+  if (voiceWanted) unlockVoice(true); else { speechSynthesis.cancel(); speakQ = []; }
+  showVoice();
+};
+showVoice();
+
+// ---------- microfono: pulsante "Parla" e parola "Radio" ----------
+// L'ascolto "Radio" lavora a frasi singole che ripartono da sole: è più affidabile
+// dell'ascolto continuo sia su Chrome Android sia su Safari iPhone/iPad.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micOk = !!SR && window.isSecureContext;
+let rec = null, recMode = null, listenWanted = store.get("ascolto", "off") === "on", armedUntil = 0, restartTimer = 0, failStreak = 0;
+function micHint() {
+  if (!SR) return "Questo browser non supporta il riconoscimento vocale: usa Chrome su Android o Safari su iPhone/iPad.";
+  if (!window.isSecureContext) return "Il microfono funziona solo sulla pagina https: ricarica la pagina, dovrebbe passarci da sola.";
+  return "";
+}
+function heard(text, cls) {
+  const el = $("heard");
+  el.textContent = text; el.className = "heard " + (cls || "");
+}
+function setMicUI() {
+  $("listen").classList.toggle("on", listenWanted && micOk);
+  $("listen").textContent = listenWanted && micOk ? "👂 Ascolto “Radio”" : "👂 Radio: off";
+  $("ptt").classList.toggle("rec", recMode === "ptt");
+  $("ptt").textContent = recMode === "ptt" ? "🔴 Ti ascolto…" : "🎙️ Parla";
+}
+function stopRec() {
+  clearTimeout(restartTimer);
+  if (rec) { rec.onend = rec.onresult = rec.onerror = null; try { rec.abort(); } catch (e) {} }
+  rec = null; recMode = null;
+}
+function handleWake(text, final) {
+  const low = text.toLowerCase(), i = low.search(/\bradio\b/);
+  if (i >= 0) {
+    const q = text.slice(i + 5).replace(/^[\s,.:!?]+/, "").trim();
+    if (!final) { heard("📻 Radio… ti ascolto", "armed"); return; }
+    if (q.split(/\s+/).length >= 2) { heard("➜ " + q, "sent"); ask(q); }
+    else { armedUntil = Date.now() + 7000; heard("📻 Dimmi…", "armed"); say("Dimmi.", 2); }
+  } else if (final && Date.now() < armedUntil) {
+    armedUntil = 0; heard("➜ " + text, "sent"); ask(text);
+  } else if (final) heard("Sento: “" + text + "” (inizia con “Radio”)");
+}
+function startRec(mode) {          // "ptt" = una domanda; "wake" = ascolto della parola Radio
+  if (!micOk) { addMsg({kind: "avviso", text: micHint(), ts: Date.now()/1000}); return; }
+  stopRec();
+  const r = new SR();
+  rec = r; recMode = mode;
+  r.lang = "it-IT"; r.maxAlternatives = 1;
+  r.continuous = false;
+  r.interimResults = mode === "wake";
+  r.onresult = e => {
+    let text = "", final = false;
+    for (let k = e.resultIndex; k < e.results.length; k++) { text += e.results[k][0].transcript; final = final || e.results[k].isFinal; }
+    text = text.trim(); if (!text) return;
+    failStreak = 0;
+    if (mode === "ptt") { if (final) { heard("➜ " + text, "sent"); ask(text); } else heard(text); return; }
+    if (speaking()) return;                      // è la voce dell'ingegnere, non la tua
+    handleWake(text, final);
+  };
+  r.onerror = e => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      listenWanted = false; store.set("ascolto", "off");
+      heard("Microfono bloccato: consentilo per questo sito nelle impostazioni del browser", "err");
+    } else if (e.error === "network") heard("Il riconoscimento vocale ha bisogno di internet", "err");
+    else if (e.error !== "no-speech" && e.error !== "aborted") heard("Microfono: " + e.error, "err");
+    if (e.error !== "no-speech" && e.error !== "aborted") failStreak++;
+  };
+  r.onend = () => {
+    if (rec !== r) return;
+    rec = null; recMode = null; setMicUI();
+    if (listenWanted && document.visibilityState === "visible" && failStreak < 5) {
+      // mentre l'ingegnere parla aspetto, così non ascolto la sua voce
+      const wait = () => speaking() ? (restartTimer = setTimeout(wait, 300)) : startRec("wake");
+      restartTimer = setTimeout(wait, 250);
+    }
+  };
+  try { r.start(); } catch (e) { rec = null; recMode = null; heard("Microfono non disponibile: " + e.message, "err"); }
+  setMicUI();
+}
+$("ptt").onclick = () => {
+  if (!voiceUnlocked && voiceWanted) unlockVoice(false);
+  if (recMode === "ptt") { try { rec.stop(); } catch (e) {} return; }
+  speechSynthesis.cancel(); speakQ = [];
+  heard("🎙️ Parla ora…", "armed");
+  startRec("ptt");
+};
+$("listen").onclick = () => {
+  if (!micOk) { addMsg({kind: "avviso", text: micHint(), ts: Date.now()/1000}); return; }
+  listenWanted = !listenWanted; store.set("ascolto", listenWanted ? "on" : "off");
+  failStreak = 0;
+  if (listenWanted) { startRec("wake"); heard("Di' “Radio” e la domanda, per esempio “Radio, mi fermo ai box?”"); }
+  else { stopRec(); heard(""); }
+  setMicUI();
+};
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && listenWanted && micOk && !rec) { failStreak = 0; startRec("wake"); }
+});
+// l'ascolto può partire solo dopo un tocco (regola dei browser)
+document.addEventListener("pointerdown", () => { if (listenWanted && micOk && !rec) startRec("wake"); }, { once: true, capture: true });
+
+// ---------- messaggi ----------
+function addMsg(m) {
+  if (m.kind === "zona" || m.kind === "fine_giro") return;
+  const d = document.createElement("div");
+  d.className = "m " + m.kind;
+  const t = new Date(m.ts * 1000).toLocaleTimeString("it-IT", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  d.innerHTML = `<small>${m.kind} · ${t}</small>`;
+  d.appendChild(document.createTextNode(m.text));
+  $("log").prepend(d);
+  while ($("log").children.length > 40) $("log").lastChild.remove();
+  if (m.speak) say(m.text, m.priority);
+}
+
+// ---------- stato ----------
+function tyreColor(t) { return t >= 110 ? "#5a1d24" : t >= 100 ? "#4d3a12" : t >= 80 ? "#163a26" : "#14283d"; }
+function render(s) {
+  $("dot").classList.toggle("on", !!s.online);
+  if (s.track && s.track !== "-") $("track").textContent = s.track;
+  const d = $("delta");
+  if (s.delta == null) { d.textContent = "--.--"; d.className = "mono"; }
+  else { d.textContent = (s.delta > 0 ? "+" : "") + s.delta.toFixed(2); d.className = "mono " + (s.delta <= 0 ? "good" : "bad"); }
+  $("invalid").style.display = s.invalid ? "inline" : "none";
+  $("lapn").textContent = s.lap ?? "-"; $("pos").textContent = s.position ?? "-";
+  $("cur").textContent = fmt(s.current_ms); $("last").textContent = fmt(s.last_ms); $("best").textContent = fmt(s.best_ms);
+  $("spd").textContent = s.speed ?? 0;
+  $("gear").textContent = s.gear == null ? "-" : s.gear === 0 ? "N" : s.gear < 0 ? "R" : s.gear;
+  $("fuel").textContent = s.fuel_laps == null ? "-" : (s.fuel_laps > 0 ? "+" : "") + s.fuel_laps.toFixed(1) + " giri";
+  $("ers").textContent = s.ers == null ? "-" : s.ers + "%";
+  $("comp").textContent = s.compound ? `${s.compound} · ${s.tyre_age} giri` : "";
+  $("thr").firstChild.style.width = ((s.throttle || 0) * 100) + "%";
+  $("brk").firstChild.style.width = ((s.brake || 0) * 100) + "%";
+  for (let i = 0; i < 4; i++) {
+    const el = $("t" + i), t = s.tyre_temp?.[i], w = s.tyre_wear?.[i];
+    el.firstChild.textContent = t == null ? "-" : t + "°";
+    el.lastChild.textContent = w == null ? "-" : "usura " + Math.round(w) + "%";
+    if (t != null) el.style.background = tyreColor(t);
+  }
+}
+
+const WX = ["sereno ☀️", "poco nuvoloso 🌤️", "coperto ☁️", "pioggia leggera 🌦️", "pioggia forte 🌧️", "temporale ⛈️"];
+function rivalTxt(r) {
+  if (!r) return ["-", "-"];
+  let n = r.name;
+  if (r.compound) n += `<span class="tag">${r.compound} ${r.tyre_age}g</span>`;
+  if (r.pit) n += `<span class="tag" style="color:var(--warn)">ai box</span>`;
+  return [n, r.gap.toFixed(1) + "s"];
+}
+function renderRace(r, s) {
+  if (!r) return;
+  $("sc").style.display = r.safety_car ? "block" : "none";
+  $("sc").textContent = r.safety_car === 2 ? "VIRTUAL SAFETY CAR" : "SAFETY CAR";
+  const rainTxt = r.rain_next ? `Pioggia tra <b>${r.rain_next.min} min</b> (${r.rain_next.rain}%)` : "";
+  $("race").style.display = r.is_race ? "block" : "none";
+  $("wxcard").style.display = !r.is_race && r.weather != null ? "block" : "none";
+  if (!r.is_race) {
+    $("wx2").textContent = WX[r.weather] || "-"; $("rain2").innerHTML = rainTxt;
+    $("ttemp").textContent = r.track_temp != null ? r.track_temp + "°" : "-";
+    return;
+  }
+  $("rpos").textContent = `P${r.position ?? "-"}${r.cars ? "/" + r.cars : ""}`;
+  $("rlaps").textContent = r.total_laps && s.lap ? `giro ${s.lap} di ${r.total_laps}` : "";
+  const [an, ag] = rivalTxt(r.ahead), [bn, bg] = rivalTxt(r.behind);
+  $("ahn").innerHTML = an; $("ahg").textContent = ag; $("bhn").innerHTML = bn; $("bhg").textContent = bg;
+  $("bhg").style.color = r.behind && r.behind.gap < 1 ? "var(--bad)" : "";
+  $("wx").textContent = WX[r.weather] || "-"; $("rain").innerHTML = rainTxt;
+  $("pitw").textContent = r.pit_ideal ? `giri ${r.pit_ideal}–${r.pit_latest}` : "-";
+  $("stops").textContent = r.pit_stops ?? 0;
+}
+
+// ---------- livello di parlato ----------
+function showVerb(v) { for (const b of $("verb").children) b.classList.toggle("on", +b.dataset.v === v); }
+$("verb").onclick = async e => {
+  const v = +e.target.dataset.v; if (!v) return;
+  showVerb(v);
+  try { await fetch("/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({verbosity: v})}); } catch (e) {}
+};
+
+function connect() {
+  const es = new EventSource("/events");
+  es.addEventListener("msg", e => addMsg(JSON.parse(e.data)));
+  es.addEventListener("state", e => { const s = JSON.parse(e.data); render(s); renderRace(s.race, s); if (s.verbosity) showVerb(s.verbosity); });
+  es.onerror = () => {
+    $("dot").classList.remove("on");
+    fetch("/state").then(r => { if (r.status === 401) location.href = "/login"; }).catch(() => {});
+  };
+}
+connect();
+
+// ---------- domande ----------
+async function ask(question) {
+  $("send").disabled = $("debrief").disabled = true;
+  addMsg({kind:"info", text:"Tu: " + (question || "debrief"), ts: Date.now()/1000});
+  try { await fetch("/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question})}); }
+  catch (e) { addMsg({kind:"avviso", text:"Server non raggiungibile.", ts: Date.now()/1000}); }
+  $("send").disabled = $("debrief").disabled = false;
+}
+$("send").onclick = () => { const q = $("q").value.trim(); if (q) { $("q").value = ""; ask(q); } };
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") $("send").click(); });
+$("debrief").onclick = () => ask("");
+
+// ---------- impostazioni ----------
+async function loadSettings() {
+  try {
+    const s = await fetch("/settings").then(r => r.json());
+    $("gkey").placeholder = s.gemini_key ? "salvata: " + s.gemini_key : "incolla qui la chiave";
+    $("akey").placeholder = s.anthropic_key ? "salvata: " + s.anthropic_key : "sk-ant-…";
+    $("ploss").value = s.pit_loss;
+    $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
+    if (s.user) { $("userline").style.display = "block"; $("uname").textContent = s.user; }
+    $("gamehint").innerHTML = s.server_ip
+      ? `Nel gioco (Telemetria): IP UDP <b>${s.server_ip}</b>, porta <b>${s.udp_port}</b>, broadcast Off, frequenza 20 Hz.`
+      : `Nel gioco (Telemetria): porta UDP <b>${s.udp_port}</b>.`;
+  } catch (e) {}
+}
+$("saveset").onclick = async () => {
+  const body = { pit_loss: +$("ploss").value };
+  if ($("gkey").value.trim()) body.gemini_key = $("gkey").value.trim();
+  if ($("akey").value.trim()) body.anthropic_key = $("akey").value.trim();
+  await fetch("/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  $("gkey").value = $("akey").value = "";
+  loadSettings();
+};
+loadSettings();
+setMicUI();
+</script>
+</body>
+</html>
