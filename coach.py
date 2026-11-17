@@ -12,6 +12,8 @@ import bisect
 import json
 import os
 
+import ideale
+from assetto import SetupAdvisor
 from parlato import fmt_lap, fmt_lap_voice, num, tenths
 from race import RaceEngineer
 from recorder import Recorder
@@ -63,9 +65,10 @@ class Lap:
 class Reference:
     """Giro di riferimento ricampionato ogni GRID_STEP metri + staccate individuate."""
 
-    def __init__(self, lap_ms, grid):
+    def __init__(self, lap_ms, grid, owner=None):
         self.lap_ms = lap_ms
         self.g = grid
+        self.owner = owner          # None = giro tuo; altrimenti il nome dell'amico
         self.zones = self._find_zones()
 
     @classmethod
@@ -80,6 +83,31 @@ class Reference:
             g["thr"].append(lap.interp(lap.thr, d))
             g["brk"].append(lap.interp(lap.brk, d))
         return cls(lap_ms, g)
+
+    @classmethod
+    def from_trace(cls, tr, lap_ms, owner=None):
+        """Da un giro salvato (pagina Analisi o file di un amico): campi d, t, v, thr, brk."""
+        D = tr["d"]
+
+        def at(arr, d):
+            i = bisect.bisect_left(D, d)
+            if i <= 0:
+                return arr[0]
+            if i >= len(D):
+                return arr[-1]
+            d0, d1 = D[i - 1], D[i]
+            f = 0 if d1 == d0 else (d - d0) / (d1 - d0)
+            return arr[i - 1] + (arr[i] - arr[i - 1]) * f
+
+        g = {k: [] for k in ("dist", "t", "speed", "thr", "brk")}
+        for n in range(int(D[-1] // GRID_STEP) + 1):
+            d = n * GRID_STEP
+            g["dist"].append(d)
+            g["t"].append(at(tr["t"], d))
+            g["speed"].append(at(tr["v"], d))
+            g["thr"].append(at(tr["thr"], d))
+            g["brk"].append(at(tr["brk"], d))
+        return cls(lap_ms, g, owner)
 
     def _find_zones(self):
         g, zones = self.g, []
@@ -115,7 +143,7 @@ class Reference:
         return self.g["t"][i] + (self.g["t"][i + 1] - self.g["t"][i]) * f
 
     def to_json(self):
-        return {"lap_ms": self.lap_ms, "grid": self.g}
+        return {"lap_ms": self.lap_ms, "grid": self.g, "owner": self.owner}
 
 
 class Coach:
@@ -126,6 +154,7 @@ class Coach:
         self.pit_loss = 22.0        # secondi persi con un pit stop (stima, modificabile in config.json)
         self.recorder = Recorder(data_dir) if data_dir else Recorder()
         self.race = RaceEngineer(self)
+        self.setup = SetupAdvisor()
         self.reset()
 
     # ------------------------------------------------------------ stato
@@ -146,7 +175,14 @@ class Coach:
         self.last_speak_t = -99.0
         self.now = 0.0
         self.warned = {}
+        self.outline, self.outline_v = None, 0
+        self.session_laps = []       # giri validi e completi della sessione, per il giro ideale
+        self.ideal = None
+        self.ideal_said = None
+        self.flag_pending = None     # bandiera a scacchi vista, aspetto il tempo dell'ultimo giro
+        self.race_done = False       # gara finita: il giro di rientro non si registra
         self.race.reset()
+        self.setup.reset()
 
     def say(self, text, kind="info", level=2, urgent=False):
         """Mostra sempre il messaggio; lo legge a voce solo se il livello scelto lo prevede."""
@@ -174,6 +210,8 @@ class Coach:
         self.player_idx = h["player_idx"]
         if h["session_uid"] != self.session_uid:
             keep = self.session_uid is not None
+            if keep:
+                self._save_partial("fine sessione")     # il giro a metà quando la sessione finisce
             self.reset()
             self.session_uid = h["session_uid"]
             self.player_idx = h["player_idx"]
@@ -187,9 +225,11 @@ class Coach:
             self.track_id = s["track_id"]
             self.track_name = s["track_name"]
             self.ref = self._load_ref()
+            self._load_outline()
             msg = f"Pista: {self.track_name}, {s['session_name']}."
             if self.ref:
-                msg += f" Riferimento: {fmt_lap(self.ref.lap_ms)}, {len(self.ref.zones)} staccate."
+                who = f" (giro di {self.ref.owner})" if self.ref.owner else ""
+                msg += f" Riferimento: {fmt_lap(self.ref.lap_ms)}{who}, {len(self.ref.zones)} staccate."
             self.emit("sistema", msg, False, 0)
         if first and s["is_race"] and s["total_laps"]:
             self.say(f"Gara di {s['total_laps']} giri a {self.track_name}. Pista a {s['track_temp']} gradi. Buona gara!",
@@ -201,8 +241,29 @@ class Coach:
         self.last_lapdata = ld
         if self.lap_num is None:
             self.lap_num = ld["lap_num"]
+        # tornato nel garage (anche dal menu) a metà giro: salvo quello che c'è come giro parziale
+        if prev and ld.get("driver_status") == 0 and prev.get("driver_status") != 0:
+            self._save_partial("garage")
+        # bandiera a scacchi: il gioco segna la gara finita ma non passa al giro successivo,
+        # quindi l'ultimo giro va chiuso qui. Aspetto un attimo che arrivi il suo tempo.
+        if (prev and not self.race_done and not self.flag_pending and ld["lap_num"] == self.lap_num
+                and ld.get("result_status") == 3 and prev.get("result_status") != 3):
+            self.flag_pending = (prev, self.now + 1.5, prev["last_lap_ms"])
+        if self.flag_pending:
+            p, deadline, old_last = self.flag_pending
+            if ld["last_lap_ms"] != old_last or self.now >= deadline:
+                self.flag_pending = None
+                self.race_done = True
+                ms = ld["last_lap_ms"] if ld["last_lap_ms"] != old_last else (
+                    int(round(self.lap.t[-1] * 1000)) if len(self.lap) else 0)
+                if ms:
+                    self._finish_lap(ms, p)
+                self.lap = Lap()
         if ld["lap_num"] != self.lap_num:
-            if prev and ld["lap_num"] == self.lap_num + 1:
+            if prev and ld["lap_num"] == self.lap_num + 1 and not self.race_done:
+                self.flag_pending = None
+                if ld.get("result_status") == 3:
+                    self.race_done = True
                 self._finish_lap(ld["last_lap_ms"], prev)
             self.lap = Lap()
             self.analyzed = set()
@@ -219,10 +280,15 @@ class Coach:
     def on_motion(self, m):
         self.motion = m
 
+    def on_motion_ex(self, ex):
+        self.setup.on_ex(ex)
+
     def on_telemetry(self, tel):
         self.telemetry = tel
         ld = self.last_lapdata
-        if not ld or ld["pit_status"] != 0:
+        if ld:
+            self.setup.on_sample(tel, ld, self.motion, self.status)
+        if not ld or ld["pit_status"] != 0 or self.flag_pending or self.race_done:
             return
         d = ld["lap_distance"]
         if d < 0:
@@ -237,10 +303,34 @@ class Coach:
 
     def on_status(self, st):
         self.status = st
+        if st.get("fia_flag") is not None:
+            self.race.on_fia_flag(st["fia_flag"])
         fl = st.get("fuel_laps")
         if fl is not None and fl < -0.3 and self.in_race and self._once("fuel", 90):
-            self.say(f"Carburante: sei sotto di {num(fl)} {'giro' if num(fl) == '1' else 'giri'}. Alza e lascia scorrere prima delle frenate.",
-                     "avviso", level=1, urgent=True)
+            self.fuel_saving = True
+            self.say(self.fuel_advice(fl), "avviso", level=1, urgent=True)
+        elif fl is not None and fl >= 0.1 and getattr(self, "fuel_saving", False) and self.in_race:
+            self.fuel_saving = False
+            self.say("Carburante di nuovo a posto: puoi smettere di risparmiare e spingere.", "gara", level=1, urgent=True)
+
+    def fuel_advice(self, fl):
+        """Lift and coast guidato: le staccate dove arrivi più veloce sono quelle dove risparmi di più."""
+        unit = "giro" if num(fl) == "1" else "giri"
+        if not self.ref or len(self.ref.zones) < 2:
+            return f"Carburante: sei sotto di {num(fl)} {unit}. Alza il piede e lascia scorrere prima delle frenate."
+        g = self.ref.g
+
+        def entry_speed(z):
+            i = min(len(g["speed"]) - 1, int(z["brake"] // GRID_STEP))
+            return g["speed"][i]
+        best = sorted(self.ref.zones, key=entry_speed, reverse=True)[:2]
+        best.sort(key=lambda z: z["n"])
+        deficit = -fl
+        lift = 50 if deficit < 0.5 else 100 if deficit < 1.0 else 150
+        cost = 0.06 * len(best) * lift / 50          # stima: circa 6 centesimi ogni 50 metri di rilascio
+        return (f"Carburante: sei sotto di {num(fl)} {unit}. Lift and coast: alza il piede {lift} metri prima "
+                f"della staccata {best[0]['n']} e della {best[1]['n']}, dove arrivi più veloce. "
+                f"Perdi circa {tenths(cost)} al giro.")
 
     def on_damage(self, dm):
         self.damage = dm
@@ -318,33 +408,98 @@ class Coach:
                      "avviso", level=2)
 
     # --------------------------------------------------- fine giro
+    def _lap_kind(self):
+        """'completo', 'uscita' (partito dalla corsia box), 'rientro' (finito ai box) o 'parziale'.
+        None se il giro registrato è troppo corto per servire a qualcosa."""
+        track_len = self.session.get("track_length") or 0
+        if len(self.lap) <= 50:
+            return None
+        start_ok = self.lap.dist[0] < 100
+        end_ok = not track_len or self.lap.dist[-1] > track_len * 0.9
+        if start_ok and end_ok:
+            return "completo"
+        span = self.lap.dist[-1] - self.lap.dist[0]
+        if span < (track_len * 0.3 if track_len else 1000):
+            return None
+        return "rientro" if start_ok else ("uscita" if end_ok else "parziale")
+
+    def _record(self, kind, lap_ms, prev_ld, entry):
+        s1 = prev_ld.get("s1_ms") or 0
+        s2 = prev_ld.get("s2_ms") or 0
+        info = dict(entry, s1=s1, s2=s2,
+                    s3=lap_ms - s1 - s2 if s1 and s2 and kind == "completo" else 0,
+                    compound=self.status.get("compound"), tyre_age=self.status.get("tyre_age"),
+                    position=prev_ld.get("position"))
+        if kind != "completo":
+            info.update(partial=True, kind=kind)
+        try:
+            self.recorder.save_lap(self.session_uid, self.session, self.lap, info)
+        except OSError as e:
+            print("Impossibile salvare il giro:", e, flush=True)
+
+    def _update_ideal(self, lap_ms):
+        self.session_laps.append({"lap": self.lap_num, "ms": lap_ms, "d": list(self.lap.dist), "t": list(self.lap.t)})
+        self.session_laps = self.session_laps[-40:]
+        res = ideale.compute(self.session_laps, self.session.get("track_length") or None)
+        if not res:
+            return
+        self.ideal = res
+        # lo dico in prova e qualifica, quando il giro ideale migliora di almeno mezzo decimo
+        if self.in_race or res["laps"] < 3 or res["gap_s"] < 0.15:
+            return
+        if self.ideal_said is not None and res["ideal_ms"] > self.ideal_said - 50:
+            return
+        self.ideal_said = res["ideal_ms"]
+        where = ""
+        if res["spots"]:
+            sp = res["spots"][0]
+            z = next((z for z in (self.ref.zones if self.ref else []) if sp["da_m"] - 150 <= z["brake"] <= sp["a_m"]), None)
+            where = (f", soprattutto alla staccata {z['n']}" if z else
+                     f", soprattutto tra {num(sp['da_m'] / 1000)} e {num(sp['a_m'] / 1000)} chilometri")
+        self.say(f"Giro ideale {fmt_lap_voice(res['ideal_ms'])}: hai ancora {tenths(res['gap_s'])} da trovare{where}.",
+                 "giro", level=2)
+
+    def _save_partial(self, why):
+        """Salva il giro in corso, se è abbastanza lungo, quando non si chiuderà più da solo."""
+        ld = self.last_lapdata
+        if not ld or not len(self.lap) or self.race_done:
+            return
+        kind = self._lap_kind()
+        if kind is None:
+            self.lap = Lap()
+            return
+        if kind == "completo":
+            kind = "parziale"          # coperto quasi tutto ma senza passare sul traguardo
+        ms = int(round(self.lap.t[-1] * 1000))
+        entry = {"lap": self.lap_num, "ms": ms, "valid": False, "zones": self.lap_zone_results}
+        self._record(kind, ms, ld, entry)
+        print(f"Giro {self.lap_num} salvato come parziale ({why}): "
+              f"da {self.lap.dist[0]:.0f} a {self.lap.dist[-1]:.0f} m", flush=True)
+        self.lap = Lap()
+
     def _finish_lap(self, lap_ms, prev_ld):
         valid = not self.lap_invalid
-        track_len = self.session.get("track_length") or 0
-        complete = (len(self.lap) > 50 and self.lap.dist[0] < 100
-                    and (not track_len or self.lap.dist[-1] > track_len * 0.9))
+        kind = self._lap_kind()
+        complete = kind == "completo"
         entry = {"lap": self.lap_num, "ms": lap_ms, "valid": valid, "zones": self.lap_zone_results}
         self.history.append(entry)
         self.history = self.history[-30:]
 
-        if complete:
-            s1 = prev_ld.get("s1_ms") or 0
-            s2 = prev_ld.get("s2_ms") or 0
-            info = dict(entry, s1=s1, s2=s2, s3=lap_ms - s1 - s2 if s1 and s2 else 0,
-                        compound=self.status.get("compound"), tyre_age=self.status.get("tyre_age"),
-                        position=prev_ld.get("position"))
-            try:
-                self.recorder.save_lap(self.session_uid, self.session, self.lap, info)
-            except OSError as e:
-                print("Impossibile salvare il giro:", e, flush=True)
+        if kind:
+            self._record(kind, lap_ms, prev_ld, entry)
+        if kind and not complete:
+            print(f"Giro {self.lap_num} salvato come '{kind}': da {self.lap.dist[0]:.0f} "
+                  f"a {self.lap.dist[-1]:.0f} m", flush=True)
 
         best_before = self.ref.lap_ms if self.ref else None
+        owner = self.ref.owner if self.ref else None
         parts = [f"Giro {fmt_lap_voice(lap_ms)}"]
         if not valid:
             parts.append("non valido")
         elif best_before:
             delta = (lap_ms - best_before) / 1000.0
-            parts.append(("più " if delta >= 0 else "meno ") + tenths(delta) + " dal migliore")
+            parts.append(("più " if delta >= 0 else "meno ") + tenths(delta) +
+                         (f" dal giro di {owner}" if owner else " dal migliore"))
         worst = sorted([r for r in self.lap_zone_results if r["loss"] > 0.05], key=lambda r: -r["loss"])[:2]
         if worst:
             parts.append("perdi di più alla staccata " + " e ".join(str(r["n"]) for r in worst))
@@ -354,17 +509,30 @@ class Coach:
             self.ref = Reference.from_lap(self.lap, lap_ms)
             self._save_ref()
             text = f"Nuovo riferimento: {fmt_lap_voice(lap_ms)}. Ho trovato {len(self.ref.zones)} staccate."
-            if best_before:
+            if best_before and owner:
+                text = (f"Hai battuto il giro di {owner}! {fmt_lap_voice(lap_ms)}, "
+                        f"meno {tenths((best_before - lap_ms) / 1000)}. Ora il riferimento è il tuo.")
+            elif best_before:
                 text = f"Giro migliore! {fmt_lap_voice(lap_ms)}, meno {tenths((best_before - lap_ms) / 1000)}."
             self.say(text, "giro", level=2 if self.in_race else 1, urgent=True)
         else:
-            self.say(", ".join(parts) + ".", "giro", level=lap_level, urgent=True)
+            # giro di uscita o di rientro: il tempo non dice niente, lo leggo solo con "Tanto"
+            self.say(", ".join(parts) + ".", "giro", level=lap_level if complete else 3, urgent=True)
         self.emit("fine_giro", json.dumps(entry), False, 0)
+        if complete and valid:
+            self._update_ideal(lap_ms)
+        if complete:
+            if self.outline is None:
+                self._make_outline()
+            self.setup.on_lap()
+            tip = None if self.in_race else self.setup.new_advice_to_say()
+            if tip:
+                self.say(tip, "assetto", level=2)
         self.race.on_lap_complete()
 
     # ------------------------------------------------ persistenza
-    def _ref_path(self):
-        return os.path.join(self.ref_dir, f"pista_{self.track_id}.json")
+    def _ref_path(self, track_id=None):
+        return os.path.join(self.ref_dir, f"pista_{self.track_id if track_id is None else track_id}.json")
 
     def _save_ref(self):
         if self.track_id is None:
@@ -377,13 +545,83 @@ class Coach:
         try:
             with open(self._ref_path()) as f:
                 j = json.load(f)
-            return Reference(j["lap_ms"], j["grid"])
+            return Reference(j["lap_ms"], j["grid"], j.get("owner"))
         except (OSError, ValueError, KeyError):
             return None
 
+    # forma della pista per la mini mappa live (dal primo giro completo, salvata per pista)
+    def _outline_path(self):
+        return os.path.join(self.ref_dir, f"mappa_{self.track_id}.json")
+
+    def _make_outline(self):
+        pts, last = [], -1e9
+        for d, x, z in zip(self.lap.dist, self.lap.x, self.lap.z):
+            if d - last >= 12 and (x or z):
+                pts.append([round(x, 1), round(z, 1)])
+                last = d
+        if len(pts) < 30:
+            return
+        self.outline = pts
+        self.outline_v += 1
+        try:
+            os.makedirs(self.ref_dir, exist_ok=True)
+            with open(self._outline_path(), "w") as f:
+                json.dump(pts, f)
+        except OSError:
+            pass
+
+    def _load_outline(self):
+        try:
+            with open(self._outline_path()) as f:
+                self.outline = json.load(f)
+            self.outline_v += 1
+        except (OSError, ValueError):
+            self.outline = None
+
+    def set_reference(self, track_id, trace, lap_ms, owner=None):
+        """Usa un giro salvato (tuo o di un amico) come riferimento del coach per quella pista."""
+        ref = Reference.from_trace(trace, lap_ms, owner)
+        os.makedirs(self.ref_dir, exist_ok=True)
+        with open(self._ref_path(track_id), "w") as f:
+            json.dump(ref.to_json(), f)
+        if track_id == self.track_id:
+            self.ref = ref
+            self.analyzed = set()
+        who = f"il giro di {owner}" if owner else "il tuo giro"
+        self.emit("sistema", f"Riferimento del coach: {who}, {fmt_lap(lap_ms)}, {len(ref.zones)} staccate.", False, 0)
+        return ref
+
     # ----------------------------------------------- per la dashboard
+    def corner_state(self):
+        """(in curva adesso?, secondi alla prossima frenata) per far parlare l'ingegnere solo sul dritto.
+
+        In curva = freni, oppure la forza laterale supera 1 g (curve veloci in pieno).
+        I secondi al prossimo punto di frenata vengono dalle staccate del giro di riferimento;
+        None se non c'è un riferimento o se sei fermo o ai box.
+        """
+        ld, tel = self.last_lapdata or {}, self.telemetry
+        v = tel.get("speed") or 0
+        if not ld or ld.get("pit_status", 0) != 0 or v < 40:
+            return False, None
+        corner = (tel.get("brake") or 0) > 0.05 or abs(self.motion.get("glat", 0.0)) > 1.0
+        straight = None
+        d = ld.get("lap_distance", -1)
+        if self.ref and self.ref.zones and d >= 0:
+            if any(z["brake"] - 20 <= d <= z["exit"] for z in self.ref.zones):
+                corner = True
+            # tempo dal giro di riferimento: tiene conto che sul dritto accelererai
+            t_now = self.ref.t_at(d)
+            nxt = next((z["brake"] for z in self.ref.zones if z["brake"] > d), None)
+            if nxt is not None:
+                straight = self.ref.t_at(nxt) - t_now
+            else:                                # dopo l'ultima curva: la prossima è la prima del giro dopo
+                straight = self.ref.lap_ms / 1000 - t_now + self.ref.t_at(self.ref.zones[0]["brake"])
+            straight = round(max(0.0, straight), 1)
+        return corner, straight
+
     def snapshot(self):
         ld, tel, st = self.last_lapdata or {}, self.telemetry, self.status
+        corner, straight = self.corner_state()
         delta = None
         if self.ref and ld and len(self.lap) > 5 and ld.get("lap_distance", -1) > 0:
             delta = round(ld["current_lap_ms"] / 1000.0 - self.ref.t_at(ld["lap_distance"]), 2)
@@ -393,8 +631,11 @@ class Coach:
             "position": ld.get("position"), "current_ms": ld.get("current_lap_ms"),
             "last_ms": last["ms"] if last else None,
             "best_ms": self.ref.lap_ms if self.ref else None,
+            "ref_owner": self.ref.owner if self.ref else None,
+            "ideal_ms": self.ideal["ideal_ms"] if self.ideal else None,
             "delta": delta, "invalid": self.lap_invalid,
-            "speed": tel.get("speed"), "gear": tel.get("gear"),
+            "speed": tel.get("speed"), "gear": tel.get("gear"), "rpm": tel.get("rpm"),
+            "in_curva": corner, "rettilineo_s": straight,
             "throttle": tel.get("throttle"), "brake": tel.get("brake"),
             "tyre_temp": tel.get("tyre_surface"), "tyre_wear": self.damage.get("tyre_wear"),
             "front_wing": self.damage.get("front_wing"),
@@ -402,6 +643,8 @@ class Coach:
             "tyre_age": st.get("tyre_age"),
             "ers": round(st["ers_store"] / 4e6 * 100) if st.get("ers_store") is not None else None,
             "verbosity": self.verbosity,
+            "setup": self.setup.advice(), "setup_laps": self.setup.laps,
+            "outline_v": self.outline_v if self.outline else 0, "dots": self.race.dots(),
             "race": self.race.snapshot(),
         }
 
@@ -418,7 +661,7 @@ class Coach:
             "previsioni_meteo": self.session.get("forecast", [])[:8],
             "giro_riferimento": fmt_lap(self.ref.lap_ms) if self.ref else None,
             "staccate_riferimento": zones, "ultimi_giri": laps,
-            "stato_ora": snap, "gara": self.race.context(),
+            "stato_ora": snap, "gara": self.race.context(), "assetto": self.setup.summary(),
             "note": "brake_delta in metri (negativo = frena prima del riferimento); "
                     "vmin_delta km/h a centro curva; full_delta metri (positivo = gas pieno più tardi); "
                     "loss secondi persi nella staccata. Gomme in ordine RL, RR, FL, FR. "

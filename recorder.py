@@ -26,6 +26,7 @@ class Recorder:
         self.session_dir = os.path.join(self.data_dir, sid)
         os.makedirs(self.session_dir, exist_ok=True)
         meta = {"id": sid, "uid": str(uid), "track": session.get("track_name", "-"),
+                "track_id": session.get("track_id"),
                 "session": session.get("session_name", "sessione"), "started": time.time()}
         with open(os.path.join(self.session_dir, "meta.json"), "w") as f:
             json.dump(meta, f, ensure_ascii=False)
@@ -57,7 +58,10 @@ class Recorder:
         except (OSError, ValueError):
             index = []
         index = [x for x in index if x["lap"] != info["lap"]]
-        index.append({"lap": info["lap"], "ms": info["ms"], "valid": info["valid"]})
+        row = {"lap": info["lap"], "ms": info["ms"], "valid": info["valid"]}
+        if info.get("partial"):
+            row.update(partial=True, kind=info.get("kind", "parziale"))
+        index.append(row)
         with open(idx_path, "w") as f:
             json.dump(sorted(index, key=lambda x: x["lap"]), f)
 

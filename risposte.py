@@ -99,9 +99,21 @@ class Answers:
         else:
             return f"Per ora non serve. Usura al {wear:.0f} per cento." if wear is not None else "Per ora non serve."
         if rem and slick and w < 3:
-            nxt = "dure" if rem > 20 else ("medie" if rem > 10 else "soft")
+            st = self.c.race.strategy
+            comp_now = self.c.status.get("compound")
+            must = me and st.must_change_compound(me)
+            nxt, ok = st.pick_compound(rem, st.wear_rate(), comp_now, (comp_now,) if must else ())
+            if st.wear_rate() is None:
+                nxt = "dure" if rem > 20 else ("medie" if rem > 10 else "soft")
+                if must and nxt == comp_now:
+                    nxt = "medie" if comp_now != "medie" else "dure"
             ans += f" Per gli ultimi {rem} giri metti le {nxt}."
+            if not ok and st.wear_rate() is not None:
+                ans += " Ma probabilmente servirà un'altra sosta."
         return ans + " " + self.rejoin()
+
+    def strategy(self):
+        return self.c.race.strategy.describe()
 
     def weather(self):
         s = self.c.session
@@ -142,9 +154,9 @@ class Answers:
         parts = [f"Sei P{me['position']}."]
         a, b = r.rel(-1), r.rel(1)
         if a:
-            parts.append(f"Davanti {r.name(a['idx'])} a {num(me['delta_front_ms'] / 1000)} secondi.")
+            parts.append(f"Davanti {r.name(a['idx'])} a {num(r.gap_between(a, me))} secondi.")
         if b:
-            parts.append(f"Dietro {r.name(b['idx'])} a {num(b['delta_front_ms'] / 1000)} secondi.")
+            parts.append(f"Dietro {r.name(b['idx'])} a {num(r.gap_between(me, b))} secondi.")
         return " ".join(parts)
 
     def position(self):
@@ -171,11 +183,17 @@ class Answers:
             return "Non ho dati sui danni."
         return "Nessun danno all'ala anteriore." if wing < 5 else f"Ala anteriore danneggiata al {wing} per cento."
 
+    def setup(self):
+        return self.c.setup.text()
+
     def driving(self):
         return rule_based_debrief(self.c.context_for_ai())
 
     # ------------------------------------------------------------ smistamento
     INTENTS = [
+        ("setup", ("assetto", "setup", "sottoster", "sovraster", "ala anter", "ala poster", "differenzial",
+                   "antirollio", "bilanciamento fren", "bloccag")),
+        ("strategy", ("strategi", "piano", "quante soste", "quando mi fermo", "quando devo fermarmi")),
         ("rejoin", ("dove esco", "dove rientro", "dove rientr", "in che posizione esco", "in che posizione rientro",
                     "posizione dopo il pit", "se mi fermo dove")),
         ("pit", ("box", "mi fermo", "fermarmi", "fermare", "sosta", "pit", "cambio gomm", "cambiare gomm")),
@@ -194,12 +212,12 @@ class Answers:
         found = []
         for name, words in self.INTENTS:
             if _has(q, *words) and name not in found:
-                if name == "pit" and "rejoin" in found:
+                if name == "pit" and ("rejoin" in found or "strategy" in found):
                     continue
                 found.append(name)
         if not found:
             return None
         return " ".join(getattr(self, n)() for n in found[:2])
 
-    HELP = ("Puoi chiedermi: mi fermo ai box?, dove rientro?, piove?, come stanno le gomme?, "
-            "distacchi, carburante, quanti giri mancano, dove perdo tempo.")
+    HELP = ("Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
+            "distacchi, carburante, quanti giri mancano, dove perdo tempo, consigli d'assetto.")

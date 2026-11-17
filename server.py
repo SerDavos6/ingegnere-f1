@@ -20,10 +20,14 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import amici
 import engineer_ai
 import f1_packets as P
+import ideale
 import recorder
+import registra
 import utenti
+import voce_ai
 from coach import Coach
 from risposte import Answers
 
@@ -39,6 +43,9 @@ class Tenant:
     def __init__(self, name, udp_port, root):
         self.name, self.udp_port = name, udp_port
         self.data_dir = os.path.join(root, "dati")
+        self.friends_dir = os.path.join(root, "amici")
+        self.voice = voce_ai.VoiceAI(os.path.join(root, "voce_cache"))
+        self.rec = registra.SessionRecorder(os.path.join(root, "registrazioni"))
         self.ref_dir = os.path.join(root, "riferimenti")
         self.config_path = os.path.join(root, "config.json")
         self.clients, self.clients_lock = [], threading.Lock()
@@ -79,6 +86,7 @@ class Tenant:
             self.handle(data)
 
     def handle(self, data):
+        self.rec.add(data)
         h = P.parse_header(data)
         if not h:
             return
@@ -100,6 +108,13 @@ class Tenant:
                 elif pid == P.PID_MOTION:
                     v = P.parse_motion(data, idx)
                     v and c.on_motion(v)
+                    c.race.on_motion_all(P.parse_motion_all(data))
+                elif pid == P.PID_MOTION_EX:
+                    v = P.parse_motion_ex(data)
+                    v and c.on_motion_ex(v)
+                elif pid == P.PID_EVENT:
+                    ev = P.parse_event(data)
+                    ev and c.race.on_event(ev)
                 elif pid == P.PID_PARTICIPANTS:
                     c.race.on_participants(P.parse_participants(data))
                 elif pid == P.PID_TELEMETRY:
@@ -119,6 +134,7 @@ class Tenant:
         with self.lock:
             snap = self.coach.snapshot()
         snap["online"] = time.time() - self.stats["last_packet"] < 2
+        snap["rec"] = self.rec.active
         snap["packets"] = self.stats["packets"]
         return snap
 
@@ -136,6 +152,77 @@ class Tenant:
         self.emit("ingegnere", answer, True, 2)
         return answer
 
+    # ---- analisi: giro ideale e progressi
+    def ideal_of(self, sid):
+        meta = next((s for s in recorder.list_sessions(self.data_dir) if s["id"] == sid), None)
+        if not meta:
+            return None
+        laps = []
+        for l in meta["laps"]:
+            if l.get("valid") and not l.get("partial"):
+                raw = recorder.load_lap(sid, l["lap"], self.data_dir)
+                if raw:
+                    j = json.loads(raw)
+                    laps.append({"lap": l["lap"], "ms": l["ms"], "d": j["trace"]["d"], "t": j["trace"]["t"]})
+        res = ideale.compute(laps)
+        if res:
+            res.pop("loss_by_seg", None)
+        return res
+
+    def progress(self, track):
+        """Il giro migliore di ogni sessione su una pista, dalla più vecchia alla più recente."""
+        out = []
+        for s in recorder.list_sessions(self.data_dir):
+            if str(s.get("track", "")).lower() != track.lower():
+                continue
+            ok = [l for l in s["laps"] if l.get("valid") and not l.get("partial")]
+            if ok:
+                b = min(ok, key=lambda l: l["ms"])
+                out.append({"id": s["id"], "started": s.get("started"), "session": s.get("session"),
+                            "ms": b["ms"], "lap": b["lap"], "laps": len(ok)})
+        return sorted(out, key=lambda x: x["started"] or 0)
+
+    # ---- voce AI
+    def tts(self, body):
+        """Audio WAV della frase con la voce AI, oppure (None, motivo) se va usata la voce del telefono."""
+        text = str(body.get("text", "")).strip()[:600]
+        if not text:
+            return None, "testo vuoto"
+        cfg = engineer_ai.load_config(self.config_path)
+        style = body.get("style") or voce_ai.style_for(text, str(body.get("kind", "")), int(body.get("prio") or 1))
+        try:
+            return self.voice.synth(text, style, body.get("voice") or cfg.get("ai_voice"), cfg.get("gemini_key")), None
+        except voce_ai.QuotaError as e:
+            return None, str(e)
+        except Exception as e:   # rete, chiave sbagliata, risposta strana: si usa la voce del telefono
+            print(f"[{self.name}] voce AI non disponibile: {e}", flush=True)
+            return None, "voce AI non disponibile"
+
+    # ---- giri degli amici
+    def share_laps(self):
+        return engineer_ai.load_config(self.config_path).get("share_laps", True) is not False
+
+    def use_reference(self, body):
+        """Usa come riferimento del coach un tuo giro salvato o quello di un amico."""
+        if body.get("friend"):
+            lap = amici.load(self, TENANTS, str(body["friend"]))
+            owner = lap.get("driver") if lap else None
+        else:
+            raw = recorder.load_lap(str(body.get("s", "")), str(body.get("l", "")), self.data_dir)
+            lap = json.loads(raw) if raw else None
+            meta = next((x for x in recorder.list_sessions(self.data_dir) if x["id"] == body.get("s")), {})
+            if lap:
+                lap.update(track=meta.get("track"), track_id=amici.track_id_of(meta))
+            owner = None
+        if not lap or not lap.get("trace"):
+            return {"error": "Giro non trovato."}
+        tid = amici.track_id_of(lap)
+        if tid is None:
+            return {"error": "Non riconosco la pista di questo giro."}
+        with self.lock:
+            ref = self.coach.set_reference(tid, lap["trace"], int(lap["ms"]), owner)
+        return {"ok": True, "owner": owner, "ms": ref.lap_ms, "zones": len(ref.zones), "track": lap.get("track")}
+
     # ---- impostazioni
     def settings_view(self):
         cfg = engineer_ai.load_config(self.config_path)
@@ -143,6 +230,9 @@ class Tenant:
         return {"verbosity": self.coach.verbosity, "ai": engineer_ai.provider(cfg),
                 "gemini_key": mask(cfg.get("gemini_key", "")), "anthropic_key": mask(cfg.get("anthropic_key", "")),
                 "pit_loss": self.coach.pit_loss, "user": self.name if MODE == "cloud" else None,
+                "share_laps": cfg.get("share_laps", True) is not False,
+                "ai_voice_on": bool(cfg.get("ai_voice_on")) and bool(cfg.get("gemini_key")),
+                "ai_voice": cfg.get("ai_voice", voce_ai.DEFAULT_VOICE), "ai_voices": voce_ai.VOICES,
                 "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None}
 
     def update_settings(self, body):
@@ -155,6 +245,12 @@ class Tenant:
         for k in ("gemini_key", "anthropic_key"):
             if k in body:
                 cfg[k] = str(body[k]).strip()
+        if "share_laps" in body:
+            cfg["share_laps"] = bool(body["share_laps"])
+        if "ai_voice_on" in body:
+            cfg["ai_voice_on"] = bool(body["ai_voice_on"])
+        if body.get("ai_voice") in voce_ai.VOICES:
+            cfg["ai_voice"] = body["ai_voice"]
         if "pit_loss" in body:
             try:
                 self.coach.pit_loss = cfg["pit_loss"] = min(60.0, max(10.0, float(body["pit_loss"])))
@@ -231,14 +327,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_file(self, path, name):
+        if not path:
+            return self._json({"error": "file non trovato"}, 404)
+        size = os.path.getsize(path)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/gzip")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+        self.end_headers()
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(256 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False), "application/json")
 
     def _redirect(self, to, headers=None):
         self._send(302, b"", "text/plain", dict(headers or {}, Location=to))
 
+    MAX_BODY = 4 * 1024 * 1024      # un giro esportato pesa circa 100-200 KB
+
     def _body(self):
         n = int(self.headers.get("Content-Length", 0) or 0)
+        if n > self.MAX_BODY:
+            self.rfile.read(n)
+            return None
         return self.rfile.read(n) if n else b""
 
     def _cookie(self, name):
@@ -323,6 +440,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({}, 404)
             else:
                 self._send(200, body, "application/json")
+        elif path == "/api/friends":
+            self._json(amici.list_laps(t, TENANTS, params.get("track", "")))
+        elif path == "/api/friend_lap":
+            lap = amici.load(t, TENANTS, params.get("id", ""))
+            self._json(lap or {}, 200 if lap else 404)
+        elif path == "/api/ideal":
+            self._json(t.ideal_of(params.get("s", "")) or {})
+        elif path == "/api/progress":
+            self._json(t.progress(params.get("track", "")))
+        elif path == "/api/rec":
+            self._json(t.rec.status())
+        elif path == "/api/rec_file":
+            self._send_file(t.rec.path(params.get("name", "")), params.get("name", ""))
+        elif path == "/api/outline":
+            with t.lock:
+                self._json({"v": t.coach.outline_v, "track": t.coach.track_name, "pts": t.coach.outline or []})
         elif path == "/settings":
             self._json(t.settings_view())
         elif path == "/state":
@@ -368,13 +501,40 @@ class Handler(BaseHTTPRequestHandler):
         t = self._tenant()
         if t is None:
             return self._json({"error": "login"}, 401)
+        raw = self._body()
+        if raw is None:
+            return self._json({"error": "File troppo grande."}, 413)
         try:
-            body = json.loads(self._body() or b"{}")
+            body = json.loads(raw or b"{}")
         except ValueError:
+            body = {}
+        if not isinstance(body, dict):
             body = {}
         if self.path == "/settings":
             t.update_settings(body)
             return self._json(t.settings_view())
+        if self.path == "/api/rec":
+            act = body.get("action")
+            if act == "start":
+                return self._json(t.rec.start())
+            if act == "stop":
+                return self._json(t.rec.stop("fermata da te"))
+            if act == "delete":
+                return self._json(t.rec.delete(str(body.get("name", ""))))
+            return self._json(t.rec.status())
+        if self.path == "/tts":
+            wav, why = t.tts(body)
+            if wav is None:
+                return self._json({"error": why}, 503)
+            return self._send(200, wav, "audio/wav")
+        if self.path == "/api/friend_upload":
+            out = amici.save_upload(t.friends_dir, body)
+            return self._json(out, 400 if "error" in out else 200)
+        if self.path == "/api/friend_delete":
+            return self._json({"ok": amici.delete_upload(t.friends_dir, str(body.get("id", "")))})
+        if self.path == "/api/use_ref":
+            out = t.use_reference(body)
+            return self._json(out, 400 if "error" in out else 200)
         if self.path == "/ask":
             question = str(body.get("question", "")).strip()[:500]
             question = question or "Fammi il debrief degli ultimi giri: dove perdo tempo e cosa cambio?"
@@ -401,7 +561,21 @@ def start_https(port, bind):
     """HTTPS con certificato locale (solo modalità locale): serve al microfono su iPhone/iPad."""
     cert, key = os.path.join(BASE, "cert.pem"), os.path.join(BASE, "key.pem")
     if not (os.path.exists(cert) and os.path.exists(key)):
-        return False
+        # niente certificato: lo creo (serve openssl; su Termux: pkg install openssl-tool)
+        import shutil
+        import subprocess
+        if not shutil.which("openssl"):
+            print("HTTPS non attivo: manca openssl (su Termux: pkg install openssl-tool). "
+                  "Sull'Android del server il microfono funziona lo stesso su http://127.0.0.1:8080", flush=True)
+            return False
+        try:
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key,
+                            "-out", cert, "-days", "3650", "-subj", "/CN=ingegnere-f1"],
+                           check=True, capture_output=True, timeout=60)
+            print("Creato il certificato per la pagina https.", flush=True)
+        except (OSError, subprocess.SubprocessError) as e:
+            print("HTTPS non attivo: non riesco a creare il certificato:", e, flush=True)
+            return False
     try:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)

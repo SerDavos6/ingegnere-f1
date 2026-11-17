@@ -20,6 +20,7 @@ HEADER_SIZE = struct.calcsize(HEADER_FMT)  # 29
 PID_MOTION, PID_SESSION, PID_LAP, PID_EVENT = 0, 1, 2, 3
 PID_PARTICIPANTS = 4
 PID_TELEMETRY, PID_STATUS, PID_DAMAGE = 6, 7, 10
+PID_MOTION_EX = 13
 
 TELEMETRY_FMT = "<HfffBbHBBH4H4B4BH4f4B"   # 60 byte
 LAP_FMT = "<II" + "HBHBHBHB" + "fff" + "B" * 15 + "HHBfB"  # 57 byte
@@ -79,9 +80,10 @@ def _lap_dict(v):
         "last_lap_ms": v[0], "current_lap_ms": v[1],
         "s1_ms": v[2] + v[3] * 60000, "s2_ms": v[4] + v[5] * 60000,
         "delta_front_ms": v[6] + v[7] * 60000, "delta_leader_ms": v[8] + v[9] * 60000,
-        "lap_distance": v[10], "position": v[13], "lap_num": v[14],
+        "lap_distance": v[10], "total_distance": v[11], "position": v[13], "lap_num": v[14],
         "pit_status": v[15], "pit_stops": v[16], "sector": v[17], "invalid": v[18],
-        "corner_cutting_warnings": v[21], "result_status": v[26],
+        "penalties_s": v[19], "total_warnings": v[20], "corner_cutting_warnings": v[21],
+        "unserved_dt": v[22], "unserved_sg": v[23], "driver_status": v[25], "result_status": v[26],
     }
 
 
@@ -114,7 +116,7 @@ def parse_status(data, idx):
     return {
         "brake_bias": v[3], "fuel_in_tank": v[5], "fuel_laps": v[7],
         "compound": COMPOUNDS.get(v[14], str(v[14])), "compound_id": v[14], "tyre_age": v[15],
-        "ers_store": v[19], "ers_mode": v[20],
+        "ers_store": v[19], "ers_mode": v[20], "fia_flag": v[16],
     }
 
 
@@ -153,20 +155,80 @@ def parse_motion(data, idx):
     return {"x": x, "z": z, "glat": glat, "glon": glon}
 
 
+def parse_motion_all(data):
+    """Posizione x, z di tutte le auto (per la mini mappa live)."""
+    out = {}
+    for i in range(num_cars(struct.unpack_from("<H", data, 0)[0])):
+        off = _car_offset(data, 60, i, trailing=0)
+        if off is None:
+            break
+        x, _, z = struct.unpack_from("<fff", data, off)
+        out[i] = (x, z)
+    return out
+
+
+def parse_motion_ex(data):
+    """Dati extra della tua auto (pacchetto 13): slittamento e angolo di deriva di ogni ruota.
+
+    Struttura (tutti float, ruote in ordine RL, RR, FL, FR): suspensionPosition[4],
+    suspensionVelocity[4], suspensionAcceleration[4], wheelSpeed[4], wheelSlipRatio[4],
+    wheelSlipAngle[4], wheelLatForce[4], wheelLongForce[4], heightOfCOG, localVelocity[3],
+    angularVelocity[3], angularAcceleration[3], frontWheelsAngle, ...
+    """
+    b = HEADER_SIZE
+    if len(data) < b + 172:
+        return None
+    slip_ratio = struct.unpack_from("<4f", data, b + 64)
+    slip_angle = struct.unpack_from("<4f", data, b + 80)
+    yaw_rate = struct.unpack_from("<f", data, b + 148)[0]
+    steer = struct.unpack_from("<f", data, b + 168)[0]
+    return {"slip_ratio": slip_ratio, "slip_angle": slip_angle, "yaw_rate": yaw_rate, "front_wheels_angle": steer}
+
+
+def parse_event(data):
+    """Eventi: penalità e avvertimenti (PENA), giro veloce (FTLP), bandiera rossa (RDFL)."""
+    if len(data) < HEADER_SIZE + 4:
+        return None
+    code = data[HEADER_SIZE:HEADER_SIZE + 4].decode("ascii", "ignore")
+    b = HEADER_SIZE + 4
+    if code == "PENA" and len(data) >= b + 7:
+        ptype, infr, car, other, t, lap, places = struct.unpack_from("<7B", data, b)
+        return {"code": code, "type": ptype, "infringement": infr, "car": car, "other": other,
+                "time": t, "lap": lap, "places": places}
+    if code == "FTLP" and len(data) >= b + 5:
+        car, t = struct.unpack_from("<Bf", data, b)
+        return {"code": code, "car": car, "time": t}
+    if code in ("RDFL", "CHQF", "LGOT"):
+        return {"code": code}
+    return None
+
+
 def parse_participants(data):
-    """Nomi dei piloti per indice auto (vuoto se nascosti online)."""
-    n = num_cars(struct.unpack_from("<H", data, 0)[0])
+    """Piloti per indice auto: nome, AI o umano, squadra, numero, nome online visibile.
+
+    Struttura ParticipantData (F1 24/25): aiControlled, driverId, networkId, teamId,
+    myTeam, raceNumber, nationality, name[32], yourTelemetry, showOnlineNames, ...
+    Online il nome di un giocatore umano è il suo ID (PSN/Xbox/Steam) solo se ha
+    attivato "Mostra nomi online"; altrimenti il gioco manda "Player".
+    """
     if len(data) < HEADER_SIZE + 1:
         return {}
+    n = num_cars(struct.unpack_from("<H", data, 0)[0])
     stride = (len(data) - HEADER_SIZE - 1) // n
-    names = {}
+    if stride < 39:
+        return {}
+    out = {}
     for i in range(n):
         off = HEADER_SIZE + 1 + i * stride
+        ai, _drv, _net, team, _my, number = struct.unpack_from("<BBBBBB", data, off)
         raw = data[off + 7: off + 7 + min(32, stride - 7)]
         name = raw.split(b"\x00", 1)[0].decode("utf-8", "ignore").strip()
-        if name:
-            names[i] = name
-    return names
+        if not name and not number:
+            continue                       # posto vuoto in griglia
+        show = data[off + 40] if stride > 40 else 1
+        out[i] = {"name": name, "ai": ai == 1, "team": team, "number": number,
+                  "show_name": show == 1}
+    return out
 
 
 WEATHER = {0: "sereno", 1: "poco nuvoloso", 2: "coperto", 3: "pioggia leggera",
@@ -189,6 +251,16 @@ def parse_session(data):
         "forecast": [], "safety_car": 0, "pit_ideal": 0, "pit_latest": 0, "pit_rejoin": 0,
     }
     b = HEADER_SIZE
+    # bandiere dei settori di pista (marshal zones): inizio come frazione del giro, bandiera
+    # -1 sconosciuta, 0 nessuna, 1 verde, 2 blu, 3 gialla
+    s["zones"] = []
+    if len(data) >= b + 124:
+        nz = data[b + 18]
+        if nz <= 21:
+            for k in range(nz):
+                start, flag = struct.unpack_from("<fb", data, b + 19 + k * 5)
+                if 0.0 <= start <= 1.0:
+                    s["zones"].append((start, flag))
     if len(data) >= b + 656:
         s["safety_car"] = data[b + 124] if data[b + 124] <= 3 else 0
         nfc = data[b + 126]

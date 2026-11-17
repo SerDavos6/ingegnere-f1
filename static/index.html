@@ -5,192 +5,638 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0b0d10">
+<meta name="theme-color" content="#08090b">
 <title>Ingegnere di pista</title>
 <style>
-  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#7d8894;
-          --good:#2fd17a; --bad:#ff4d5e; --warn:#ffb020; --accent:#e10600; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  html,body { background:var(--bg); color:var(--txt); height:100%;
-    font-family: -apple-system, "SF Pro Text", Roboto, "Segoe UI", sans-serif; }
-  body { padding: max(10px, env(safe-area-inset-top)) 12px 12px; display:flex; flex-direction:column; gap:10px; }
-  .mono { font-family: "SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
-  header { display:flex; align-items:center; gap:10px; }
-  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; }
-  header h1 b { color:var(--accent); }
-  #track { color:var(--dim); font-size:13px; flex:1; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); }
+  :root {
+    --bg:#08090b; --panel:#121418; --panel2:#181b20; --line:#23272e; --txt:#f2f4f7; --dim:#8a919b; --faint:#5b626c;
+    --red:#e10600; --good:#22d36f; --bad:#ff3b4e; --warn:#ffb020; --blue:#3ea6ff;
+    --soft:#ff3b3b; --medium:#ffd21f; --hard:#f2f2f2; --inter:#2fd16b; --wet:#2f8fff;
+    --r:16px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { background:var(--bg); color:var(--txt); min-height:100%;
+    font-family:-apple-system,"SF Pro Display","Segoe UI",Roboto,sans-serif; }
+  body { padding:max(10px,env(safe-area-inset-top)) 12px calc(118px + env(safe-area-inset-bottom)); }
+  .num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+  button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+  a { color:inherit; text-decoration:none; }
+
+  /* ---------- barra in alto ---------- */
+  .top { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .brand { display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
+  .brand i { width:4px; height:26px; background:var(--red); border-radius:2px; flex:none; }
+  .brand div { min-width:0; }
+  .brand b { display:block; font-size:16px; font-weight:800; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand small { display:flex; align-items:center; gap:6px; color:var(--dim); font-size:12px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--bad); flex:none; }
   .dot.on { background:var(--good); box-shadow:0 0 8px var(--good); }
-  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
-  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
-  #delta { font-size:56px; font-weight:700; line-height:1.05; }
-  #delta.good { color:var(--good); } #delta.bad { color:var(--bad); }
-  .big { font-size:26px; font-weight:600; }
-  .row { display:flex; justify-content:space-between; align-items:baseline; margin-top:4px; }
-  .row span { white-space:nowrap; } .row span:first-child { color:var(--dim); font-size:13px; }
-  .tyres { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
-  .tyre { border-radius:8px; padding:6px; text-align:center; font-size:13px; background:#1b2128; }
-  .tyre b { display:block; font-size:18px; }
-  .bars { display:flex; gap:6px; margin-top:6px; height:8px; }
-  .bars div { flex:1; background:#1b2128; border-radius:4px; overflow:hidden; }
+  .icon { width:40px; height:40px; border-radius:12px; background:var(--panel); border:1px solid var(--line);
+          display:grid; place-items:center; font-size:18px; flex:none; }
+  .icon.on { border-color:var(--good); background:#10261a; }
+
+  .tabs { display:grid; grid-template-columns:1fr 1fr; background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:3px; margin-bottom:10px; }
+  .tabs button { padding:9px; border-radius:9px; font-size:14px; font-weight:700; color:var(--dim); }
+  .tabs button.on { background:var(--panel2); color:var(--txt); box-shadow:0 1px 0 #ffffff10 inset; }
+
+  .view { display:none; flex-direction:column; gap:10px; }
+  .view.on { display:flex; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; font-weight:700; }
+
+  #sc { display:none; text-align:center; font-weight:900; letter-spacing:.14em; padding:10px; border-radius:12px;
+        background:repeating-linear-gradient(-45deg,#3d2c06,#3d2c06 12px,#2e2105 12px,#2e2105 24px);
+        border:1px solid var(--warn); color:#ffd36b; animation:blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity:.65; } }
+
+  /* ---------- riquadro principale ---------- */
+  .hero { display:flex; align-items:stretch; gap:14px; position:relative; overflow:hidden;
+          background:linear-gradient(135deg,#1a0d0e 0%,var(--panel) 55%); }
+  .hero::after { content:""; position:absolute; right:-40px; top:-40px; width:140px; height:140px; border-radius:50%;
+                 background:radial-gradient(#e1060022,transparent 70%); }
+  .pos { font-size:64px; font-weight:900; line-height:.9; letter-spacing:-.03em; }
+  .pos small { font-size:20px; color:var(--dim); font-weight:700; letter-spacing:0; }
+  .hero .side { margin-left:auto; text-align:right; display:flex; flex-direction:column; justify-content:space-between; gap:6px; z-index:1; }
+  .hero .lap { font-size:15px; font-weight:700; }
+  .hero .lap span { color:var(--dim); font-weight:600; }
+  .delta { font-size:30px; font-weight:800; }
+  .delta.good { color:var(--good); } .delta.bad { color:var(--bad); }
+  .bigdelta { font-size:58px; font-weight:900; line-height:.95; letter-spacing:-.02em; }
+  .bigdelta.good { color:var(--good); } .bigdelta.bad { color:var(--bad); }
+  .invalid { display:none; color:var(--bad); font-size:12px; font-weight:800; letter-spacing:.08em; }
+  .times { font-size:14px; color:var(--dim); line-height:1.5; }
+  .times b { color:var(--txt); font-weight:700; }
+
+  /* ---------- barra del delta: verde a sinistra se sei più veloce, rossa a destra se più lento ---------- */
+  .dbar { position:relative; height:8px; border-radius:4px; background:#0c0e11; border:1px solid var(--line); overflow:hidden; margin-top:8px; }
+  .dbar::after { content:""; position:absolute; left:50%; top:-2px; bottom:-2px; width:2px; margin-left:-1px; background:#ffffff55; }
+  .dbar i { position:absolute; top:0; bottom:0; width:0; transition:width .12s linear, left .12s linear; }
+  .dbar i.good { background:linear-gradient(90deg,#22d36f,#0f8f47); }
+  .dbar i.bad { background:linear-gradient(90deg,#c1121f,#ff3b4e); }
+  .refown { font-size:12px; color:var(--dim); font-weight:700; margin-top:6px; }
+  .refown b { color:var(--warn); }
+
+  /* ---------- telemetria live ---------- */
+  .live { display:grid; grid-template-columns:44px 1fr 44px; align-items:stretch; gap:14px; padding:12px 14px; }
+  .pedal { position:relative; border-radius:10px; background:#0c0e11; border:1px solid var(--line); overflow:hidden; min-height:96px; }
+  .pedal i { position:absolute; left:0; right:0; bottom:0; height:0; transition:height .1s linear; }
+  .pedal.brk i { background:linear-gradient(0deg,#7a0b14,#ff3b4e); }
+  .pedal.thr i { background:linear-gradient(0deg,#0b5e2f,#22d36f); }
+  .pedal small { position:absolute; left:0; right:0; bottom:4px; text-align:center; font-size:9px; font-weight:800;
+                 letter-spacing:.08em; color:#ffffffcc; z-index:1; text-shadow:0 1px 2px #000; }
+  .core { display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; }
+  .core .gr { font-size:58px; font-weight:900; line-height:.9; letter-spacing:-.03em; }
+  .core .spd { font-size:22px; font-weight:800; color:var(--dim); }
+  .core .spd b { color:var(--txt); }
+  .core .ers { width:100%; max-width:180px; height:5px; border-radius:3px; background:#0c0e11; margin-top:10px; overflow:hidden; }
+  .core .ers i { display:block; height:100%; width:0; background:linear-gradient(90deg,#ffb020,#ffd36b); }
+  .core .erslbl { font-size:10px; color:var(--dim); font-weight:800; letter-spacing:.1em; margin-top:4px; }
+  .rpm { display:flex; gap:3px; margin-bottom:8px; }
+  .rpm i { width:10px; height:6px; border-radius:2px; background:#1b1f25; }
+  .rpm i.g { background:#22d36f; } .rpm i.r { background:#ff3b4e; } .rpm i.b { background:#3ea6ff; }
+
+  /* ---------- mini mappa ---------- */
+  #mm { width:100%; aspect-ratio:16/10; display:block; margin-top:6px; }
+  .mlegend { display:flex; gap:10px; font-size:11px; color:var(--dim); font-weight:700; }
+  .mlegend i { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+
+  /* ---------- assetto ---------- */
+  .setup { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  .sa { background:#0c0e11; border-left:3px solid var(--blue); border-radius:10px; padding:9px 11px; }
+  .sa b { display:block; font-size:12px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; }
+  .sa p { font-size:14px; margin-top:3px; line-height:1.35; }
+  .sa p span { color:var(--dim); }
+  select.inp { background:#0c0e11; border:1px solid var(--line); color:var(--txt); border-radius:12px; padding:11px; font-size:15px; width:100%; }
+  input[type=range] { width:100%; accent-color:var(--red); padding:0; border:0; background:none; }
+  .seg.two { grid-template-columns:1fr 1fr; }
+  .chk { display:flex !important; flex-direction:row !important; align-items:center; gap:10px; }
+  .chk input { flex:none; width:22px; height:22px; accent-color:var(--red); }
+
+  /* ---------- avversari ---------- */
+  .rivals { padding:6px 14px; }
+  .rv { display:grid; grid-template-columns:62px 1fr auto; align-items:center; gap:10px; padding:10px 0; }
+  .rv + .rv { border-top:1px solid var(--line); }
+  .rv .who { font-size:11px; font-weight:800; color:var(--dim); letter-spacing:.1em; }
+  .rv .nm { font-size:17px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:8px; min-width:0; }
+  .rv .nm span { overflow:hidden; text-overflow:ellipsis; }
+  .rv .gap { font-size:26px; font-weight:800; }
+  .rv .gap.hot { color:var(--bad); } .rv .gap.close { color:var(--good); }
+  .pill { font-size:11px; font-weight:800; padding:2px 7px; border-radius:20px; background:#ffb02022; color:var(--warn); flex:none; }
+
+  .comp { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; border:3px solid var(--c,#666);
+          font-size:10px; font-weight:900; color:var(--txt); flex:none; background:#0008; }
+
+  /* ---------- gomme e info ---------- */
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tyres { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; }
+  .ty { border-radius:10px; padding:7px 4px 6px; text-align:center; background:#1b1f25; position:relative; overflow:hidden; }
+  .ty b { display:block; font-size:18px; font-weight:800; }
+  .ty .w { display:block; height:4px; background:#0006; border-radius:2px; margin:5px 6px 0; overflow:hidden; }
+  .ty .w i { display:block; height:100%; width:0; background:var(--txt); }
+  .ty small { font-size:10px; color:var(--dim); }
+  .tyhead { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+  .tyhead span { font-size:13px; font-weight:700; }
+  .facts { display:flex; flex-direction:column; gap:9px; }
+  .fact { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .fact span { font-size:12px; color:var(--dim); font-weight:600; }
+  .fact b { font-size:16px; font-weight:800; text-align:right; }
+  .fact b.bad { color:var(--bad); } .fact b.good { color:var(--good); }
+  .rain { font-size:12px; color:var(--blue); font-weight:700; text-align:right; }
+
+  /* ---------- ultimo messaggio ---------- */
+  .radio { display:flex; gap:12px; align-items:flex-start; border-left:4px solid var(--red); }
+  .radio .ic { font-size:20px; line-height:1.2; }
+  .radio p { font-size:17px; line-height:1.35; font-weight:600; }
+  .radio small { display:block; color:var(--dim); font-size:11px; margin-top:4px; font-weight:600; }
+  .radio.avviso { border-color:var(--warn); } .radio.consiglio { border-color:var(--blue); } .radio.giro { border-color:var(--good); }
+
+  /* ---------- pulsanti microfono (fissi in basso) ---------- */
+  .dock { position:fixed; left:0; right:0; bottom:0; padding:8px 12px calc(10px + env(safe-area-inset-bottom));
+          background:linear-gradient(transparent,var(--bg) 22%); z-index:5; }
+  #mic { font-size:13px; text-align:center; color:var(--dim); min-height:20px; margin-bottom:6px; font-weight:600;
+         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #mic.live { color:var(--good); } #mic.live::before { content:"● "; animation:blink 1s infinite; }
+  #mic.armed { color:var(--blue); } #mic.sent { color:var(--txt); } #mic.err { color:var(--warn); white-space:normal; }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .btns button { height:62px; border-radius:16px; font-size:18px; font-weight:800; letter-spacing:.02em;
+                 display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid var(--line); background:var(--panel2); }
+  #ptt { background:linear-gradient(180deg,#f0140d,#b80500); border-color:#ff2a20; }
+  #ptt.rec { background:#5a1016; border-color:var(--bad); animation:blink 1s infinite; }
+  #listen.on { background:#0f2b1b; border-color:var(--good); color:#bff5d4; }
+  #listen.on.live { box-shadow:0 0 0 2px #22d36f55, 0 0 18px #22d36f33; }
+
+  /* ---------- dettagli ---------- */
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .stat b { display:block; font-size:22px; font-weight:800; margin-top:4px; }
+  .bars { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .bars div { height:8px; background:#1b1f25; border-radius:4px; overflow:hidden; }
   .bars i { display:block; height:100%; width:0; }
   #thr i { background:var(--good); } #brk i { background:var(--bad); }
-  #log { flex:1; min-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
-  .m { padding:8px 10px; border-radius:10px; background:var(--panel); border-left:3px solid var(--line); font-size:15px; line-height:1.35; }
-  .m.consiglio { border-color:#3aa0ff; } .m.avviso { border-color:var(--warn); }
-  .m.giro { border-color:var(--good); } .m.ingegnere { border-color:var(--accent); background:#1d1416; }
-  .m small { color:var(--dim); font-size:11px; display:block; }
-  .ask { display:flex; gap:8px; }
-  .heard { font-size:14px; color:var(--dim); min-height:20px; text-align:center; }
-  .heard.armed { color:#7fc3ff; font-weight:600; } .heard.sent { color:var(--good); } .heard.err { color:var(--warn); }
-  .mic { display:grid; grid-template-columns: 1.4fr 1fr; gap:8px; }
-  .mic button { padding:16px 12px; font-size:17px; }
-  #ptt.rec { background:#5a1d24; border-color:var(--bad); }
-  #listen.on { background:#173d27; border-color:var(--good); }
-  details summary { cursor:pointer; font-weight:600; font-size:14px; color:var(--dim); }
-  .set { display:flex; flex-direction:column; gap:10px; margin-top:10px; font-size:13px; color:var(--dim); }
-  .set p { line-height:1.4; } .set b { color:var(--txt); }
+  .seg { display:grid; grid-template-columns:repeat(3,1fr); background:#0c0e11; border:1px solid var(--line); border-radius:12px; padding:3px; margin-top:8px; }
+  .seg button { padding:10px; border-radius:9px; font-weight:700; color:var(--dim); font-size:14px; }
+  .seg button.on { background:var(--panel2); color:var(--txt); }
+  .hint { font-size:12px; color:var(--dim); margin-top:8px; line-height:1.4; }
+  .ask { display:flex; gap:8px; margin-top:8px; }
+  input { flex:1; min-width:0; background:#0c0e11; border:1px solid var(--line); color:var(--txt); border-radius:12px; padding:12px; font-size:16px; font-family:inherit; }
+  .btn { background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-weight:700; white-space:nowrap; }
+  .btn.red { background:var(--red); border-color:var(--red); }
+  .linkbtn { display:flex; align-items:center; justify-content:space-between; font-weight:700; }
+  #log { display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:50vh; overflow-y:auto; }
+  .m { padding:8px 10px; border-radius:10px; background:#0c0e11; border-left:3px solid var(--line); font-size:14px; line-height:1.35; }
+  .m.consiglio { border-color:var(--blue); } .m.avviso { border-color:var(--warn); } .m.giro { border-color:var(--good); }
+  .m.ingegnere, .m.gara { border-color:var(--red); } .m.info { border-color:var(--faint); color:var(--dim); }
+  .m small { color:var(--faint); font-size:11px; display:block; }
+  .set { display:flex; flex-direction:column; gap:10px; margin-top:8px; font-size:13px; color:var(--dim); }
   .set label { display:flex; flex-direction:column; gap:4px; }
-  .dim { color:var(--dim); font-size:13px; }
-  input { flex:1; min-width:0; background:var(--panel); border:1px solid var(--line); color:var(--txt);
-          border-radius:10px; padding:12px; font-size:16px; }
-  button { white-space:nowrap; background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px;
-           padding:12px 14px; font-size:15px; font-weight:600; }
-  button.primary { background:var(--accent); border-color:var(--accent); }
-  #voice.on { background:#173d27; border-color:var(--good); }
-  #invalid { color:var(--bad); font-weight:700; display:none; }
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-  .seg button { background:transparent; border:0; border-radius:0; color:var(--dim); padding:8px 10px; font-size:13px; }
-  .seg button.on { background:#232a32; color:var(--txt); }
-  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .bar a { color:var(--txt); text-decoration:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:13px; font-weight:600; }
-  #race { display:none; }
-  .rival { display:flex; justify-content:space-between; align-items:baseline; margin-top:6px; font-size:15px; }
-  .rival .who { color:var(--dim); font-size:12px; width:74px; flex:none; text-transform:uppercase; letter-spacing:.06em; }
-  .rival .nm { flex:1; font-weight:600; }
-  .rival .gp { font-size:20px; font-weight:700; }
-  .tag { font-size:11px; color:var(--dim); margin-left:6px; font-weight:500; }
-  #sc { display:none; background:#4d3a12; border:1px solid var(--warn); color:#ffd27a; text-align:center; font-weight:800; letter-spacing:.1em; border-radius:10px; padding:8px; }
-  .info { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--dim); margin-top:8px; }
-  .info b { color:var(--txt); font-weight:600; }
-  @media (orientation: landscape) and (min-width: 700px) {
-    body { display:grid; grid-template-columns: 1.1fr 1fr; grid-template-rows:auto 1fr auto; }
-    header { grid-column: 1 / 3; } #log { grid-row: 2 / 4; grid-column: 2; }
+  .set b { color:var(--txt); }
+
+  @media (orientation:landscape) and (min-width:700px) {
+    body { padding-bottom:10px; padding-right:calc(212px + env(safe-area-inset-right)); padding-top:max(8px,env(safe-area-inset-top)); }
+    .top { margin-bottom:6px; } .tabs { margin-bottom:8px; } .tabs button { padding:6px; }
+    .card { padding:10px 12px; }
+    #v-race.on { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start; grid-auto-flow:row dense; }
+    #sc, #hero-race, #hero-quali { grid-column:1 / 3; }
+    #rivals, #last, #live { grid-column:1; }
+    #minimap { grid-column:2; }
+    .live { padding:8px 12px; } .pedal { min-height:72px; } .core .gr { font-size:44px; }
+    #v-race .row2 { grid-column:2; gap:8px; }
+    .pos { font-size:46px; } .bigdelta { font-size:42px; } .delta { font-size:24px; }
+    .rv { padding:6px 0; } .rv .gap { font-size:22px; } .rv .nm { font-size:15px; }
+    .ty b { font-size:15px; } .tyres { margin-top:8px; }
+    .fact b { font-size:14px; } .radio p { font-size:15px; }
+    .dock { left:auto; top:0; width:200px; right:0; display:flex; flex-direction:column; justify-content:flex-end;
+            padding:10px 12px max(10px,env(safe-area-inset-bottom)) 0; background:none; }
+    .btns { grid-template-columns:1fr; } .btns button { height:96px; font-size:20px; }
+    #mic { white-space:normal; }
   }
 </style>
 </head>
 <body>
-<header>
-  <div class="dot" id="dot" title="telemetria"></div>
-  <h1><b>F1</b> Ingegnere</h1>
-  <div id="track">in attesa della PS5…</div>
-  <button id="voice">🔇 Attiva voce</button>
-</header>
 
-<div class="bar">
-  <span class="lbl">Ingegnere parla</span>
-  <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
-  <a href="/analisi">📈 Analisi giri</a>
+<div class="top">
+  <div class="brand"><i></i><div>
+    <b id="track">Ingegnere di pista</b>
+    <small><span class="dot" id="dot"></span><span id="sess">in attesa della PS5…</span></small>
+  </div></div>
+  <button class="icon" id="voice" title="Voce">🔇</button>
+  <a class="icon" href="/analisi" title="Analisi giri">📈</a>
 </div>
-<div id="sc">SAFETY CAR</div>
 
-<div class="main">
-  <div class="grid">
-    <div class="card" style="grid-column:1/3">
-      <div class="lbl">Delta sul giro migliore <span id="invalid">· GIRO NON VALIDO</span></div>
-      <div id="delta" class="mono">--.--</div>
-      <div class="bars"><div id="thr"><i></i></div><div id="brk"><i></i></div></div>
+<div class="tabs" id="tabs"><button data-v="race" class="on">In pista</button><button data-v="more">Dettagli</button></div>
+
+<!-- =============== IN PISTA =============== -->
+<div class="view on" id="v-race">
+  <div id="sc" class="wide">SAFETY CAR</div>
+
+  <div class="card hero wide" id="hero-race">
+    <div>
+      <div class="lbl">Posizione</div>
+      <div class="pos num" id="pos">P–<small></small></div>
     </div>
+    <div class="side">
+      <div class="lap num" id="lapinfo"><span>Giro</span> –</div>
+      <div>
+        <div class="invalid" id="inv1">GIRO NON VALIDO</div>
+        <div class="delta num" id="delta1">–</div>
+      </div>
+      <div class="dbar" id="dbar1"><i></i></div>
+    </div>
+  </div>
+
+  <div class="card hero wide" id="hero-quali" style="display:none">
+    <div>
+      <div class="lbl">Delta sul migliore</div>
+      <div class="bigdelta num" id="delta2">–.––</div>
+      <div class="invalid" id="inv2">GIRO NON VALIDO</div>
+      <div class="dbar" id="dbar2" style="width:100%;min-width:150px"><i></i></div>
+      <div class="refown" id="refown"></div>
+    </div>
+    <div class="side times num">
+      <div>Giro <b id="lapq">–</b></div>
+      <div>Ultimo <b id="lastq">–</b></div>
+      <div>Migliore <b id="bestq">–</b></div>
+    </div>
+  </div>
+
+  <div class="card rivals" id="rivals">
+    <div class="rv"><span class="who">DAVANTI</span><span class="nm" id="ahn">–</span><span class="gap num" id="ahg">–</span></div>
+    <div class="rv"><span class="who">DIETRO</span><span class="nm" id="bhn">–</span><span class="gap num" id="bhg">–</span></div>
+  </div>
+
+  <div class="card live" id="live">
+    <div class="pedal brk"><i id="pbrk"></i><small>FRENO</small></div>
+    <div class="core">
+      <div class="rpm" id="rpm"></div>
+      <div class="gr num" id="lgear">–</div>
+      <div class="spd num"><b id="lspd">–</b> km/h</div>
+      <div class="ers"><i id="lers"></i></div>
+      <div class="erslbl">ERS</div>
+    </div>
+    <div class="pedal thr"><i id="pthr"></i><small>GAS</small></div>
+  </div>
+
+  <div class="card" id="minimap">
+    <div class="tyhead"><span class="lbl">Mappa live</span>
+      <span class="mlegend"><span><i style="background:#fff"></i>Tu</span><span id="mlA"><i style="background:var(--warn)"></i>Davanti</span><span id="mlB"><i style="background:var(--blue)"></i>Dietro</span></span></div>
+    <canvas id="mm"></canvas>
+  </div>
+
+  <div class="row2">
     <div class="card">
-      <div class="lbl">Giro <span id="lapn">-</span> · P<span id="pos">-</span></div>
-      <div class="big mono" id="cur">--:--.---</div>
-      <div class="row"><span>Ultimo</span><span class="mono" id="last">--:--.---</span></div>
-      <div class="row"><span>Migliore</span><span class="mono" id="best">--:--.---</span></div>
-    </div>
-    <div class="card">
-      <div class="lbl">Auto</div>
-      <div class="big mono" style="display:flex;justify-content:space-between"><span><span id="spd">0</span><small style="font-size:12px;color:var(--dim)"> km/h</small></span><span id="gear">N</span></div>
-      <div class="row"><span>Carburante</span><span class="mono" id="fuel">-</span></div>
-      <div class="row"><span>ERS</span><span class="mono" id="ers">-</span></div>
-    </div>
-    <div class="card" style="grid-column:1/3">
-      <div class="lbl">Gomme <span id="comp"></span> · temperatura / usura</div>
+      <div class="tyhead"><span class="lbl">Gomme</span><span id="comp"></span></div>
       <div class="tyres">
-        <div class="tyre" id="t2"><b>-</b><span>-</span></div><div class="tyre" id="t3"><b>-</b><span>-</span></div>
-        <div class="tyre" id="t0"><b>-</b><span>-</span></div><div class="tyre" id="t1"><b>-</b><span>-</span></div>
+        <div class="ty" id="t2"><b>–</b><span class="w"><i></i></span><small>–</small></div>
+        <div class="ty" id="t3"><b>–</b><span class="w"><i></i></span><small>–</small></div>
+        <div class="ty" id="t0"><b>–</b><span class="w"><i></i></span><small>–</small></div>
+        <div class="ty" id="t1"><b>–</b><span class="w"><i></i></span><small>–</small></div>
       </div>
     </div>
-    <div class="card" id="race" style="grid-column:1/3">
-      <div class="lbl">Gara · <span id="rpos">P-</span> · <span id="rlaps">-</span></div>
-      <div class="rival"><span class="who">Davanti</span><span class="nm" id="ahn">-</span><span class="gp mono" id="ahg">-</span></div>
-      <div class="rival"><span class="who">Dietro</span><span class="nm" id="bhn">-</span><span class="gp mono" id="bhg">-</span></div>
-      <div class="info"><span>Meteo <b id="wx">-</b></span><span id="rain"></span><span>Finestra pit <b id="pitw">-</b></span><span>Soste <b id="stops">0</b></span></div>
+    <div class="card facts">
+      <div class="fact"><span>Carburante</span><b class="num" id="fuel">–</b></div>
+      <div class="fact"><span>ERS</span><b class="num" id="ers">–</b></div>
+      <div class="fact" id="pitrow"><span>Box</span><b class="num" id="pitw">–</b></div>
+      <div class="fact"><span>Meteo</span><b id="wx">–</b></div>
+      <div class="rain" id="rain"></div>
     </div>
-    <div class="card" id="wxcard" style="grid-column:1/3;display:none">
-      <div class="info" style="margin-top:0"><span>Meteo <b id="wx2">-</b></span><span id="rain2"></span><span>Pista <b id="ttemp">-</b></span></div>
-    </div>
+  </div>
+
+  <div class="card radio" id="last">
+    <span class="ic">📻</span>
+    <div><p id="lastmsg">Ciao! Quando sei in pista ti parlo qui.</p><small id="lastts"></small></div>
   </div>
 </div>
 
-<div id="log"></div>
-
-<div id="heard" class="heard"></div>
-<div class="mic">
-  <button id="ptt" class="primary">🎙️ Parla</button>
-  <button id="listen">👂 Radio: off</button>
-</div>
-<div class="ask">
-  <input id="q" placeholder="Scrivi una domanda…" enterkeyhint="send">
-  <button id="send">Chiedi</button>
-  <button id="debrief" title="Debrief">📋</button>
-</div>
-<details class="card" id="settings">
-  <summary>⚙️ Impostazioni ingegnere</summary>
-  <div class="set">
-    <p>Le domande tipiche (box, rientro, meteo, gomme, distacchi, carburante) hanno sempre una risposta gratuita.
-       Per le <b>domande libere</b> serve una chiave AI: <b>Gemini</b> ha un piano gratuito
-       (crea la chiave su aistudio.google.com → Get API key).</p>
-    <label>Chiave Gemini <input id="gkey" placeholder="incolla qui la chiave" autocomplete="off"></label>
-    <label>Chiave Claude (facoltativa, a pagamento) <input id="akey" placeholder="sk-ant-…" autocomplete="off"></label>
-    <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1"></label>
-    <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="primary">Salva</button><span id="setinfo" class="dim"></span></div>
-    <p id="gamehint"></p>
-    <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="color:var(--txt)">Esci</a></p>
+<!-- =============== DETTAGLI =============== -->
+<div class="view" id="v-more">
+  <div class="card">
+    <div class="lbl">Tempi</div>
+    <div class="grid3" style="margin-top:6px">
+      <div class="stat"><span class="lbl">Attuale</span><b class="num" id="cur">–</b></div>
+      <div class="stat"><span class="lbl">Ultimo</span><b class="num" id="lastt">–</b></div>
+      <div class="stat"><span class="lbl">Migliore</span><b class="num" id="best">–</b></div>
+    </div>
   </div>
-</details>
+  <div class="card">
+    <div class="grid3">
+      <div class="stat"><span class="lbl">Velocità</span><b class="num" id="spd">–</b></div>
+      <div class="stat"><span class="lbl">Marcia</span><b class="num" id="gear">–</b></div>
+      <div class="stat"><span class="lbl">Ala ant.</span><b class="num" id="wing">–</b></div>
+    </div>
+    <div class="bars"><div id="thr"><i></i></div><div id="brk"><i></i></div></div>
+  </div>
+
+  <div class="card" id="setupcard">
+    <div class="lbl">🔧 Assetto</div>
+    <div class="setup" id="setup"><div class="hint">Fai almeno 2 giri completi con lo stesso assetto: qui ti dico cosa cambiare.</div></div>
+    <div class="hint">Calcolato da quanto scivolano le gomme anteriori e posteriori in curva, dai bloccaggi e dalle temperature.
+      Si azzera quando torni nel garage. Sono indicazioni: cambia una cosa alla volta e riprova.</div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">Quanto parla l'ingegnere</div>
+    <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
+    <div class="hint">Poco: solo cose importanti. Normale: anche i distacchi a ogni giro. Tanto: anche consigli di guida in gara.</div>
+    <label class="chk" style="margin-top:10px;font-size:14px"><input type="checkbox" id="quiet">
+      <span>Non parlare in curva: aspetta il rettilineo (i messaggi compaiono subito scritti)</span></label>
+  </div>
+
+  <div class="card" id="voicecard">
+    <div class="lbl">🔊 Voce dell'ingegnere</div>
+    <div class="seg two" id="vmode"><button data-m="dev" class="on">Voce del telefono</button><button data-m="ai">Voce AI (Gemini)</button></div>
+    <div class="set" id="vdev">
+      <label>Voce <select class="inp" id="vsel"></select></label>
+      <label>Velocità <b id="vrateL"></b><input type="range" id="vrate" min="0.8" max="1.5" step="0.05"></label>
+      <label>Tono <b id="vpitchL"></b><input type="range" id="vpitch" min="0.7" max="1.4" step="0.05"></label>
+      <p>L'ingegnere cambia tono da solo: più deciso e veloce per box, safety car e penalità, più acceso per sorpassi
+         e giri migliori, più calmo per i consigli. Nomi dei piloti, piste e parole inglesi hanno la pronuncia corretta.</p>
+      <p><b>Per una voce molto migliore</b> scarica una voce italiana di qualità. iPhone: Impostazioni → Accessibilità →
+         Contenuti letti → Voci → Italiano, scegli una voce "Migliorata" o "Premium". Android: nelle impostazioni cerca
+         "Sintesi vocale", motore Google, e scarica la voce italiana. Poi ricarica questa pagina: le voci migliori hanno ★.</p>
+    </div>
+    <div class="set" id="vai" style="display:none">
+      <label>Voce AI <select class="inp" id="aisel"></select></label>
+      <p id="aihint">Voce naturale ed espressiva, con pronuncia corretta. Usa la chiave Gemini delle Impostazioni (piano gratuito).
+         Se la voce AI non è pronta in tempo o finisce la quota gratuita, parla il telefono.</p>
+    </div>
+    <label class="chk" style="margin-top:10px;font-size:14px"><input type="checkbox" id="radiofx">
+      <span>Effetto radio di squadra: bip prima e dopo ogni messaggio (con la voce AI anche il suono della radio)</span></label>
+    <div class="ask"><button class="btn" id="vtest" style="flex:1">▶ Prova la voce</button></div>
+    <div class="hint" id="ainote"></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">Scrivi all'ingegnere</div>
+    <div class="ask">
+      <input id="q" placeholder="Es. mi fermo ai box?" enterkeyhint="send">
+      <button class="btn red" id="send">Chiedi</button>
+    </div>
+    <div class="ask"><button class="btn" id="debrief" style="flex:1">📋 Debrief della sessione</button></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">Tutti i messaggi</div>
+    <div id="log"></div>
+  </div>
+
+  <a class="card linkbtn" href="/analisi"><span>📈 Analisi dei giri</span><span>›</span></a>
+
+  <div class="card" id="reccard">
+    <div class="lbl">⏺ Registra la sessione</div>
+    <div class="hint">Salva tutti i dati che manda la PS5, così come arrivano. Poi scarichi il file e lo puoi mandare:
+      serve a rivedere la sessione identica e a correggere quello che non va. Con la telemetria a 20 Hz una gara di
+      mezz'ora pesa circa 50–100 MB. Si ferma da sola dopo 90 minuti.</div>
+    <div class="ask"><button class="btn red" id="recbtn" style="flex:1">⏺ Inizia a registrare</button></div>
+    <div class="hint" id="recstat"></div>
+    <div id="reclist" class="setup"></div>
+  </div>
+
+  <details class="card" id="settings">
+    <summary class="linkbtn"><span>⚙️ Impostazioni</span><span>›</span></summary>
+    <div class="set">
+      <p>Le domande tipiche (box, rientro, meteo, gomme, distacchi, carburante) hanno sempre una risposta gratuita.
+         Per le <b>domande libere</b> serve una chiave AI: <b>Gemini</b> ha un piano gratuito (aistudio.google.com → Get API key).</p>
+      <label>Chiave Gemini <input id="gkey" placeholder="incolla qui la chiave" autocomplete="off"></label>
+      <label>Chiave Claude (facoltativa, a pagamento) <input id="akey" placeholder="sk-ant-…" autocomplete="off"></label>
+      <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1"></label>
+      <label class="chk" id="sharerow" style="display:none"><input type="checkbox" id="share">
+        <span>Condividi i miei giri migliori con gli altri utenti del server (per il confronto in Analisi)</span></label>
+      <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="btn red">Salva</button><span id="setinfo"></span></div>
+      <p id="gamehint"></p>
+      <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="text-decoration:underline">Esci</a></p>
+    </div>
+  </details>
+</div>
+
+<!-- =============== PULSANTI =============== -->
+<div class="dock">
+  <div id="mic"></div>
+  <div class="btns">
+    <button id="ptt">🎙️ Parla</button>
+    <button id="listen">📻 Radio</button>
+  </div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
-const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000); return m + ":" + ((ms%60000)/1000).toFixed(3).padStart(6,"0"); };
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
+const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+// ---------- schede ----------
+$("tabs").onclick = e => {
+  const v = e.target.dataset.v; if (!v) return;
+  for (const b of $("tabs").children) b.classList.toggle("on", b === e.target);
+  $("v-race").classList.toggle("on", v === "race"); $("v-more").classList.toggle("on", v === "more");
+};
 
 // ---------- voce (sintesi) ----------
 // I browser bloccano l'audio finché non tocchi la pagina: la voce resta "attiva"
 // (memorizzato sul telefono) e si sblocca da sola al primo tocco in un punto qualsiasi.
-const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
-                set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+// Due voci: quella del telefono (con scelta della voce, velocità, tono, enfasi e dizionario
+// di pronuncia) oppure la voce AI di Gemini, più naturale. Se la voce AI non è pronta in
+// tempo, o finisce la quota gratuita, parla il telefono: l'ingegnere non resta mai muto.
 let voiceWanted = store.get("voce", "on") === "on", voiceUnlocked = false, itVoice = null, speakQ = [], lastSpokeEnd = 0;
+let devVoices = [];
+const vcfg = { name: store.get("voce_nome", ""), rate: +store.get("voce_vel", "1.1"), pitch: +store.get("voce_tono", "1") };
+let aiVoice = false, aiName = "", aiPauseUntil = 0, aiNote = "";
+const audioEl = new Audio(); audioEl.preload = "auto";
+let audioPlaying = false;
+const voiceScore = v => (/enhanced|premium|migliorat|neural|natural|online|siri/i.test(v.name) ? 3 : 0) +
+                        (/google/i.test(v.name) ? 1 : 0) + (v.lang === "it-IT" ? 1 : 0) + (v.localService === false ? 1 : 0);
 function pickVoice() {
-  const vs = speechSynthesis.getVoices();
-  itVoice = vs.find(v => v.lang === "it-IT" && /Alice|Federica|Luca|Google/i.test(v.name)) || vs.find(v => v.lang.startsWith("it")) || null;
+  devVoices = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().replace("_", "-").startsWith("it"))
+    .sort((a, b) => voiceScore(b) - voiceScore(a));
+  itVoice = devVoices.find(v => v.name === vcfg.name) || devVoices[0] || null;
+  if (typeof fillVoiceUI === "function") fillVoiceUI();
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 const voiceOn = () => voiceWanted && voiceUnlocked;
-function speaking() { return ("speechSynthesis" in window && speechSynthesis.speaking) || Date.now() - lastSpokeEnd < 700; }
-function say(text, prio) {
+function speaking() {
+  return ("speechSynthesis" in window && speechSynthesis.speaking) || audioPlaying || Date.now() - lastSpokeEnd < 700;
+}
+function stopSpeech() {
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  try { audioEl.pause(); } catch (e) {}
+  audioPlaying = false; speakQ = [];
+}
+
+// enfasi: lo stesso criterio della voce AI (voce_ai.py)
+const EXCITED = /bel sorpasso|giro migliore|battuto|bandiera a scacchi|bella gara|guadagni|nuovo riferimento/i;
+const URGENT = /box, box|safety car|bandiera rossa|penalit|drive through|stop and go|squalific|dentro il secondo|pioggia|piovere|danneggiat|surriscald|ultimo giro|attenzione/i;
+function styleOf(text, prio, kind) {
+  if (EXCITED.test(text)) return "entusiasta";
+  if ((prio >= 2 && URGENT.test(text)) || (kind === "avviso" && prio >= 2)) return "urgente";
+  if (["consiglio", "assetto", "ingegnere"].includes(kind)) return "calmo";
+  return "normale";
+}
+const PROSODY = { urgente: { rate: 1.12, pitch: 1.07 }, entusiasta: { rate: 1.06, pitch: 1.15 },
+                  calmo: { rate: 0.96, pitch: 0.98 }, normale: { rate: 1.0, pitch: 1.03 } };
+
+// pronuncia per la voce del telefono: accenti e parole inglesi scritti come si dicono
+const PRONUNCIA = [
+  [/\bvirtual safety car\b/gi, "vìrciual séifti car"], [/\bsafety car\b/gi, "séifti car"],
+  [/\bdrive through\b/gi, "dràiv tru"], [/\bstop and go\b/gi, "stop end gou"], [/\bpit lane\b/gi, "pit lein"],
+  // parole italiane che la voce del telefono accentua male: nei messaggi sono sempre il verbo / l'avverbio
+  [/\bvaluta\b/g, "vàluta"], [/\bValuta\b/g, "Vàluta"], [/\bancora\b/g, "ancòra"], [/\bAncora\b/g, "Ancòra"],
+  [/\bundercut\b/gi, "àndercat"], [/\bovercut\b/gi, "òvercat"],
+  [/\bDRS\b/g, "di erre esse"], [/\bERS\b/g, "e erre esse"], [/\bsoft\b/gi, "sòft"], [/\bdebrief\b/gi, "dibrìf"],
+  [/\bVerstappen\b/gi, "Verstàppen"], [/\bLeclerc\b/gi, "Leclèr"], [/\bHamilton\b/gi, "Hèmilton"],
+  [/\bRussell\b/gi, "Ràssel"], [/\bNorris\b/gi, "Nòrris"], [/\bPiastri\b/gi, "Piàstri"], [/\bSainz\b/gi, "Sàinz"],
+  [/\bAlonso\b/gi, "Alónso"], [/\bStroll\b/gi, "Stròl"], [/\bGasly\b/gi, "Gaslì"], [/\bOcon\b/gi, "Ocòn"],
+  [/\bAlbon\b/gi, "Albòn"], [/\bH[uü]lkenberg\b/gi, "Hùlkenberg"], [/\bTsunoda\b/gi, "Tsunòda"],
+  [/\bLawson\b/gi, "Lòson"], [/\bBearman\b/gi, "Bìrman"], [/\bHadjar\b/gi, "Agiàr"], [/\bBortoleto\b/gi, "Bortolèto"],
+  [/\bColapinto\b/gi, "Colapìnto"], [/\bDoohan\b/gi, "Dùan"], [/\bBottas\b/gi, "Bòttas"], [/\bP[eé]rez\b/gi, "Pèrez"],
+  [/\bMagnussen\b/gi, "Màgnussen"], [/\bRicciardo\b/gi, "Ricciàrdo"], [/\bZhou\b/gi, "Giòu"],
+  [/\bImola\b/gi, "Ìmola"], [/\bSilverstone\b/gi, "Sìlverston"], [/\bZandvoort\b/gi, "Zàndvort"], [/\bJeddah\b/gi, "Gèdda"],
+  [/\bBaku\b/gi, "Bakù"], [/\bLosail\b/gi, "Losàil"], [/\bShanghai\b/gi, "Sciangài"], [/\bHungaroring\b/gi, "Ungaroring"],
+  [/\bInterlagos\b/gi, "Interlàgos"], [/\bMelbourne\b/gi, "Mèlburn"], [/\bMiami\b/gi, "Maiàmi"], [/\bAustin\b/gi, "Òstin"],
+  [/\bMontreal\b/gi, "Montreàl"], [/\bBahrain\b/gi, "Bahrèin"], [/\bAbu Dhabi\b/gi, "Abu Dàbi"], [/\bMonaco\b/gi, "Mònaco"],
+  [/\bLas Vegas\b/gi, "Las Vègas"], [/\bP(\d{1,2})\b/g, "P $1"],
+];
+const pronounce = t => PRONUNCIA.reduce((acc, [re, to]) => acc.replace(re, to), t);
+
+function say(text, prio, kind) {
   if (!voiceOn()) return;
   if (prio >= 2) speakQ = speakQ.filter(x => x.prio >= 2);
-  speakQ.push({text, prio, t: Date.now()});
+  const it = { text, prio, kind: kind || "", t: Date.now(), style: styleOf(text, prio, kind || "") };
+  // la voce AI la prepara subito, mentre aspetta il rettilineo ("Dimmi" no: deve essere immediato)
+  if (aiVoice && Date.now() > aiPauseUntil && it.kind !== "dimmi") fetchAI(it);
+  speakQ.push(it);
   pump();
 }
+function fetchAI(it, voiceName) {
+  it.ai = "pending";
+  return fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ text: it.text, kind: it.kind, prio: it.prio, style: it.style, voice: voiceName || aiName }) })
+    .then(async r => {
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "errore"); }
+      it.url = URL.createObjectURL(await r.blob()); it.ai = "ready"; aiNote = ""; showAiNote();
+    })
+    .catch(e => {
+      it.ai = "failed";
+      if (/quota|limite/i.test(e.message)) {
+        aiPauseUntil = Date.now() + (/giorno/i.test(e.message) ? 1800000 : 60000);
+        aiNote = "Voce AI in pausa (" + e.message + "): per ora parla il telefono.";
+      }
+      else aiNote = "Voce AI non disponibile (" + e.message + "): parla il telefono.";
+      showAiNote();
+    })
+    .finally(() => pump());
+}
+function speakDevice(it, done) {
+  const base = PROSODY[it.style] || PROSODY.normale;
+  const parts = pronounce(it.text).split(/(?<=[.!?])\s+/).filter(Boolean);
+  let left = parts.length;
+  parts.forEach((p, i) => {
+    const u = new SpeechSynthesisUtterance(p);
+    u.lang = "it-IT"; if (itVoice) u.voice = itVoice;
+    // la prima frase di un messaggio urgente ancora più decisa
+    const boost = it.style === "urgente" && i === 0 ? 1.04 : 1;
+    u.rate = Math.min(2, vcfg.rate * base.rate * boost);
+    u.pitch = Math.min(2, vcfg.pitch * base.pitch * boost);
+    u.onend = u.onerror = () => { if (--left <= 0) done(); };
+    speechSynthesis.speak(u);
+  });
+  if (!parts.length) done();
+}
+function playAudio(it, done) {
+  audioPlaying = true;
+  audioEl.src = it.url;
+  const end = () => { audioEl.onended = audioEl.onerror = null; audioPlaying = false; URL.revokeObjectURL(it.url); done(); };
+  audioEl.onended = audioEl.onerror = end;
+  audioEl.play().catch(() => { audioEl.onended = audioEl.onerror = null; audioPlaying = false; speakDevice(it, done); });
+}
+// ---------- niente voce in curva ----------
+// Come un vero ingegnere: aspetta il rettilineo. Il server dice se sei in curva e quanti secondi
+// mancano alla prossima frenata; una frase parte solo se c'è il tempo di dirla prima della curva.
+// Se il rettilineo buono non arriva, dopo un po' la dice comunque appena esci da una curva.
+let quietCorners = store.get("zitto_in_curva", "on") === "on";
+let inCorner = false, straightS = null, pumpTimer = 0;
+// ---------- effetto radio di squadra ----------
+// Bip di apertura e chiusura (con un po' di fruscio) attorno a ogni messaggio, e la voce AI
+// filtrata come una radio vera (banda stretta, leggermente saturata). La voce del telefono
+// non si può filtrare (il browser non lo permette), ma ha comunque i bip.
+let radioFx = store.get("radio_fx", "on") === "on";
+let actx = null, mediaSrc = null, fxIn = null;
+function audioCtx() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
+  if (actx && actx.state !== "running") actx.resume().catch(() => {});
+  return actx;
+}
+function beep(kind) {          // "in" all'inizio, "out" alla fine: restituisce quanti ms dura
+  const ctx = radioFx ? audioCtx() : null;
+  if (!ctx || ctx.state !== "running") return 0;
+  const t = ctx.currentTime + 0.01, out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+  const tones = kind === "in" ? [[1150, 0, 0.06], [1550, 0.075, 0.07]] : [[1550, 0, 0.05], [1150, 0.065, 0.08]];
+  for (const [f, st, du] of tones) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t + st); g.gain.exponentialRampToValueAtTime(0.09, t + st + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + st + du);
+    o.connect(g).connect(out); o.start(t + st); o.stop(t + st + du + 0.02);
+  }
+  const len = Math.round(0.1 * ctx.sampleRate), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const ns = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+  ns.buffer = buf; bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 0.8; ng.gain.value = 0.06;
+  ns.connect(bp).connect(ng).connect(out); ns.start(t + (kind === "in" ? 0.15 : 0.15));
+  return 270;
+}
+function routeAudio() {
+  // la voce AI passa dal filtro radio solo se l'effetto è acceso e l'audio del browser è attivo
+  const ctx = actx;
+  if (!ctx) return;
+  if (mediaSrc && ctx.state !== "running") ctx.resume().catch(() => {});   // l'audio passa dal filtro: deve essere attivo
+  if (ctx.state !== "running" || (!mediaSrc && !radioFx)) return;          // senza effetto non tocco l'audio
+  if (!mediaSrc) {
+    try { mediaSrc = ctx.createMediaElementSource(audioEl); } catch (e) { return; }
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 380;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3300;
+    const pk = ctx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 1900; pk.gain.value = 5; pk.Q.value = 0.9;
+    const sh = ctx.createWaveShaper(), curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
+    sh.curve = curve;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -24; comp.ratio.value = 6;
+    const g = ctx.createGain(); g.gain.value = 1.15;
+    hp.connect(lp).connect(pk).connect(sh).connect(comp).connect(g).connect(ctx.destination);
+    fxIn = hp;
+  }
+  mediaSrc.disconnect();
+  mediaSrc.connect(radioFx ? fxIn : ctx.destination);
+}
+function withRadio(it, done) {
+  // bip di apertura → messaggio → bip di chiusura
+  const start = () => {
+    const after = () => { const ms = beep("out"); setTimeout(done, ms); };
+    if (it.ai === "ready") { routeAudio(); playAudio(it, after); } else speakDevice(it, after);
+  };
+  const ms = beep("in");
+  ms ? setTimeout(start, ms) : start();
+}
+
+const speechSecs = t => t.length / (15 * vcfg.rate / 1.1) + 0.4 + (radioFx ? 0.6 : 0);   // circa 15 caratteri al secondo alla velocità 1,1
+function canSpeakNow(it) {
+  if (!quietCorners) return true;
+  if (inCorner) return false;
+  const waited = (Date.now() - it.t) / 1000;
+  if (waited > (it.prio >= 2 ? 6 : 10)) return true;     // aspetta già da un po': basta essere fuori dalla curva
+  if (straightS == null) return true;                     // senza riferimento: basta essere fuori dalla curva
+  return straightS >= Math.min(speechSecs(it.text), 4);
+}
 function pump() {
-  if (speechSynthesis.speaking || !speakQ.length) return;
-  const it = speakQ.shift();
-  if (Date.now() - it.t > 8000) return pump();   // avviso vecchio: ormai inutile
-  const u = new SpeechSynthesisUtterance(it.text);
-  u.lang = "it-IT"; if (itVoice) u.voice = itVoice; u.rate = 1.1;
-  u.onend = u.onerror = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
-  speechSynthesis.speak(u);
+  clearTimeout(pumpTimer);
+  if (speechSynthesis.speaking || audioPlaying || !speakQ.length) return;
+  const it = speakQ[0];
+  const maxAge = quietCorners ? (it.prio >= 2 ? 20000 : 25000) : 8000;
+  if (Date.now() - it.t > maxAge) { speakQ.shift(); return pump(); }   // avviso vecchio: ormai inutile
+  if (!canSpeakNow(it)) { pumpTimer = setTimeout(pump, 120); return; }
+  // voce AI in preparazione: la aspetto al massimo 4 secondi dall'arrivo del messaggio
+  if (it.ai === "pending" && Date.now() - it.t < 4000) { pumpTimer = setTimeout(pump, 120); return; }
+  speakQ.shift();
+  const done = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
+  withRadio(it, done);
 }
 let wakeLock = null;
 async function keepAwake() {
@@ -200,9 +646,14 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function unlockVoice(greet) {
   if (voiceUnlocked) return;
   voiceUnlocked = true;
+  audioCtx();                    // l'audio del browser si attiva solo con un tocco
   speechSynthesis.cancel();
+  // sblocca anche l'audio della voce AI (iPhone: serve un tocco), con un audio muto brevissimo
+  audioEl.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+  audioEl.play().catch(() => {});
   const u = new SpeechSynthesisUtterance(greet ? "Ingegnere collegato." : " ");
   u.lang = "it-IT"; if (itVoice) u.voice = itVoice; if (!greet) u.volume = 0;
+  u.rate = vcfg.rate; u.pitch = vcfg.pitch;
   speechSynthesis.speak(u);
   keepAwake();
   showVoice();
@@ -210,7 +661,8 @@ function unlockVoice(greet) {
 function showVoice() {
   const b = $("voice");
   b.classList.toggle("on", voiceOn());
-  b.textContent = !voiceWanted ? "🔇 Voce spenta" : voiceUnlocked ? "🔊 Voce attiva" : "👆 Tocca per la voce";
+  b.textContent = !voiceWanted ? "🔇" : voiceUnlocked ? "🔊" : "👆";
+  b.title = !voiceWanted ? "Voce spenta" : voiceUnlocked ? "Voce attiva" : "Tocca per attivare la voce";
 }
 ["pointerdown", "keydown"].forEach(ev => document.addEventListener(ev, e => {
   if (voiceWanted && !voiceUnlocked && e.target.id !== "voice") unlockVoice(true);
@@ -219,187 +671,446 @@ $("voice").onclick = () => {
   if (voiceWanted && !voiceUnlocked) { unlockVoice(true); return; }
   voiceWanted = !voiceWanted;
   store.set("voce", voiceWanted ? "on" : "off");
-  if (voiceWanted) unlockVoice(true); else { speechSynthesis.cancel(); speakQ = []; }
+  if (voiceWanted) unlockVoice(true); else stopSpeech();
   showVoice();
 };
 showVoice();
 
 // ---------- microfono: pulsante "Parla" e parola "Radio" ----------
-// L'ascolto "Radio" lavora a frasi singole che ripartono da sole: è più affidabile
-// dell'ascolto continuo sia su Chrome Android sia su Safari iPhone/iPad.
+// "Radio" ascolta a frasi brevi che ripartono da sole. Lo stato del microfono è
+// sempre scritto sopra i pulsanti, così si vede subito se l'ascolto è davvero partito.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const micOk = !!SR && window.isSecureContext;
-let rec = null, recMode = null, listenWanted = store.get("ascolto", "off") === "on", armedUntil = 0, restartTimer = 0, failStreak = 0;
+let rec = null, recMode = null, listening = false, startGuard = 0;
+let listenWanted = store.get("ascolto", "off") === "on", armedUntil = 0, restartTimer = 0, failStreak = 0, lastErr = "";
 function micHint() {
-  if (!SR) return "Questo browser non supporta il riconoscimento vocale: usa Chrome su Android o Safari su iPhone/iPad.";
-  if (!window.isSecureContext) return "Il microfono funziona solo sulla pagina https: ricarica la pagina, dovrebbe passarci da sola.";
+  if (!SR) return "Questo browser non ha il riconoscimento vocale: usa Chrome su Android o Safari su iPhone.";
+  if (!window.isSecureContext)
+    return location.hostname.startsWith("192.") || location.hostname.startsWith("10.")
+      ? "Microfono bloccato su questo indirizzo: sul telefono del server apri 127.0.0.1:8080."
+      : "Il microfono funziona solo sulla pagina https.";
   return "";
 }
-function heard(text, cls) {
-  const el = $("heard");
-  el.textContent = text; el.className = "heard " + (cls || "");
+let micTimer = 0;
+function mic(text, cls, ms) {
+  const el = $("mic");
+  el.textContent = text; el.className = cls || "";
+  clearTimeout(micTimer);
+  if (ms) micTimer = setTimeout(idleMic, ms);
+}
+function idleMic() {
+  if (recMode === "ptt") return;
+  if (listenWanted && listening) mic("In ascolto · di' “Radio” e la domanda", "live");
+  else if (listenWanted && rec) mic("Avvio microfono…", "");
+  else if (listenWanted) mic(lastErr ? "Radio ferma: " + lastErr + ". Tocca Radio per riprovare." : "Radio in pausa · tocca lo schermo", "err");
+  else mic("");
 }
 function setMicUI() {
   $("listen").classList.toggle("on", listenWanted && micOk);
-  $("listen").textContent = listenWanted && micOk ? "👂 Ascolto “Radio”" : "👂 Radio: off";
+  $("listen").classList.toggle("live", listenWanted && listening && recMode === "wake");
+  $("listen").textContent = listenWanted && micOk ? "📻 Radio ON" : "📻 Radio";
   $("ptt").classList.toggle("rec", recMode === "ptt");
-  $("ptt").textContent = recMode === "ptt" ? "🔴 Ti ascolto…" : "🎙️ Parla";
+  $("ptt").textContent = recMode === "ptt" ? "🔴 Ti ascolto" : "🎙️ Parla";
 }
 function stopRec() {
-  clearTimeout(restartTimer);
-  if (rec) { rec.onend = rec.onresult = rec.onerror = null; try { rec.abort(); } catch (e) {} }
-  rec = null; recMode = null;
+  clearTimeout(restartTimer); clearTimeout(startGuard);
+  if (rec) { rec.onstart = rec.onend = rec.onresult = rec.onerror = null; try { rec.abort(); } catch (e) {} }
+  rec = null; recMode = null; listening = false;
 }
+// "Radio" anche se il riconoscitore scrive "radiò", "Radio," o "RADIO"
+const WAKE = /(^|[^a-zà-ù])r[aà]di[oò]($|[^a-zà-ù])/i;
 function handleWake(text, final) {
-  const low = text.toLowerCase(), i = low.search(/\bradio\b/);
-  if (i >= 0) {
-    const q = text.slice(i + 5).replace(/^[\s,.:!?]+/, "").trim();
-    if (!final) { heard("📻 Radio… ti ascolto", "armed"); return; }
-    if (q.split(/\s+/).length >= 2) { heard("➜ " + q, "sent"); ask(q); }
-    else { armedUntil = Date.now() + 7000; heard("📻 Dimmi…", "armed"); say("Dimmi.", 2); }
+  const m = text.match(WAKE);
+  if (m) {
+    const q = text.slice(m.index + m[0].length).replace(/^[\s,.:!?]+/, "").trim();
+    if (!final) { mic("📻 Radio… ti ascolto", "armed"); return; }
+    if (q.length >= 2) { mic("➜ " + q, "sent", 6000); ask(q); }          // anche una parola: "Radio, meteo"
+    else { armedUntil = Date.now() + 7000; mic("📻 Dimmi…", "armed", 7000); say("Dimmi.", 2, "dimmi"); }
   } else if (final && Date.now() < armedUntil) {
-    armedUntil = 0; heard("➜ " + text, "sent"); ask(text);
-  } else if (final) heard("Sento: “" + text + "” (inizia con “Radio”)");
+    armedUntil = 0; mic("➜ " + text, "sent", 6000); ask(text);
+  } else if (final) mic("Sento “" + text + "” · inizia con “Radio”", "", 4000);
 }
+const ERRORS = { "not-allowed": "microfono non consentito", "service-not-allowed": "microfono non consentito",
+                 "audio-capture": "microfono occupato da un'altra app", "network": "serve internet per capire la voce",
+                 "language-not-supported": "italiano non disponibile" };
 function startRec(mode) {          // "ptt" = una domanda; "wake" = ascolto della parola Radio
-  if (!micOk) { addMsg({kind: "avviso", text: micHint(), ts: Date.now()/1000}); return; }
+  if (!micOk) { mic(micHint(), "err"); return; }
   stopRec();
   const r = new SR();
   rec = r; recMode = mode;
   r.lang = "it-IT"; r.maxAlternatives = 1;
-  r.continuous = false;
-  r.interimResults = mode === "wake";
+  r.continuous = mode === "wake";               // Radio: una sola sessione lunga, meno riavvii
+  r.interimResults = true;
+  r.onstart = () => {
+    if (rec !== r) return;
+    listening = true; lastErr = ""; clearTimeout(startGuard);
+    if (mode === "ptt") mic("🎙️ Parla ora…", "armed"); else if (!$("mic").classList.contains("armed") && !$("mic").classList.contains("sent")) idleMic();
+    setMicUI();
+  };
   r.onresult = e => {
     let text = "", final = false;
-    for (let k = e.resultIndex; k < e.results.length; k++) { text += e.results[k][0].transcript; final = final || e.results[k].isFinal; }
+    if (mode === "wake") {
+      // in ascolto continuo conta solo l'ultima frase (Chrome Android ripete quelle vecchie)
+      const res = e.results[e.results.length - 1];
+      text = res[0].transcript; final = res.isFinal;
+    } else {
+      for (let k = e.resultIndex; k < e.results.length; k++) { text += e.results[k][0].transcript; final = final || e.results[k].isFinal; }
+    }
     text = text.trim(); if (!text) return;
     failStreak = 0;
-    if (mode === "ptt") { if (final) { heard("➜ " + text, "sent"); ask(text); } else heard(text); return; }
-    if (speaking()) return;                      // è la voce dell'ingegnere, non la tua
+    if (mode === "ptt") { if (final) { mic("➜ " + text, "sent", 6000); ask(text); } else mic(text, "armed"); return; }
+    if (/^dimmi[.!]?$/i.test(text)) return;          // è il "Dimmi" dell'ingegnere
+    if (speaking()) {
+      // mentre l'ingegnere parla ascolto solo "Radio" (o la domanda dopo "Dimmi"):
+      // lo interrompe e prende la domanda
+      if (!final || !(WAKE.test(text) || Date.now() < armedUntil)) return;
+      stopSpeech();
+    }
     handleWake(text, final);
   };
   r.onerror = e => {
+    if (rec !== r) return;
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    lastErr = ERRORS[e.error] || e.error;
+    failStreak++;
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      // spesso succede solo perché il riavvio non è partito da un tocco: basta toccare lo schermo
+      if (mode === "wake" && failStreak < 3) { mic("Radio in pausa · tocca lo schermo per riattivarla", "err"); return; }
       listenWanted = false; store.set("ascolto", "off");
-      heard("Microfono bloccato: consentilo per questo sito nelle impostazioni del browser", "err");
-    } else if (e.error === "network") heard("Il riconoscimento vocale ha bisogno di internet", "err");
-    else if (e.error !== "no-speech" && e.error !== "aborted") heard("Microfono: " + e.error, "err");
-    if (e.error !== "no-speech" && e.error !== "aborted") failStreak++;
+    }
+    mic("Microfono: " + lastErr, "err");
   };
   r.onend = () => {
     if (rec !== r) return;
-    rec = null; recMode = null; setMicUI();
-    if (listenWanted && document.visibilityState === "visible" && failStreak < 5) {
-      // mentre l'ingegnere parla aspetto, così non ascolto la sua voce
-      const wait = () => speaking() ? (restartTimer = setTimeout(wait, 300)) : startRec("wake");
-      restartTimer = setTimeout(wait, 250);
-    }
+    rec = null; recMode = null; listening = false;
+    if (listenWanted && document.visibilityState === "visible") {
+      // riparte da sola, sempre. Se l'ingegnere sta parlando aspetta che finisca
+      // (su Android microfono e voce insieme spesso non vanno); dopo gli errori aspetta di più.
+      const delay = [250, 600, 1500, 3000, 5000][Math.min(failStreak, 4)];
+      const go = () => speaking() ? (restartTimer = setTimeout(go, 300)) : startRec("wake");
+      restartTimer = setTimeout(go, delay);
+    } else if (!$("mic").classList.contains("sent")) idleMic();
+    setMicUI();
   };
-  try { r.start(); } catch (e) { rec = null; recMode = null; heard("Microfono non disponibile: " + e.message, "err"); }
+  // se dopo 4 secondi il microfono non è partito, lo dico invece di restare muto
+  startGuard = setTimeout(() => {
+    if (rec === r && !listening) { lastErr = "il microfono non parte"; mic(mode === "wake" ? "Radio in pausa · tocca lo schermo (o chiudi le app che usano il microfono, es. Discord)" : "Il microfono non parte: chiudi le app che lo usano (es. Discord)", "err"); }
+  }, 4000);
+  try { r.start(); } catch (e) { rec = null; recMode = null; lastErr = e.message; mic("Microfono non disponibile: " + e.message, "err"); }
   setMicUI();
 }
 $("ptt").onclick = () => {
   if (!voiceUnlocked && voiceWanted) unlockVoice(false);
   if (recMode === "ptt") { try { rec.stop(); } catch (e) {} return; }
-  speechSynthesis.cancel(); speakQ = [];
-  heard("🎙️ Parla ora…", "armed");
+  stopSpeech();
   startRec("ptt");
 };
 $("listen").onclick = () => {
-  if (!micOk) { addMsg({kind: "avviso", text: micHint(), ts: Date.now()/1000}); return; }
-  listenWanted = !listenWanted; store.set("ascolto", listenWanted ? "on" : "off");
+  if (!micOk) { mic(micHint(), "err"); return; }
   failStreak = 0;
-  if (listenWanted) { startRec("wake"); heard("Di' “Radio” e la domanda, per esempio “Radio, mi fermo ai box?”"); }
-  else { stopRec(); heard(""); }
+  if (listenWanted && !rec) {                    // era acceso ma fermo: riparte invece di spegnersi
+    startRec("wake"); return;
+  }
+  listenWanted = !listenWanted; store.set("ascolto", listenWanted ? "on" : "off");
+  if (listenWanted) { mic("Avvio microfono…", ""); startRec("wake"); }
+  else { stopRec(); mic("Radio spenta", "", 2000); }
   setMicUI();
 };
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && listenWanted && micOk && !rec) { failStreak = 0; startRec("wake"); }
 });
-// l'ascolto può partire solo dopo un tocco (regola dei browser)
-document.addEventListener("pointerdown", () => { if (listenWanted && micOk && !rec) startRec("wake"); }, { once: true, capture: true });
+// l'ascolto può partire solo dopo un tocco (regola dei browser); i pulsanti del microfono si gestiscono da soli
+document.addEventListener("pointerdown", e => {
+  if (e.target.closest("#listen, #ptt")) return;
+  if (listenWanted && micOk && (!rec || !listening)) { failStreak = 0; startRec("wake"); }
+}, { capture: true });
 
 // ---------- messaggi ----------
+const KIND = { consiglio: "Consiglio", avviso: "Avviso", giro: "Giro", ingegnere: "Ingegnere", gara: "Gara", meteo: "Meteo", info: "" };
 function addMsg(m) {
   if (m.kind === "zona" || m.kind === "fine_giro") return;
+  const t = new Date(m.ts * 1000).toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"});
   const d = document.createElement("div");
   d.className = "m " + m.kind;
-  const t = new Date(m.ts * 1000).toLocaleTimeString("it-IT", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
-  d.innerHTML = `<small>${m.kind} · ${t}</small>`;
+  d.innerHTML = `<small>${esc(KIND[m.kind] ?? m.kind)} · ${t}</small>`;
   d.appendChild(document.createTextNode(m.text));
   $("log").prepend(d);
-  while ($("log").children.length > 40) $("log").lastChild.remove();
-  if (m.speak) say(m.text, m.priority);
+  while ($("log").children.length > 60) $("log").lastChild.remove();
+  if (m.kind !== "info") {
+    $("lastmsg").textContent = m.text;
+    $("lastts").textContent = (KIND[m.kind] ? KIND[m.kind] + " · " : "") + t;
+    $("last").className = "card radio " + m.kind;
+  }
+  if (m.speak) say(m.text, m.priority, m.kind);
 }
 
 // ---------- stato ----------
-function tyreColor(t) { return t >= 110 ? "#5a1d24" : t >= 100 ? "#4d3a12" : t >= 80 ? "#163a26" : "#14283d"; }
+const COMP = { soft: ["S", "var(--soft)"], medie: ["M", "var(--medium)"], dure: ["H", "var(--hard)"],
+               intermedie: ["I", "var(--inter)"], "da bagnato": ["W", "var(--wet)"] };
+const compChip = c => COMP[c] ? `<i class="comp" style="--c:${COMP[c][1]}">${COMP[c][0]}</i>` : "";
+const WX = ["Sereno ☀️", "Nuvoloso 🌤️", "Coperto ☁️", "Pioggia 🌦️", "Pioggia forte 🌧️", "Temporale ⛈️"];
+function tyreColor(t) { return t >= 110 ? "#5a1520" : t >= 100 ? "#4a360f" : t >= 80 ? "#143522" : "#122539"; }
+const signed = (v, d) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
+
 function render(s) {
+  const race = !!s.race?.is_race;
+  inCorner = !!s.in_curva && !!s.online; straightS = s.online ? s.rettilineo_s ?? null : null;
   $("dot").classList.toggle("on", !!s.online);
   if (s.track && s.track !== "-") $("track").textContent = s.track;
-  const d = $("delta");
-  if (s.delta == null) { d.textContent = "--.--"; d.className = "mono"; }
-  else { d.textContent = (s.delta > 0 ? "+" : "") + s.delta.toFixed(2); d.className = "mono " + (s.delta <= 0 ? "good" : "bad"); }
-  $("invalid").style.display = s.invalid ? "inline" : "none";
-  $("lapn").textContent = s.lap ?? "-"; $("pos").textContent = s.position ?? "-";
-  $("cur").textContent = fmt(s.current_ms); $("last").textContent = fmt(s.last_ms); $("best").textContent = fmt(s.best_ms);
-  $("spd").textContent = s.speed ?? 0;
-  $("gear").textContent = s.gear == null ? "-" : s.gear === 0 ? "N" : s.gear < 0 ? "R" : s.gear;
-  $("fuel").textContent = s.fuel_laps == null ? "-" : (s.fuel_laps > 0 ? "+" : "") + s.fuel_laps.toFixed(1) + " giri";
-  $("ers").textContent = s.ers == null ? "-" : s.ers + "%";
-  $("comp").textContent = s.compound ? `${s.compound} · ${s.tyre_age} giri` : "";
+  $("sess").innerHTML = esc(s.online ? (s.race?.session_name || "in pista") : "in attesa della PS5…") +
+    (s.rec ? ' · <b style="color:var(--bad)">● REC</b>' : "");
+  $("hero-race").style.display = race ? "" : "none";
+  $("hero-quali").style.display = race ? "none" : "";
+  $("rivals").style.display = race ? "" : "none";
+  $("pitrow").style.display = race ? "" : "none";
+
+  // delta
+  for (const [id, big] of [["delta1", false], ["delta2", true]]) {
+    const d = $(id);
+    if (s.delta == null) { d.textContent = big ? "–.––" : ""; d.className = (big ? "bigdelta" : "delta") + " num"; }
+    else { d.textContent = signed(s.delta, 2); d.className = (big ? "bigdelta " : "delta ") + "num " + (s.delta <= 0 ? "good" : "bad"); }
+  }
+  for (const id of ["dbar1", "dbar2"]) {
+    const i = $(id).firstChild, d = s.delta;
+    if (d == null) { i.style.width = "0"; continue; }
+    const w = Math.min(50, Math.abs(d) / 1.0 * 50);          // fondo scala: un secondo
+    i.className = d <= 0 ? "good" : "bad";
+    i.style.left = d <= 0 ? (50 - w) + "%" : "50%"; i.style.width = w + "%";
+  }
+  $("refown").innerHTML = (s.ref_owner ? `Riferimento: giro di <b>${esc(s.ref_owner)}</b>` : (s.best_ms ? "Riferimento: il tuo giro migliore" : "")) +
+    (s.ideal_ms ? ` · ideale <b style="color:var(--good)">${fmt(s.ideal_ms)}</b>` : "");
+  renderLive(s);
+  renderSetup(s);
+  drawMini(s);
+  $("inv1").style.display = $("inv2").style.display = s.invalid ? "block" : "none";
+  $("lapq").textContent = s.lap ?? "–"; $("lastq").textContent = fmt(s.last_ms); $("bestq").textContent = fmt(s.best_ms);
+
+  // dettagli
+  $("cur").textContent = fmt(s.current_ms); $("lastt").textContent = fmt(s.last_ms); $("best").textContent = fmt(s.best_ms);
+  $("spd").textContent = s.speed ?? "–";
+  $("gear").textContent = s.gear == null ? "–" : s.gear === 0 ? "N" : s.gear < 0 ? "R" : s.gear;
+  $("wing").textContent = s.front_wing ? s.front_wing + "%" : "ok";
   $("thr").firstChild.style.width = ((s.throttle || 0) * 100) + "%";
   $("brk").firstChild.style.width = ((s.brake || 0) * 100) + "%";
+
+  // gomme e auto
+  $("comp").innerHTML = s.compound ? `${compChip(s.compound)} <span class="num">${s.tyre_age === 1 ? "1 giro" : (s.tyre_age ?? 0) + " giri"}</span>` : "";
+  $("comp").style.display = "flex"; $("comp").style.alignItems = "center"; $("comp").style.gap = "6px";
   for (let i = 0; i < 4; i++) {
     const el = $("t" + i), t = s.tyre_temp?.[i], w = s.tyre_wear?.[i];
-    el.firstChild.textContent = t == null ? "-" : t + "°";
-    el.lastChild.textContent = w == null ? "-" : "usura " + Math.round(w) + "%";
-    if (t != null) el.style.background = tyreColor(t);
+    el.querySelector("b").textContent = t == null ? "–" : t + "°";
+    el.querySelector("small").textContent = w == null ? "usura –" : "usura " + Math.round(w) + "%";
+    const bar = el.querySelector(".w i");
+    bar.style.width = (w == null ? 0 : Math.min(100, w)) + "%";
+    bar.style.background = w >= 70 ? "var(--bad)" : w >= 50 ? "var(--warn)" : "var(--txt)";
+    el.style.background = t == null ? "" : tyreColor(t);
   }
+  const fl = $("fuel");
+  fl.textContent = s.fuel_laps == null ? "–" : signed(s.fuel_laps, 1) + " giri";
+  fl.className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
+  $("ers").textContent = s.ers == null ? "–" : s.ers + "%";
+  renderRace(s.race, s);
 }
 
-const WX = ["sereno ☀️", "poco nuvoloso 🌤️", "coperto ☁️", "pioggia leggera 🌦️", "pioggia forte 🌧️", "temporale ⛈️"];
-function rivalTxt(r) {
-  if (!r) return ["-", "-"];
-  let n = r.name;
-  if (r.compound) n += `<span class="tag">${r.compound} ${r.tyre_age}g</span>`;
-  if (r.pit) n += `<span class="tag" style="color:var(--warn)">ai box</span>`;
-  return [n, r.gap.toFixed(1) + "s"];
+// ---------- telemetria live ----------
+for (let k = 0; k < 15; k++) $("rpm").appendChild(document.createElement("i"));
+function renderLive(s) {
+  $("pthr").style.height = ((s.throttle || 0) * 100) + "%";
+  $("pbrk").style.height = ((s.brake || 0) * 100) + "%";
+  $("lspd").textContent = s.speed ?? "–";
+  $("lgear").textContent = s.gear == null ? "–" : s.gear === 0 ? "N" : s.gear < 0 ? "R" : s.gear;
+  $("lers").style.width = (s.ers ?? 0) + "%";
+  const rpm = s.rpm || 0, lit = Math.round(Math.max(0, Math.min(1, (rpm - 9000) / 3200)) * 15);
+  [...$("rpm").children].forEach((el, k) => el.className = k < lit ? (k < 5 ? "g" : k < 10 ? "r" : "b") : "");
+}
+
+// ---------- assetto ----------
+let setupKey = "";
+const cap = t => t ? t[0].toUpperCase() + t.slice(1) : t;
+function renderSetup(s) {
+  const key = JSON.stringify([s.setup, s.setup_laps]);
+  if (key === setupKey) return;
+  setupKey = key;
+  const box = $("setup");
+  if (!s.setup || !s.setup.length) {
+    box.innerHTML = `<div class="hint">${(s.setup_laps || 0) < 2
+      ? `Fai almeno 2 giri completi con lo stesso assetto (finora ${s.setup_laps || 0}): qui ti dico cosa cambiare.`
+      : "Assetto equilibrato: niente sottosterzo o sovrasterzo evidente, né bloccaggi. 👍"}</div>`;
+    return;
+  }
+  box.innerHTML = s.setup.map(a => `<div class="sa"><b>${esc(a.area)}</b><p><span>${esc(cap(a.problema))}.</span> ${esc(cap(a.consiglio))}.</p></div>`).join("");
+}
+
+// ---------- mini mappa live ----------
+// la rotazione è la stessa scelta nella pagina Analisi (⟳ ⇋), salvata per pista
+let outline = null, outlineKey = "", outlineBusy = false;
+function mapView(track) {
+  try { return JSON.parse(localStorage.getItem("mappa:" + track)) || { rot: 0, flip: false }; } catch (e) { return { rot: 0, flip: false }; }
+}
+function tf(p, v) {
+  let x = v.flip ? -p[0] : p[0], z = p[1];
+  for (let r = 0; r < v.rot; r++) [x, z] = [-z, x];
+  return [x, z];
+}
+async function loadOutline(key) {
+  outlineBusy = true;
+  try { const j = await fetch("/api/outline").then(r => r.json()); outline = j.pts && j.pts.length ? j : null; outlineKey = key; }
+  catch (e) {}
+  outlineBusy = false;
+}
+function drawMini(s) {
+  const key = (s.track || "") + "/" + (s.outline_v || 0);
+  if (key !== outlineKey && !outlineBusy) loadOutline(key);
+  const c = $("mm"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  if (!W) return;
+  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (!outline || !s.outline_v) {
+    ctx.fillStyle = "#8a919b"; ctx.font = "600 13px -apple-system,Roboto,sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("La mappa compare dopo il primo giro completo", W / 2, H / 2);
+    return;
+  }
+  const v = mapView(s.track), P = outline.pts.map(p => tf(p, v));
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  const pad = 14, k = Math.min((W - 2 * pad) / (x1 - x0 || 1), (H - 2 * pad) / (z1 - z0 || 1));
+  const ox = (W - (x1 - x0) * k) / 2, oz = (H - (z1 - z0) * k) / 2;
+  const XY = ([x, z]) => [ox + (x - x0) * k, oz + (z - z0) * k];
+  ctx.lineJoin = ctx.lineCap = "round";
+  ctx.strokeStyle = "#2a3038"; ctx.lineWidth = 9; ctx.beginPath();
+  P.forEach((p, i) => { const [x, y] = XY(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.stroke();
+  ctx.strokeStyle = "#454d57"; ctx.lineWidth = 2; ctx.stroke();
+  const [sx, sy] = XY(P[0]); ctx.fillStyle = "#e10600"; ctx.fillRect(sx - 2, sy - 6, 4, 12);    // traguardo
+  const d = s.dots || {};
+  for (const [kk, col, r] of [["behind", "#3ea6ff", 6], ["ahead", "#ffb020", 6], ["me", "#ffffff", 7]]) {
+    if (!d[kk]) continue;
+    const [x, y] = XY(tf(d[kk], v));
+    ctx.beginPath(); ctx.arc(x, y, r + 3, 0, 7); ctx.fillStyle = col + "33"; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#08090b"; ctx.stroke();
+  }
+  $("mlA").style.display = d.ahead ? "" : "none"; $("mlB").style.display = d.behind ? "" : "none";
+}
+
+function rival(nameId, gapId, r, behind) {
+  if (!r) { $(nameId).textContent = "–"; $(gapId).textContent = "–"; $(gapId).className = "gap num"; return; }
+  $(nameId).innerHTML = `<span>${esc(r.name)}</span>${r.compound ? compChip(r.compound) : ""}${r.pit ? '<em class="pill">BOX</em>' : ""}`;
+  $(gapId).textContent = (behind ? "−" : "+") + r.gap.toFixed(1);
+  $(gapId).className = "gap num " + (r.gap < 1 ? (behind ? "hot" : "close") : "");
 }
 function renderRace(r, s) {
   if (!r) return;
   $("sc").style.display = r.safety_car ? "block" : "none";
   $("sc").textContent = r.safety_car === 2 ? "VIRTUAL SAFETY CAR" : "SAFETY CAR";
-  const rainTxt = r.rain_next ? `Pioggia tra <b>${r.rain_next.min} min</b> (${r.rain_next.rain}%)` : "";
-  $("race").style.display = r.is_race ? "block" : "none";
-  $("wxcard").style.display = !r.is_race && r.weather != null ? "block" : "none";
-  if (!r.is_race) {
-    $("wx2").textContent = WX[r.weather] || "-"; $("rain2").innerHTML = rainTxt;
-    $("ttemp").textContent = r.track_temp != null ? r.track_temp + "°" : "-";
-    return;
-  }
-  $("rpos").textContent = `P${r.position ?? "-"}${r.cars ? "/" + r.cars : ""}`;
-  $("rlaps").textContent = r.total_laps && s.lap ? `giro ${s.lap} di ${r.total_laps}` : "";
-  const [an, ag] = rivalTxt(r.ahead), [bn, bg] = rivalTxt(r.behind);
-  $("ahn").innerHTML = an; $("ahg").textContent = ag; $("bhn").innerHTML = bn; $("bhg").textContent = bg;
-  $("bhg").style.color = r.behind && r.behind.gap < 1 ? "var(--bad)" : "";
-  $("wx").textContent = WX[r.weather] || "-"; $("rain").innerHTML = rainTxt;
-  $("pitw").textContent = r.pit_ideal ? `giri ${r.pit_ideal}–${r.pit_latest}` : "-";
-  $("stops").textContent = r.pit_stops ?? 0;
+  $("wx").textContent = WX[r.weather] || "–";
+  $("rain").textContent = r.rain_next ? `☔ pioggia tra ${r.rain_next.min} min (${r.rain_next.rain}%)` : (r.track_temp != null ? `pista ${r.track_temp}°` : "");
+  if (!r.is_race) return;
+  $("pos").innerHTML = `P${r.position ?? "–"}<small>${r.cars ? "/" + r.cars : ""}</small>`;
+  $("lapinfo").innerHTML = r.total_laps && s.lap ? `<span>Giro</span> ${s.lap}<span>/${r.total_laps}</span>` : `<span>Giro</span> ${s.lap ?? "–"}`;
+  rival("ahn", "ahg", r.ahead, false);
+  rival("bhn", "bhg", r.behind, true);
+  $("pitw").textContent = r.pit_ideal ? `giri ${r.pit_ideal}–${r.pit_latest}` : (r.pit_stops ? r.pit_stops + " soste" : "–");
 }
+
+// ---------- impostazioni della voce ----------
+function fillVoiceUI() {
+  const sel = $("vsel");
+  sel.innerHTML = devVoices.length
+    ? devVoices.map(v => `<option value="${esc(v.name)}">${esc(v.name)}${voiceScore(v) >= 3 ? " ★" : ""}</option>`).join("")
+    : '<option value="">Voce predefinita del telefono</option>';
+  if (itVoice) sel.value = itVoice.name;
+}
+function showVoiceSettings() {
+  $("vrate").value = vcfg.rate; $("vrateL").textContent = vcfg.rate.toFixed(2);
+  $("vpitch").value = vcfg.pitch; $("vpitchL").textContent = vcfg.pitch.toFixed(2);
+  for (const b of $("vmode").children) b.classList.toggle("on", (b.dataset.m === "ai") === aiVoice);
+  $("vdev").style.display = aiVoice ? "none" : ""; $("vai").style.display = aiVoice ? "" : "none";
+}
+function showAiNote() { $("ainote").textContent = aiVoice ? aiNote : ""; }
+fillVoiceUI(); showVoiceSettings();
+$("vsel").onchange = () => { vcfg.name = $("vsel").value; store.set("voce_nome", vcfg.name); itVoice = devVoices.find(v => v.name === vcfg.name) || itVoice; };
+$("vrate").oninput = () => { vcfg.rate = +$("vrate").value; store.set("voce_vel", vcfg.rate); showVoiceSettings(); };
+$("vpitch").oninput = () => { vcfg.pitch = +$("vpitch").value; store.set("voce_tono", vcfg.pitch); showVoiceSettings(); };
+async function saveVoice(body) {
+  try {
+    const s = await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json());
+    applyVoiceSettings(s);
+  } catch (e) {}
+}
+function applyVoiceSettings(s) {
+  aiVoice = !!s.ai_voice_on; aiName = s.ai_voice || aiName;
+  const sel = $("aisel");
+  if (s.ai_voices && !sel.options.length)
+    sel.innerHTML = Object.entries(s.ai_voices).map(([n, d]) => `<option value="${esc(n)}">${esc(n)} · ${esc(d)}</option>`).join("");
+  sel.value = aiName;
+  showVoiceSettings(); showAiNote();
+}
+$("vmode").onclick = async e => {
+  const m = e.target.dataset.m; if (!m) return;
+  await saveVoice({ ai_voice_on: m === "ai" });
+  if (m === "ai" && !aiVoice) { aiNote = "Per la voce AI inserisci prima la chiave Gemini in ⚙️ Impostazioni."; $("ainote").textContent = aiNote; }
+};
+$("aisel").onchange = () => saveVoice({ ai_voice: $("aisel").value });
+$("vtest").onclick = async () => {
+  if (!voiceUnlocked) unlockVoice(false);
+  stopSpeech();
+  const it = { text: "Box, box questo giro! Montiamo le medie e rientri P5. Verstappen è a un secondo e due: difendi in uscita dalla Parabolica.",
+               prio: 2, kind: "strategia", t: Date.now(), style: "urgente" };
+  const done = () => { lastSpokeEnd = Date.now(); };
+  if (aiVoice) {
+    $("vtest").textContent = "⏳ Preparo la voce AI…";
+    await fetchAI(it, $("aisel").value);
+    $("vtest").textContent = "▶ Prova la voce";
+    if (it.ai !== "ready") it.ai = "failed";
+  }
+  withRadio(it, done);
+};
+
+$("radiofx").checked = radioFx;
+$("radiofx").onchange = () => { radioFx = $("radiofx").checked; store.set("radio_fx", radioFx ? "on" : "off"); routeAudio(); };
+
+$("quiet").checked = quietCorners;
+$("quiet").onchange = () => { quietCorners = $("quiet").checked; store.set("zitto_in_curva", quietCorners ? "on" : "off"); pump(); };
+
+// ---------- registrazione ----------
+let recActive = false;
+function recName(n) {
+  const m = n.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
+  return m ? `${m[3]}/${m[2]} alle ${m[4]}:${m[5]}` : n;
+}
+function renderRec(st) {
+  recActive = st.active;
+  $("recbtn").textContent = st.active ? "⏹ Ferma la registrazione" : "⏺ Inizia a registrare";
+  $("recbtn").className = "btn" + (st.active ? "" : " red");
+  const mm = Math.floor(st.seconds / 60), ss = String(st.seconds % 60).padStart(2, "0");
+  $("recstat").textContent = st.active ? `● In registrazione da ${mm}:${ss} · ${st.mb} MB · ${st.packets} pacchetti`
+                                       : (st.reason ? "Registrazione " + st.reason + "." : "");
+  $("reclist").innerHTML = (st.files || []).map(f => `<div class="sa" style="display:flex;align-items:center;gap:8px">
+      <p style="flex:1;margin:0">Sessione del ${esc(recName(f.name))} <span>· ${f.mb} MB</span></p>
+      <a class="btn" href="/api/rec_file?name=${encodeURIComponent(f.name)}" download>⬇</a>
+      <button class="btn" data-del="${esc(f.name)}">🗑</button></div>`).join("");
+  for (const b of $("reclist").querySelectorAll("[data-del]"))
+    b.onclick = () => recCall({ action: "delete", name: b.dataset.del });
+}
+async function recCall(body) {
+  try { renderRec(await fetch("/api/rec", body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {}).then(r => r.json())); } catch (e) {}
+}
+$("recbtn").onclick = () => recCall({ action: recActive ? "stop" : "start" });
+setInterval(() => { if (recActive || $("v-more").classList.contains("on")) recCall(); }, 2000);
+recCall();
 
 // ---------- livello di parlato ----------
 function showVerb(v) { for (const b of $("verb").children) b.classList.toggle("on", +b.dataset.v === v); }
 $("verb").onclick = async e => {
   const v = +e.target.dataset.v; if (!v) return;
   showVerb(v);
-  try { await fetch("/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({verbosity: v})}); } catch (e) {}
+  try { await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({verbosity: v})}); } catch (e) {}
 };
 
 function connect() {
   const es = new EventSource("/events");
   es.addEventListener("msg", e => addMsg(JSON.parse(e.data)));
-  es.addEventListener("state", e => { const s = JSON.parse(e.data); render(s); renderRace(s.race, s); if (s.verbosity) showVerb(s.verbosity); });
+  es.addEventListener("state", e => { const s = JSON.parse(e.data); render(s); if (s.verbosity) showVerb(s.verbosity); });
   es.onerror = () => {
     $("dot").classList.remove("on");
     fetch("/state").then(r => { if (r.status === 401) location.href = "/login"; }).catch(() => {});
@@ -410,9 +1121,9 @@ connect();
 // ---------- domande ----------
 async function ask(question) {
   $("send").disabled = $("debrief").disabled = true;
-  addMsg({kind:"info", text:"Tu: " + (question || "debrief"), ts: Date.now()/1000});
-  try { await fetch("/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question})}); }
-  catch (e) { addMsg({kind:"avviso", text:"Server non raggiungibile.", ts: Date.now()/1000}); }
+  addMsg({kind: "info", text: "Tu: " + (question || "debrief"), ts: Date.now() / 1000});
+  try { await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({question})}); }
+  catch (e) { addMsg({kind: "avviso", text: "Server non raggiungibile.", ts: Date.now() / 1000}); }
   $("send").disabled = $("debrief").disabled = false;
 }
 $("send").onclick = () => { const q = $("q").value.trim(); if (q) { $("q").value = ""; ask(q); } };
@@ -428,21 +1139,26 @@ async function loadSettings() {
     $("ploss").value = s.pit_loss;
     $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
     if (s.user) { $("userline").style.display = "block"; $("uname").textContent = s.user; }
+    $("sharerow").style.display = s.user ? "" : "none";
+    applyVoiceSettings(s);
+    $("share").checked = s.share_laps !== false;
     $("gamehint").innerHTML = s.server_ip
-      ? `Nel gioco (Telemetria): IP UDP <b>${s.server_ip}</b>, porta <b>${s.udp_port}</b>, broadcast Off, frequenza 20 Hz.`
-      : `Nel gioco (Telemetria): porta UDP <b>${s.udp_port}</b>.`;
+      ? `Nel gioco (Telemetria): IP UDP <b>${esc(s.server_ip)}</b>, porta <b>${esc(s.udp_port)}</b>, broadcast Off.`
+      : `Nel gioco (Telemetria): porta UDP <b>${esc(s.udp_port)}</b>.`;
   } catch (e) {}
 }
 $("saveset").onclick = async () => {
-  const body = { pit_loss: +$("ploss").value };
+  const body = { pit_loss: +$("ploss").value, share_laps: $("share").checked };
   if ($("gkey").value.trim()) body.gemini_key = $("gkey").value.trim();
   if ($("akey").value.trim()) body.anthropic_key = $("akey").value.trim();
-  await fetch("/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   $("gkey").value = $("akey").value = "";
   loadSettings();
 };
 loadSettings();
 setMicUI();
+if (!micOk) mic(micHint(), "err");
+else if (listenWanted) mic("Radio accesa · tocca lo schermo per far partire il microfono", "armed");
 </script>
 </body>
 </html>

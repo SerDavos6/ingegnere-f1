@@ -27,6 +27,7 @@
   .chip.ref { border-color:var(--ref); box-shadow:inset 0 0 0 1px var(--ref); }
   .chip .tag { font-size:10px; margin-left:4px; color:var(--dim); }
   .chip.invalid span.mono { text-decoration:line-through; color:var(--dim); }
+  .chip.partial { border-style:dashed; } .chip.partial span.mono { color:var(--dim); }
   .sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; }
   .sum .v { font-size:22px; font-weight:600; margin-top:2px; }
   .good { color:#4cc38a; } .bad { color:#ff6b72; }
@@ -54,6 +55,15 @@
   .empty { color:var(--dim); padding:30px 10px; text-align:center; }
   .key { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); }
   .key i { width:16px; height:3px; border-radius:2px; display:inline-block; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .btn { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 12px;
+         font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn.main { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn[hidden] { display:none; }
+  #fmsg { font-size:13px; color:var(--dim); margin-top:8px; min-height:17px; }
+  #fmsg.ok { color:#4cc38a; } #fmsg.err { color:#ff6b72; }
+  .hint2 { font-size:12px; color:var(--dim); margin-top:6px; line-height:1.4; }
+  input.txt { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:15px; }
 </style>
 </head>
 <body>
@@ -61,6 +71,7 @@
   <a class="back" href="/">← Dashboard</a>
   <h1><b>F1</b> Analisi giri</h1>
   <select id="session"></select>
+  <button class="btn main" id="exportimg" style="margin-left:auto">🖼 Esporta grafico</button>
 </header>
 
 <div id="content">
@@ -74,12 +85,27 @@
     </div>
   </div>
 
+  <div class="card" id="friendbox" style="margin-top:10px">
+    <div class="lbl">Sfida un amico</div>
+    <div class="btns">
+      <button class="btn" id="fexport">⬇ Esporta il giro</button>
+      <label class="btn">⬆ Carica giro amico<input type="file" id="fupload" accept=".json,application/json" hidden></label>
+      <button class="btn main" id="fuseref">🎯 Usa come riferimento del coach</button>
+      <button class="btn" id="fdelete" hidden>🗑 Elimina</button>
+    </div>
+    <div class="btns" id="fnamebox" hidden>
+      <input class="txt" id="fname" placeholder="Il tuo nome nei giri che esporti" maxlength="40">
+    </div>
+    <div id="fmsg"></div>
+  </div>
+
   <div class="sum" style="margin-top:10px" id="sum"></div>
 
   <div class="layout" style="margin-top:10px">
     <div class="card" id="mapwrap">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div class="lbl">Mappa pista</div>
+        <div style="display:flex;align-items:center;gap:6px"><div class="lbl">Mappa pista</div>
+          <div class="seg" id="mapview"><button data-v="rot" title="Ruota di 90°" aria-label="Ruota">⟳</button><button data-v="flip" title="Specchia" aria-label="Specchia">⇋</button></div></div>
         <div class="seg" id="mapmode"><button data-m="input" class="on">Freno / gas</button><button data-m="delta">Dove perdi</button></div>
       </div>
       <canvas id="map"></canvas>
@@ -95,6 +121,12 @@
     <div class="lbl" style="margin-bottom:6px">Staccate · confronto con il riferimento del coach</div>
     <div id="zones"></div>
   </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px" id="proglbl">Progressi</div>
+    <canvas id="prog" style="width:100%;height:170px;display:block"></canvas>
+    <div class="hint2" id="proginfo"></div>
+  </div>
 </div>
 
 <script>
@@ -104,7 +136,16 @@ const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000);
 const sgn = (x, d=3) => (x > 0 ? "+" : x < 0 ? "−" : "±") + Math.abs(x).toFixed(d);
 
 let sessions = [], cur = null, selLap = null, refLap = null, sel = null, ref = null, cursor = null, mapMode = "input";
+let refFriend = null, friends = [];          // refFriend: id del giro dell'amico usato come confronto
 const cache = {};
+// c'è un confronto diverso dal giro selezionato?
+const diffRef = () => !!ref && (refFriend != null || refLap !== selLap);
+const refName = () => refFriend != null ? `giro di ${ref ? ref.driver : "un amico"}` : `giro ${refLap}`;
+async function getFriendLap(id) {
+  const k = "amico/" + id;
+  if (!cache[k]) cache[k] = fetch(`/api/friend_lap?id=${encodeURIComponent(id)}`).then(r => r.ok ? r.json() : null);
+  return cache[k];
+}
 
 // ------------------------------------------------------------ dati
 async function getLap(sid, n) {
@@ -143,43 +184,142 @@ async function loadSessions() {
   s.onchange = () => pickSession(s.value);
   pickSession(sessions[0].id);
 }
+// giri parziali: uscita dai box, rientro ai box, o interrotti (garage, fine sessione)
+const KINDS = { uscita: "uscita box", rientro: "rientro box", parziale: "parziale" };
 function bestLap(s) {
-  const v = s.laps.filter(l => l.valid);
-  return (v.length ? v : s.laps).reduce((a, b) => b.ms < a.ms ? b : a);
+  const full = s.laps.filter(l => !l.partial);
+  const v = full.filter(l => l.valid);
+  return (v.length ? v : full.length ? full : s.laps).reduce((a, b) => b.ms < a.ms ? b : a);
 }
 function pickSession(id) {
   cur = sessions.find(s => s.id === id);
   const best = bestLap(cur);
   const last = cur.laps[cur.laps.length - 1];
-  refLap = best.lap;
-  selLap = last.lap !== best.lap ? last.lap : (cur.laps.find(l => l.lap !== best.lap) || best).lap;
-  const r = $("refsel"); r.innerHTML = "";
+  refLap = best.lap; refFriend = null;
+  const full = cur.laps.filter(l => !l.partial);
+  const lastFull = full.length ? full[full.length - 1] : last;
+  selLap = lastFull.lap !== best.lap ? lastFull.lap : (full.find(l => l.lap !== best.lap) || best).lap;
+  friends = [];
+  buildRefSelect();
+  $("refsel").onchange = () => {
+    const v = $("refsel").value;
+    if (v.startsWith("F:")) { refFriend = v.slice(2); refLap = null; }
+    else { refFriend = null; refLap = +v.slice(2); }
+    load();
+  };
+  load();
+  loadFriends();
+  loadIdeal();
+  loadProgress();
+}
+function buildRefSelect() {
+  const best = bestLap(cur), r = $("refsel"); r.innerHTML = "";
+  const mine = document.createElement("optgroup"); mine.label = "I tuoi giri";
   for (const l of cur.laps) {
     const o = document.createElement("option");
-    o.value = l.lap; o.textContent = `Giro ${l.lap} · ${fmt(l.ms)}${l.lap === best.lap ? " (migliore)" : ""}`;
-    r.appendChild(o);
+    o.value = "L:" + l.lap; o.textContent = `Giro ${l.lap} · ${fmt(l.ms)}${l.lap === best.lap ? " (migliore)" : ""}${l.partial ? " (" + KINDS[l.kind || "parziale"] + ")" : ""}`;
+    mine.appendChild(o);
   }
-  r.onchange = () => { refLap = +r.value; load(); };
-  load();
+  r.appendChild(mine);
+  if (friends.length) {
+    const g = document.createElement("optgroup"); g.label = "Giri degli amici";
+    for (const f of friends) {
+      const o = document.createElement("option");
+      o.value = "F:" + f.id; o.textContent = `${f.driver} · ${fmt(f.ms)}${f.source === "file" ? " (file)" : ""}`;
+      g.appendChild(o);
+    }
+    r.appendChild(g);
+  }
+  r.value = refFriend != null ? "F:" + refFriend : "L:" + refLap;
+}
+async function loadFriends() {
+  const track = cur.track;
+  const list = await fetch(`/api/friends?track=${encodeURIComponent(track)}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (!cur || cur.track !== track) return;
+  friends = list;
+  buildRefSelect();
+  renderFriendBox();
 }
 function renderChips() {
   const best = bestLap(cur);
   const box = $("laps"); box.innerHTML = "";
   for (const l of cur.laps) {
     const b = document.createElement("button");
-    b.className = "chip" + (l.lap === selLap ? " sel" : "") + (l.lap === refLap && l.lap !== selLap ? " ref" : "") + (l.valid ? "" : " invalid");
-    b.innerHTML = `<b>Giro ${l.lap}${l.lap === best.lap ? '<span class="tag">★ migliore</span>' : ""}${l.valid ? "" : '<span class="tag">non valido</span>'}</b><span class="mono">${fmt(l.ms)}</span>`;
+    b.className = "chip" + (l.lap === selLap ? " sel" : "") + (l.lap === refLap && l.lap !== selLap ? " ref" : "") + (l.valid || l.partial ? "" : " invalid") + (l.partial ? " partial" : "");
+    const tag = l.partial ? `<span class="tag">${KINDS[l.kind || "parziale"]}</span>` : l.valid ? "" : '<span class="tag">non valido</span>';
+    b.innerHTML = `<b>Giro ${l.lap}${l.lap === best.lap ? '<span class="tag">★ migliore</span>' : ""}${tag}</b><span class="mono">${fmt(l.ms)}</span>`;
     b.onclick = () => { selLap = l.lap; load(); };
-    let t; b.onpointerdown = () => t = setTimeout(() => { refLap = l.lap; $("refsel").value = l.lap; load(); }, 550);
+    let t; b.onpointerdown = () => t = setTimeout(() => { refLap = l.lap; refFriend = null; load(); }, 550);
     b.onpointerup = b.onpointerleave = () => clearTimeout(t);
     box.appendChild(b);
   }
-  $("refsel").value = refLap;
+  $("refsel").value = refFriend != null ? "F:" + refFriend : "L:" + refLap;
 }
+// ---------------------------------------------------------- giro ideale
+const idealCache = {};
+function idealHtml() {
+  const j = idealCache[cur.id];
+  if (!j) return '<span style="font-size:14px;color:var(--dim)">…</span>';
+  if (!j.ideal_ms) return '<span style="font-size:14px;color:var(--dim)">servono 2 giri validi</span>';
+  const where = (j.spots || []).map(sp => `${(sp.da_m / 1000).toFixed(1)}–${(sp.a_m / 1000).toFixed(1)} km`).join(", ");
+  return `${fmt(j.ideal_ms)}<span class="good" style="font-size:13px"> −${j.gap_s.toFixed(3)}</span>` +
+         (where ? `<div style="font-size:12px;color:var(--dim);font-family:inherit;margin-top:2px">dal migliore · tempo da trovare a ${where}</div>` : "");
+}
+async function loadIdeal() {
+  const id = cur.id;
+  if (!(id in idealCache)) idealCache[id] = await fetch(`/api/ideal?s=${encodeURIComponent(id)}`).then(r => r.json()).catch(() => ({}));
+  if (cur.id === id && $("idealcard")) $("idealcard").querySelector(".v").innerHTML = idealHtml();
+}
+
+// ---------------------------------------------------------- progressi
+async function loadProgress() {
+  const track = cur.track;
+  const list = await fetch(`/api/progress?track=${encodeURIComponent(track)}`).then(r => r.json()).catch(() => []);
+  if (cur.track !== track) return;
+  $("proglbl").textContent = `Progressi a ${track} · giro migliore di ogni sessione`;
+  const c = $("prog"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (list.length < 2) {
+    ctx.fillStyle = css("--dim"); ctx.font = "13px -apple-system,Roboto,sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(list.length ? "Il grafico compare dalla seconda sessione su questa pista" : "Nessuna sessione valida", W / 2, H / 2);
+    $("proginfo").textContent = "";
+    return;
+  }
+  const L = 64, R = 12, T = 12, B = 22;
+  let lo = Math.min(...list.map(x => x.ms)), hi = Math.max(...list.map(x => x.ms));
+  const pad = Math.max(200, (hi - lo) * 0.15); lo -= pad; hi += pad;
+  const X = i => L + i / (list.length - 1) * (W - L - R), Y = ms => T + (ms - lo) / (hi - lo) * (H - T - B);   // più in alto = più veloce
+  ctx.font = "11px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--dim"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.strokeStyle = css("--grid");
+  for (let k = 0; k <= 3; k++) {
+    const ms = lo + (hi - lo) * k / 3, y = Math.round(Y(ms)) + .5;
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke(); ctx.fillText(fmt(Math.round(ms)), L - 6, y);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  list.forEach((x, i) => { if (list.length <= 8 || i % Math.ceil(list.length / 8) === 0) {
+    ctx.textAlign = i === 0 ? "left" : i === list.length - 1 ? "right" : "center";
+    ctx.fillText(new Date(x.started * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "2-digit"}), i === 0 ? L : i === list.length - 1 ? W - R : X(i), H); } });
+  ctx.strokeStyle = css("--sel"); ctx.lineWidth = 2; ctx.beginPath();
+  list.forEach((x, i) => i ? ctx.lineTo(X(i), Y(x.ms)) : ctx.moveTo(X(i), Y(x.ms))); ctx.stroke();
+  let best = Infinity;
+  list.forEach((x, i) => {
+    const pb = x.ms < best; best = Math.min(best, x.ms);
+    ctx.beginPath(); ctx.arc(X(i), Y(x.ms), pb ? 5 : 3.5, 0, 7);
+    ctx.fillStyle = x.id === cur.id ? "#fff" : pb ? "#4cc38a" : css("--sel"); ctx.fill();
+  });
+  const first = list[0].ms, last = list[list.length - 1].ms, top = Math.min(...list.map(x => x.ms));
+  $("proginfo").innerHTML = `${list.length} sessioni · record ${fmt(top)} · ` +
+    (last < first ? `<span class="good">${sgn((last - first) / 1000)} dalla prima</span>` : `${sgn((last - first) / 1000)} dalla prima`) +
+    ` · <span style="color:#4cc38a">●</span> nuovo record · <span style="color:#fff">●</span> sessione aperta`;
+}
+
 async function load() {
   renderChips();
-  [sel, ref] = await Promise.all([getLap(cur.id, selLap), getLap(cur.id, refLap)]);
+  [sel, ref] = await Promise.all([getLap(cur.id, selLap),
+                                  refFriend != null ? getFriendLap(refFriend) : getLap(cur.id, refLap)]);
   if (!sel) return;
+  renderFriendBox();
   cursor = null;
   renderSummary(); drawMap(); drawCharts(); renderZones(); renderReadout();
 }
@@ -190,12 +330,13 @@ function renderSummary() {
   const sec = k => sel[k] ? fmt(sel[k]).replace(/^0:/, "") : "-";
   const sd = k => (ref && sel[k] && ref[k]) ? `<span class="${sel[k] <= ref[k] ? "good" : "bad"}" style="font-size:13px"> ${sgn((sel[k]-ref[k])/1000)}</span>` : "";
   $("sum").innerHTML = `
-    <div class="card"><div class="lbl">Giro ${sel.lap}${sel.valid ? "" : " · non valido"}</div><div class="v mono">${fmt(sel.ms)}</div></div>
-    <div class="card"><div class="lbl">vs giro ${refLap}</div><div class="v mono ${d <= 0 ? "good" : "bad"}">${selLap === refLap ? "—" : sgn(d)}</div></div>
+    <div class="card"><div class="lbl">Giro ${sel.lap}${sel.partial ? " · " + KINDS[sel.kind || "parziale"] : sel.valid ? "" : " · non valido"}</div><div class="v mono">${fmt(sel.ms)}</div></div>
+    <div class="card"><div class="lbl">vs ${refName()}</div><div class="v mono ${d <= 0 ? "good" : "bad"}">${diffRef() ? sgn(d) : "—"}</div></div>
     <div class="card"><div class="lbl">Settore 1</div><div class="v mono">${sec("s1")}${sd("s1")}</div></div>
     <div class="card"><div class="lbl">Settore 2</div><div class="v mono">${sec("s2")}${sd("s2")}</div></div>
     <div class="card"><div class="lbl">Settore 3</div><div class="v mono">${sec("s3")}${sd("s3")}</div></div>
-    <div class="card"><div class="lbl">Gomme · posizione</div><div class="v">${sel.compound || "-"} <span style="font-size:14px;color:var(--dim)">${sel.tyre_age ?? ""}g · P${sel.position || "-"}</span></div></div>`;
+    <div class="card"><div class="lbl">Gomme · posizione</div><div class="v">${sel.compound || "-"} <span style="font-size:14px;color:var(--dim)">${sel.tyre_age ?? ""}g · P${sel.position || "-"}</span></div></div>
+    <div class="card" id="idealcard" style="grid-column:span 2"><div class="lbl">Giro ideale</div><div class="v mono">${idealHtml()}</div></div>`;
 }
 
 // ------------------------------------------------------------- mappa
@@ -221,14 +362,37 @@ function realMove(e) {
   return true;
 }
 let mapXY = null;
+// rotazione e specchio della mappa, ricordati per ogni pista
+function viewKey() { return "mappa:" + (cur ? cur.track : ""); }
+function getView() {
+  try { return JSON.parse(localStorage.getItem(viewKey())) || { rot: 0, flip: false }; }
+  catch (e) { return mapViewMem[viewKey()] || { rot: 0, flip: false }; }
+}
+const mapViewMem = {};
+function setView(v) {
+  mapViewMem[viewKey()] = v;
+  try { localStorage.setItem(viewKey(), JSON.stringify(v)); } catch (e) {}
+}
+$("mapview").onclick = e => {
+  const k = e.target.dataset.v; if (!k) return;
+  const v = getView();
+  if (k === "rot") v.rot = (v.rot + 1) % 4; else v.flip = !v.flip;
+  setView(v); drawMap();
+};
 function drawMap() {
   const c = $("map"), [ctx, W, H] = setupCanvas(c);
   const tr = sel.trace, n = tr.d.length;
+  const v = getView(), X = new Array(n), Z = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let x = v.flip ? -tr.x[i] : tr.x[i], z = tr.z[i];
+    for (let r = 0; r < v.rot; r++) [x, z] = [-z, x];
+    X[i] = x; Z[i] = z;
+  }
   let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
-  for (let i = 0; i < n; i++) { minx = Math.min(minx, tr.x[i]); maxx = Math.max(maxx, tr.x[i]); minz = Math.min(minz, tr.z[i]); maxz = Math.max(maxz, tr.z[i]); }
+  for (let i = 0; i < n; i++) { minx = Math.min(minx, X[i]); maxx = Math.max(maxx, X[i]); minz = Math.min(minz, Z[i]); maxz = Math.max(maxz, Z[i]); }
   const pad = 22, s = Math.min((W - 2*pad) / (maxx - minx || 1), (H - 2*pad) / (maxz - minz || 1));
   const ox = (W - (maxx - minx) * s) / 2, oz = (H - (maxz - minz) * s) / 2;
-  const P = i => [ox + (tr.x[i] - minx) * s, oz + (tr.z[i] - minz) * s];
+  const P = i => [ox + (X[i] - minx) * s, oz + (Z[i] - minz) * s];
   mapXY = { P, n };
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   // base
@@ -272,7 +436,7 @@ function drawMap() {
   }
   $("maplegend").innerHTML = mapMode === "input"
     ? `<span><i style="background:var(--brake)"></i>Freno</span><span><i style="background:var(--gas)"></i>Gas pieno</span><span><i style="background:var(--part)"></i>Gas parziale</span><span><i style="background:var(--coast)"></i>Rilascio</span>`
-    : (ref && selLap !== refLap ? `<span><i style="background:var(--brake)"></i>Perdi tempo</span><span><i style="background:var(--gas)"></i>Guadagni</span><span><i style="background:#3a434d"></i>Uguale</span> <span>rispetto al giro ${refLap}</span>` : `<span>Scegli un giro di confronto diverso</span>`);
+    : (diffRef() ? `<span><i style="background:var(--brake)"></i>Perdi tempo</span><span><i style="background:var(--gas)"></i>Guadagni</span><span><i style="background:#3a434d"></i>Uguale</span> <span>rispetto al ${refName()}</span>` : `<span>Scegli un giro di confronto diverso</span>`);
 }
 $("mapmode").onclick = e => {
   const m = e.target.dataset.m; if (!m) return;
@@ -325,10 +489,10 @@ function drawChart(ch) {
   let series = [];
   if (ch.delta) {
     const ds = deltaSeries();
-    if (ds && selLap !== refLap) series = [{ d: sel.trace.d, y: ds, col: css("--sel") }];
+    if (ds && diffRef()) series = [{ d: sel.trace.d, y: ds, col: css("--sel") }];
   } else {
     const k = ch.key, mul = ch.pct ? 100 : 1;
-    if (ref && refLap !== selLap) series.push({ d: ref.trace.d, y: ref.trace[k].map(v => v * mul), col: css("--ref") });
+    if (diffRef()) series.push({ d: ref.trace.d, y: ref.trace[k].map(v => v * mul), col: css("--ref") });
     series.push({ d: sel.trace.d, y: sel.trace[k].map(v => v * mul), col: css("--sel") });
   }
   let lo = Infinity, hi = -Infinity;
@@ -380,10 +544,10 @@ function drawCharts() { for (const ch of CHARTS) drawChart(ch); }
 function renderReadout() {
   if (cursor == null) { $("readout").innerHTML = '<span>Tocca o scorri un grafico o la mappa per leggere i valori</span>'; return; }
   const s = k => Math.round(interp(sel.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1));
-  const r = k => ref && refLap !== selLap ? Math.round(interp(ref.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1)) : null;
+  const r = k => diffRef() ? Math.round(interp(ref.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1)) : null;
   const pair = (lab, k, u) => `<span>${lab}</span> <b style="color:var(--sel)">${s(k)}${u}</b>${r(k) != null ? ` <b style="color:var(--ref)">${r(k)}${u}</b>` : ""}`;
   const ds = deltaSeries(); let dtxt = "";
-  if (ds && refLap !== selLap) { const v = interp({ d: sel.trace.d, y: ds }, "y", cursor); dtxt = `<span>Delta</span> <b class="${v <= 0 ? "good" : "bad"}">${sgn(v, 2)}</b>`; }
+  if (ds && diffRef()) { const v = interp({ d: sel.trace.d, y: ds }, "y", cursor); dtxt = `<span>Delta</span> <b class="${v <= 0 ? "good" : "bad"}">${sgn(v, 2)}</b>`; }
   $("readout").innerHTML = `<span>${Math.round(cursor)} m</span>${dtxt}${pair("Vel", "v", "")}${pair("Gas", "thr", "%")}${pair("Freno", "brk", "%")}${pair("Marcia", "gear", "")}`;
 }
 let raf = 0;
@@ -410,6 +574,186 @@ function renderZones() {
   $("zones").innerHTML = h;
   for (const tr of $("zones").querySelectorAll("tr.click")) tr.onclick = () => { cursor = +tr.dataset.at; redrawCursor(); };
 }
+
+// ---------------------------------------------------------- amici
+let myUser = null;
+fetch("/settings").then(r => r.ok ? r.json() : {}).then(j => { myUser = j.user || null; $("fnamebox").hidden = !!myUser; }).catch(() => {});
+try { $("fname").value = localStorage.getItem("nome_pilota") || ""; } catch (e) {}
+$("fname").onchange = () => { try { localStorage.setItem("nome_pilota", $("fname").value.trim()); } catch (e) {} };
+function fmsg(text, cls = "") { $("fmsg").textContent = text; $("fmsg").className = cls; }
+function renderFriendBox() {
+  if (!cur) return;
+  $("fexport").textContent = `⬇ Esporta il giro ${selLap ?? ""}`;
+  $("fdelete").hidden = !(refFriend && refFriend.startsWith("f:"));
+  $("fuseref").textContent = diffRef() || refFriend ? `🎯 Usa il ${refName()} come riferimento del coach` : "🎯 Usa come riferimento del coach";
+}
+$("fexport").onclick = async () => {
+  if (!sel) return;
+  const driver = myUser || $("fname").value.trim() || "Pilota";
+  const lap = Object.assign({}, sel, { driver, track: cur.track, track_id: cur.track_id ?? null, formato: "ingegnere-f1-giro" });
+  const name = `giro-${cur.track}-${driver}-${fmt(sel.ms).replace(/[:.]/g, "-")}.json`.replace(/\s+/g, "_");
+  const file = new File([JSON.stringify(lap)], name, { type: "application/json" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Il mio giro a ${cur.track}: ${fmt(sel.ms)}` });
+      fmsg("Giro condiviso. Il tuo amico lo carica con ⬆ Carica giro amico.", "ok");
+      return;
+    }
+  } catch (e) { if (e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  fmsg("File scaricato: mandalo al tuo amico (WhatsApp, Telegram, email).", "ok");
+};
+$("fupload").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  let lap;
+  try { lap = JSON.parse(await f.text()); } catch (err) { return fmsg("Questo file non è un giro dell'ingegnere.", "err"); }
+  const r = await fetch("/api/friend_upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(lap) });
+  const j = await r.json().catch(() => ({ error: "Errore nel caricamento." }));
+  if (j.error) return fmsg(j.error, "err");
+  if (cur && j.track.toLowerCase() === cur.track.toLowerCase()) {
+    refFriend = j.id; refLap = null;
+    await loadFriends(); load();
+    fmsg(`Caricato il giro di ${j.driver} (${fmt(j.ms)}): ora è il confronto.`, "ok");
+  } else {
+    fmsg(`Caricato il giro di ${j.driver} a ${j.track} (${fmt(j.ms)}). Lo trovi in "Confronta con" quando apri una sessione a ${j.track}.`, "ok");
+  }
+};
+$("fdelete").onclick = async () => {
+  if (!refFriend) return;
+  await fetch("/api/friend_delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: refFriend }) });
+  delete cache["amico/" + refFriend];
+  refFriend = null; refLap = bestLap(cur).lap;
+  await loadFriends(); load();
+  fmsg("Giro dell'amico eliminato.");
+};
+$("fuseref").onclick = async () => {
+  const body = refFriend ? { friend: refFriend } : { s: cur.id, l: refLap };
+  const r = await fetch("/api/use_ref", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ error: "Errore." }));
+  if (j.error) return fmsg(j.error, "err");
+  fmsg(`Fatto: a ${j.track} il coach ti confronta con ${j.owner ? "il giro di " + j.owner : "questo giro"} (${fmt(j.ms)}, ${j.zones} staccate). ` +
+       `Delta live e consigli sulle staccate useranno questo giro finché non lo batti.`, "ok");
+};
+
+// ------------------------------------------------- esporta come immagine
+// Un'immagine PNG con tempi, mappa, grafici e staccate del giro selezionato contro il confronto:
+// si condivide (WhatsApp, Telegram…) o si scarica.
+if (!CanvasRenderingContext2D.prototype.roundRect)       // browser vecchi: angoli dritti
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };
+let exportSized = false;
+function restoreSizes() {
+  if (!exportSized) return;
+  exportSized = false;
+  $("map").style.width = "";
+  for (const ch of CHARTS) ch.canvas.style.width = "";
+  drawMap(); drawCharts();
+}
+async function exportImage() {
+  if (!sel) return;
+  const btn = $("exportimg"); btn.textContent = "⏳ Preparo…"; btn.disabled = true;
+  try {
+    const S = 2, W = 1200, PAD = 28, mapW = 470, chartX = PAD + mapW + 24, chartW = W - chartX - PAD;
+    // ridisegno mappa e grafici alla misura dell'immagine (sul telefono sono stretti), poi li rimetto come prima
+    cursor = null;
+    $("map").style.width = (mapW - 20) + "px";
+    for (const ch of CHARTS) ch.canvas.style.width = chartW + "px";
+    exportSized = true;
+    drawMap(); drawCharts();
+    const chartsH = CHARTS.reduce((a, ch) => a + ch.h + 22, 0);
+    const zones = sel.zones || [];
+    const top = 150, bodyH = Math.max(mapW + 40, chartsH);
+    const zonesH = zones.length ? 60 + zones.length * 30 : 0;
+    const H = top + bodyH + zonesH + 60;
+    const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+    const x = c.getContext("2d"); x.scale(S, S);
+    const F = "-apple-system,'SF Pro Text',Roboto,'Segoe UI',sans-serif", M = "ui-monospace,Menlo,'Roboto Mono',monospace";
+    x.fillStyle = css("--bg"); x.fillRect(0, 0, W, H);
+    // intestazione
+    x.fillStyle = css("--accent"); x.fillRect(PAD, PAD, 6, 34);
+    x.fillStyle = "#e8edf2"; x.font = `800 26px ${F}`; x.textBaseline = "top";
+    x.fillText(`${cur.track} · ${cur.session}`, PAD + 18, PAD + 2);
+    x.fillStyle = css("--dim"); x.font = `500 15px ${F}`;
+    const when = new Date(cur.started * 1000).toLocaleString("it-IT", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
+    x.fillText(`${when} · Ingegnere F1`, PAD + 18, PAD + 36);
+    // riquadri dei tempi
+    const d = diffRef() ? (sel.ms - ref.ms) / 1000 : null;
+    const boxes = [
+      ["Giro " + sel.lap + (sel.valid ? "" : " (non valido)"), fmt(sel.ms), "#3987e5"],
+      ["vs " + refName(), diffRef() ? fmt(ref.ms) : "—", css("--ref")],
+      ["Distacco", d == null ? "—" : sgn(d), d == null ? "#e8edf2" : d <= 0 ? "#4cc38a" : "#ff6b72"],
+    ];
+    for (const k of ["s1", "s2", "s3"]) if (sel[k]) boxes.push([`Settore ${k[1]}`, fmt(sel[k]).replace(/^0:/, ""),
+      ref && ref[k] ? (sel[k] <= ref[k] ? "#4cc38a" : "#ff6b72") : "#e8edf2"]);
+    const ideal = idealCache[cur.id];
+    if (ideal && ideal.ideal_ms) boxes.push(["Giro ideale", fmt(ideal.ideal_ms), "#4cc38a"]);
+    const bw = (W - 2 * PAD - (boxes.length - 1) * 10) / boxes.length;
+    boxes.forEach(([lab, val, col], i) => {
+      const bx = PAD + i * (bw + 10), by = 86;
+      x.fillStyle = css("--panel"); x.strokeStyle = css("--line");
+      x.beginPath(); x.roundRect(bx, by, bw, 50, 10); x.fill(); x.stroke();
+      x.fillStyle = css("--dim"); x.font = `700 11px ${F}`; x.fillText(lab.toUpperCase().slice(0, 28), bx + 10, by + 8);
+      x.fillStyle = col; x.font = `700 20px ${M}`; x.fillText(val, bx + 10, by + 23);
+    });
+    // mappa
+    const mc = $("map");
+    x.fillStyle = css("--panel"); x.beginPath(); x.roundRect(PAD, top, mapW, mapW + 30, 12); x.fill();
+    x.drawImage(mc, PAD + 10, top + 10, mapW - 20, (mapW - 20) * mc.height / mc.width);
+    x.fillStyle = css("--dim"); x.font = `600 12px ${F}`;
+    x.fillText(mapMode === "delta" ? `Mappa: rosso dove perdi, verde dove guadagni rispetto al ${refName()}`
+                                   : "Mappa: rosso freno · verde gas pieno · giallo gas parziale · grigio rilascio",
+               PAD + 12, top + mapW + 8);
+    // grafici
+    let cy = top;
+    for (const ch of CHARTS) {
+      const h = ch.h;
+      x.fillStyle = css("--dim"); x.font = `700 12px ${F}`; x.fillText(ch.title.toUpperCase(), chartX + 46, cy);
+      x.drawImage(ch.canvas, chartX, cy + 16, chartW, h);
+      cy += h + 22;
+    }
+    x.font = `600 13px ${F}`;
+    x.fillStyle = "#3987e5"; x.fillText(`━ Giro ${sel.lap}`, chartX + 46, cy);
+    if (diffRef()) { x.fillStyle = css("--ref"); x.fillText(`━ ${refName()}`, chartX + 160, cy); }
+    // staccate
+    let zy = top + bodyH + 20;
+    if (zones.length) {
+      x.fillStyle = css("--dim"); x.font = `700 12px ${F}`;
+      x.fillText("STACCATE · CONFRONTO CON IL RIFERIMENTO DEL COACH", PAD, zy);
+      const cols = [["Staccata", PAD], ["Tempo", PAD + 160], ["Frenata", PAD + 330], ["Vel. minima", PAD + 560], ["Gas pieno", PAD + 760]];
+      zy += 24; for (const [t, cx] of cols) x.fillText(t.toUpperCase(), cx, zy);
+      x.font = `600 15px ${M}`;
+      for (const z of zones) {
+        zy += 30;
+        x.fillStyle = "#e8edf2"; x.fillText(String(z.n), PAD, zy);
+        x.fillStyle = z.loss > 0.03 ? "#ff6b72" : z.loss < -0.03 ? "#4cc38a" : "#e8edf2"; x.fillText(sgn(z.loss), PAD + 160, zy);
+        x.fillStyle = "#e8edf2";
+        const bd = z.brake_delta == null ? null : Math.round(z.brake_delta);
+        x.fillText(bd == null ? "-" : bd < 0 ? -bd + " m prima" : bd > 0 ? bd + " m dopo" : "uguale", PAD + 330, zy);
+        x.fillText(z.vmin_delta == null ? "-" : (z.vmin_delta > 0 ? "+" : "") + Math.round(z.vmin_delta) + " km/h", PAD + 560, zy);
+        x.fillText(z.full_delta == null ? "-" : (z.full_delta > 0 ? "+" : "") + Math.round(z.full_delta) + " m", PAD + 760, zy);
+      }
+    }
+    x.fillStyle = css("--dim"); x.font = `500 12px ${F}`; x.fillText("Ingegnere F1 · analisi giri", PAD, H - 32);
+    restoreSizes();
+    const blob = await new Promise(r => c.toBlob(r, "image/png"));
+    const name = `telemetria-${cur.track}-giro${sel.lap}.png`.replace(/\s+/g, "_");
+    const file = new File([blob], name, { type: "image/png" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${cur.track} · giro ${sel.lap} ${fmt(sel.ms)}` });
+        return;
+      }
+    } catch (e) { if (e.name === "AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  } finally {
+    restoreSizes();
+    btn.textContent = "🖼 Esporta grafico"; btn.disabled = false;
+  }
+}
+$("exportimg").onclick = exportImage;
 
 buildCharts();
 loadSessions();
