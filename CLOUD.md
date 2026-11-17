@@ -82,6 +82,9 @@ Impostazioni → Telemetria:
 - Frequenza: **20 Hz** (su internet bastano e consumano meno connessione, circa 1 Mbit/s in upload)
 - Formato: **2025**
 
+Poi, dal telefono, apri **https://…sslip.io/collegamento** (o Dettagli → 🔌 Controllo del collegamento) ed entra
+in pista: la pagina diventa verde appena arrivano i dati. Se resta gialla ti dice cosa controllare.
+
 ## 7. Sul telefono
 Apri l'indirizzo `https://…sslip.io`, entra con utente e password, poi *Aggiungi alla schermata Home*.
 Il login resta valido 90 giorni. Nome utente e password si cambiano dalla dashboard: Dettagli → 👤 Profilo.
@@ -104,6 +107,9 @@ crea una nuova password per chi l'ha dimenticata e rimuove un utente, senza Clou
   italiane (circa 150 MB). Non serve fare niente: dopo qualche minuto in Dettagli → 🔊 la voce "Server"
   risulta pronta. Nei messaggi del servizio compare "Voce del server (Piper) pronta".
 
+- **Backup**: ogni tanto scarica il backup da Dettagli → 💾 Backup dei dati. Se Oracle cancella il server o ne fai
+  uno nuovo, lo ricarichi da lì e ritrovi giri, riferimenti e impostazioni.
+
 ## Comandi utili (sul server, via SSH)
 ```
 sudo journalctl -u ingegnere-f1 -f          # messaggi in tempo reale (Ctrl+C per uscire)
@@ -120,6 +126,7 @@ Le porte da 20777 a 20796 sono già aperte: i nuovi utenti funzionano subito, se
 Dopo un utente aggiunto o rimosso da terminale serve `sudo systemctl restart ingegnere-f1`.
 
 ## Se il pallino della dashboard resta rosso
+0. Apri la pagina /collegamento: ti dice se arriva qualcosa e cosa cambiare.
 1. Controlla nel gioco IP, porta e Broadcast Off.
 2. Controlla che la porta UDP sia nella Security List di Oracle (passo 3).
 3. Guarda i messaggi con `sudo journalctl -u ingegnere-f1 -f` mentre sei in pista.

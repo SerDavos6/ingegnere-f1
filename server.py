@@ -32,6 +32,7 @@ import registra
 import utenti
 import voce_ai
 import voce_piper
+import storico
 import voci
 from coach import Coach
 from risposte import Answers
@@ -60,6 +61,7 @@ class Tenant:
 
     def __init__(self, name, udp_port, root):
         self.name, self.udp_port = name, udp_port
+        self.root = root
         self.data_dir = os.path.join(root, "dati")
         self.friends_dir = os.path.join(root, "amici")
         self.voice = voce_ai.VoiceAI(os.path.join(root, "voce_cache"))
@@ -69,11 +71,17 @@ class Tenant:
         self.clients, self.clients_lock = [], threading.Lock()
         self.lock = threading.Lock()
         self.recent = []
-        self.stats = {"packets": 0, "last_packet": 0.0, "format": None}
+        self.stats = {"packets": 0, "last_packet": 0.0, "format": None, "addr": None, "first_packet": None,
+                      "ids": {}, "player_idx": None, "rate": 0.0, "_sec": 0, "_n": 0, "_hist": []}
         self.coach = Coach(self.emit, data_dir=self.data_dir, ref_dir=self.ref_dir)
         cfg = engineer_ai.load_config(self.config_path)
         self.coach.pit_loss = float(cfg.get("pit_loss", 22.0))
         self.coach.verbosity = int(cfg.get("verbosity", 2))
+        self.coach.muted = bool(cfg.get("muted"))
+        self.coach.training.enabled = cfg.get("training", True) is not False
+        self.coach.targets = dict(cfg.get("targets") or {})
+        self.coach.setups_dir = os.path.join(root, "assetti")
+        self.coach.teammates = lambda: find_teammates(self)
         self.answers = Answers(self.coach)
 
     def broadcast(self, event, payload):
@@ -101,9 +109,10 @@ class Tenant:
         print(f"[{self.name}] in ascolto telemetria UDP sulla porta {self.udp_port}", flush=True)
         while True:
             try:
-                data, _ = sock.recvfrom(4096)
+                data, addr = sock.recvfrom(4096)
             except OSError:
                 return              # utente rimosso: socket chiuso
+            self.stats["addr"] = addr[0]
             self.handle(data)
 
     def close(self):
@@ -121,8 +130,19 @@ class Tenant:
         h = P.parse_header(data)
         if not h:
             return
-        self.stats.update(packets=self.stats["packets"] + 1, last_packet=time.time(), format=h["format"])
+        st, now = self.stats, time.time()
+        st.update(packets=st["packets"] + 1, last_packet=now, format=h["format"], player_idx=h["player_idx"])
+        if st["first_packet"] is None:
+            st["first_packet"] = now
         pid, idx = h["packet_id"], h["player_idx"]
+        st["ids"][pid] = st["ids"].get(pid, 0) + 1
+        if pid == P.PID_TELEMETRY:          # frequenza: pacchetti di telemetria al secondo (media su 5 s)
+            sec = int(now)
+            if sec != st["_sec"]:
+                st["_hist"] = (st["_hist"] + [st["_n"]])[-5:] if st["_sec"] else []
+                st["_sec"], st["_n"] = sec, 0
+                st["rate"] = sum(st["_hist"]) / len(st["_hist"]) if st["_hist"] else 0.0
+            st["_n"] += 1
         if idx >= P.num_cars(h["format"]):
             return
         c = self.coach
@@ -158,6 +178,9 @@ class Tenant:
                 elif pid == P.PID_DAMAGE:
                     v = P.parse_damage(data, idx)
                     v and c.on_damage(v)
+                elif pid == P.PID_SETUPS:
+                    v = P.parse_setup(data, idx)
+                    v and c.on_setup(v)
         except Exception as e:  # un pacchetto strano non deve fermare tutto
             print(f"[{self.name}] errore pacchetto {pid}: {e}", flush=True)
 
@@ -180,8 +203,43 @@ class Tenant:
         if answer is None:
             answer = ("Non ho capito la domanda. " + Answers.HELP +
                       " Per le domande libere inserisci una chiave Gemini gratuita nelle impostazioni.")
+        self._save_radio_state()           # i comandi a voce (silenzio, parla di più…) restano salvati
+        self.coach.last_spoken = answer     # "Radio, ripeti" ripete anche le risposte
         self.emit("ingegnere", answer, True, 2)
         return answer
+
+    def _save_radio_state(self):
+        cfg = engineer_ai.load_config(self.config_path)
+        c = self.coach
+        new = {"verbosity": c.verbosity, "muted": c.muted, "training": c.training.enabled}
+        if any(cfg.get(k) != v for k, v in new.items()):
+            cfg.update(new)
+            engineer_ai.save_config(cfg, self.config_path)
+
+    # ---- collegamento con la PS5
+    def link_status(self):
+        st = self.stats
+        with self.lock:
+            sess = self.coach.session
+            session = f"{sess.get('session_name')} a {sess.get('track_name')}" if sess else None
+        ip = (ARGS.public_ip if ARGS else None) or (lan_ip() if MODE != "cloud" else None)
+        state, tips = storico.diagnosi(st, MODE == "cloud", ip, self.udp_port, session)
+        last = st["last_packet"]
+        return {"state": state, "tips": [{"kind": k, "text": t} for k, t in tips],
+                "packets": st["packets"], "age": round(time.time() - last, 1) if last else None,
+                "addr": st["addr"], "format": st["format"], "rate": round(st["rate"], 1),
+                "types": sorted(storico.PACKET_NAMES.get(i, str(i)) for i in st["ids"]),
+                "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
+                "lan_ip": lan_ip() if MODE != "cloud" else None, "cloud": MODE == "cloud"}
+
+    def reload_after_restore(self):
+        cfg = engineer_ai.load_config(self.config_path)
+        with self.lock:
+            c = self.coach
+            c.targets = dict(cfg.get("targets") or {})
+            c.verbosity = int(cfg.get("verbosity", c.verbosity))
+            if c.track_id is not None:
+                c.ref = c._load_ref()
 
     # ---- analisi: giro ideale e progressi
     def ideal_of(self, sid):
@@ -281,6 +339,9 @@ class Tenant:
                 "voice_engine": voice_engine(cfg)[0], "voice_engine_now": voice_engine(cfg)[1],
                 "voice_char": cfg.get("voice_char", voci.DEFAULT), "voice_chars": voci.elenco(),
                 "piper": PIPER.status(),
+                "muted": self.coach.muted, "training_on": self.coach.training.enabled,
+                "target_ms": self.coach.target_ms(), "target_track": self.coach.track_name
+                if self.coach.track_id is not None else None,
                 "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
                 "team_color": cfg.get("team_color") or None,
                 "admin": MODE == "cloud" and utenti.is_admin(self.name)}
@@ -300,16 +361,150 @@ class Tenant:
         if body.get("voice_engine") in ENGINES:
             cfg["voice_engine"] = body["voice_engine"]
         if voci.valid(body.get("voice_char")):
+            if cfg.get("voice_char") != body["voice_char"] and PIPER.ready():
+                PIPER.warm([body["voice_char"]])
             cfg["voice_char"] = body["voice_char"]
         if "team_color" in body:
             c = str(body["team_color"] or "")
             cfg["team_color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
+        if "muted" in body:
+            self.coach.muted = cfg["muted"] = bool(body["muted"])
+        if "training_on" in body:
+            self.coach.training.set_enabled(body["training_on"])
+            cfg["training"] = self.coach.training.enabled
+        if "target" in body:
+            key = self.coach.target_key()
+            if key:
+                ms = parse_lap_time(str(body["target"] or ""))
+                targets = dict(cfg.get("targets") or {})
+                if ms:
+                    targets[key] = ms
+                else:
+                    targets.pop(key, None)
+                cfg["targets"] = self.coach.targets = targets
+                self.coach.target_said = None
         if "pit_loss" in body:
             try:
                 self.coach.pit_loss = cfg["pit_loss"] = min(60.0, max(10.0, float(body["pit_loss"])))
             except (ValueError, TypeError):
                 pass
         engineer_ai.save_config(cfg, self.config_path)
+
+
+def parse_lap_time(txt):
+    """'1:20.5', '1:20,500', '1.20.500', '80.5' -> millisecondi (None se non valido o vuoto)."""
+    t = txt.strip().replace(",", ".").replace("'", ":")
+    m3 = re.fullmatch(r"(\d{1,2})[:.](\d{2})\.(\d{1,3})", t)      # 1:20.500 o 1.20.500
+    m2 = re.fullmatch(r"(\d{1,2}):(\d{1,2}(?:\.\d{1,3})?)", t)     # 1:20.5 o 1:20
+    m1 = re.fullmatch(r"\d{2,3}(?:\.\d{1,3})?", t)                  # 80.5 (secondi)
+    if m3:
+        ms = int(m3[1]) * 60000 + int(m3[2]) * 1000 + int(m3[3].ljust(3, "0"))
+    elif m2:
+        ms = int(m2[1]) * 60000 + round(float(m2[2]) * 1000)
+    elif m1:
+        ms = round(float(t) * 1000)
+    else:
+        return None
+    return ms if 20000 <= ms <= 300000 else None
+
+
+# --------------------------------------------------------------------------- squadra e campionato
+def find_teammates(me):
+    """Gli altri utenti del server nella stessa gara online (stessa sessione del gioco):
+    [(nome, indice della sua auto nei miei dati)]. Solo chi condivide i giri."""
+    if MODE != "cloud":
+        return []
+    c = me.coach
+    if c.session_uid is None or not c.in_race:
+        return []
+    out = []
+    for name, o in list(TENANTS.items()):
+        oc = o.coach
+        if o is me or oc.session_uid != c.session_uid or time.time() - o.stats["last_packet"] > 5 or not o.share_laps():
+            continue
+        idx = oc.player_idx
+        theirs = oc.race.names.get(idx) or {}
+        # stesso pilota nei miei dati: per nome online, poi per squadra e numero, se no stesso indice
+        for i, p in c.race.names.items():
+            if theirs.get("name") and p.get("name") == theirs["name"] and not p.get("ai"):
+                idx = i
+                break
+        else:
+            for i, p in c.race.names.items():
+                if theirs.get("number") and p.get("number") == theirs.get("number") and p.get("team") == theirs.get("team"):
+                    idx = i
+                    break
+        out.append((name, idx))
+    return out
+
+
+POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+
+
+def championship(me):
+    """Le gare online fatte insieme (stessa sessione del gioco, almeno 2 utenti del server):
+    punti come in F1 dalla posizione d'arrivo, classifica piloti e risultati gara per gara."""
+    races = {}
+    for name, t in list(TENANTS.items()):
+        if t is not me and not t.share_laps():
+            continue
+        for meta in recorder.list_sessions(t.data_dir):
+            r = storico._race_of(meta)
+            if not r or not r.get("uid") or not r.get("finish") or r["laps"] < 2:
+                continue
+            races.setdefault(r["uid"], []).append(dict(r, driver=name, me=t is me))
+    rows, results = {}, []
+    for uid, rs in races.items():
+        drivers = {x["driver"] for x in rs}
+        if len(drivers) < 2:
+            continue
+        rs = sorted({x["driver"]: x for x in rs}.values(), key=lambda x: x["finish"])
+        best = min((x["best_ms"] for x in rs if x["best_ms"]), default=None)
+        for x in rs:
+            pts = POINTS[x["finish"] - 1] if x["finish"] <= len(POINTS) else 0
+            x["points"] = pts
+            x["fastest"] = bool(best and x["best_ms"] == best)
+            row = rows.setdefault(x["driver"], {"driver": x["driver"], "me": x["me"], "points": 0, "races": 0,
+                                               "wins": 0, "podiums": 0, "beaten": 0})
+            row["points"] += pts
+            row["races"] += 1
+            row["wins"] += x["finish"] == 1
+            row["podiums"] += x["finish"] <= 3
+            row["beaten"] += sum(1 for y in rs if y["finish"] > x["finish"])   # amici arrivati dietro
+        results.append({"uid": uid, "track": rs[0]["track"], "date": min(x["date"] or 0 for x in rs),
+                        "category_name": rs[0]["category_name"],
+                        "results": [{k: x[k] for k in ("driver", "me", "finish", "grid", "points", "best_ms", "fastest")}
+                                    for x in rs]})
+    table = sorted(rows.values(), key=lambda r: (-r["points"], -r["wins"], -r["podiums"]))
+    for i, r in enumerate(table):
+        r["pos"] = i + 1
+        r["gap"] = table[0]["points"] - r["points"]
+    results.sort(key=lambda r: r["date"], reverse=True)
+    return {"cloud": MODE == "cloud", "standings": table, "races": results}
+
+
+def setups_view(me, track_id=None):
+    """Gli assetti del giro migliore per pista: i tuoi e quelli degli amici che condividono i giri."""
+    out = []
+    for name, t in list(TENANTS.items()):
+        if t is not me and not t.share_laps():
+            continue
+        d = os.path.join(t.root, "assetti")
+        try:
+            files = os.listdir(d)
+        except OSError:
+            continue
+        for f in files:
+            try:
+                with open(os.path.join(d, f)) as fh:
+                    j = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if track_id is not None and str(j.get("track_id")) != str(track_id):
+                continue
+            out.append(dict(j, driver=name if MODE == "cloud" else "Tu", me=t is me))
+    out.sort(key=lambda x: (str(x.get("track")), str(x.get("category_name")), x.get("ms") or 0))
+    return out
 
 
 # --------------------------------------------------------------------------- classifica
@@ -478,7 +673,10 @@ def welcome_page(t):
 <div class="box">Telemetria UDP: <b>On</b><br>Broadcast: <b>Off</b><br>Indirizzo IP: <b>{esc(ip)}</b><br>
 Porta: <b>{t.udp_port}</b><br>Frequenza: <b>20 Hz</b><br>Formato: <b>2025</b></div>
 <p>Questi dati li ritrovi sempre in Dettagli → Impostazioni. Consiglio: dal browser del telefono scegli
-"Aggiungi a schermata Home", così si apre come un'app.</p><a class="btn" href="/">Vai alla dashboard</a></form>""")
+"Aggiungi a schermata Home", così si apre come un'app.</p>
+<p>Poi entra in pista e apri il <b>controllo del collegamento</b>: ti dice subito se i dati della PS5 arrivano.</p>
+<a class="btn" href="/collegamento">🔌 Controlla il collegamento</a>
+<p></p><a class="btn" href="/">Vai alla dashboard</a></form>""")
 
 
 failed_logins = {}
@@ -521,12 +719,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, path, name):
+    def _send_file(self, path, name, ctype="application/gzip"):
         if not path:
             return self._json({"error": "file non trovato"}, 404)
         size = os.path.getsize(path)
         self.send_response(200)
-        self.send_header("Content-Type", "application/gzip")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(size))
         self.send_header("Content-Disposition", f'attachment; filename="{name}"')
         self.end_headers()
@@ -683,7 +881,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         t = self._tenant()
         if t is None:
-            if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto", "/classifica", "/admin"):
+            if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto", "/classifica", "/admin",
+                        "/gare", "/collegamento", "/campionato", "/assetti"):
                 return self._redirect("/login")
             return self._json({"error": "login"}, 401)
         if path == "/benvenuto":
@@ -694,6 +893,29 @@ class Handler(BaseHTTPRequestHandler):
             self._static("analisi.html")
         elif path in ("/classifica", "/classifica.html"):
             self._static("classifica.html")
+        elif path in ("/gare", "/gare.html"):
+            self._static("gare.html")
+        elif path in ("/collegamento", "/collegamento.html"):
+            self._static("collegamento.html")
+        elif path in ("/campionato", "/campionato.html"):
+            self._static("campionato.html")
+        elif path in ("/assetti", "/assetti.html"):
+            self._static("assetti.html")
+        elif path == "/api/campionato":
+            self._json(championship(t))
+        elif path == "/api/assetti":
+            self._json({"setups": setups_view(t), "current": t.coach.track_name if t.coach.track_id is not None else None})
+        elif path == "/api/gare":
+            self._json(storico.gare(t.data_dir))
+        elif path == "/api/collegamento":
+            self._json(t.link_status())
+        elif path == "/api/backup":
+            zp = storico.make_backup(t.root)
+            try:
+                name = f"ingegnere-f1-backup-{t.name}-{time.strftime('%Y%m%d')}.zip"
+                self._send_file(zp, name, "application/zip")
+            finally:
+                os.remove(zp)
         elif path in ("/admin", "/admin.html"):
             if MODE != "cloud" or not utenti.is_admin(t.name):
                 return self._redirect("/")
@@ -768,6 +990,32 @@ class Handler(BaseHTTPRequestHandler):
             with t.clients_lock:
                 t.clients.remove(q)
 
+    def _restore(self, t):
+        """Ripristino del backup: il file zip arriva così com'è (può pesare decine di MB)."""
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if not n or n > 500 * 1024 * 1024:
+            if n:
+                self.rfile.read(n)
+            return self._json({"error": "File vuoto o troppo grande."}, 400)
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".zip")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                left = n
+                while left:
+                    chunk = self.rfile.read(min(left, 256 * 1024))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    left -= len(chunk)
+            res = storico.restore_backup(t.root, tmp)
+        finally:
+            os.remove(tmp)
+        if res.get("ok"):
+            t.reload_after_restore()
+            print(f"[{t.name}] backup ripristinato: {res['files']} file", flush=True)
+        return self._json(res, 200 if res.get("ok") else 400)
+
     # ---- POST
     def do_POST(self):
         if self.path == "/login":
@@ -777,6 +1025,8 @@ class Handler(BaseHTTPRequestHandler):
         t = self._tenant()
         if t is None:
             return self._json({"error": "login"}, 401)
+        if self.path == "/api/restore":
+            return self._restore(t)
         raw = self._body()
         if raw is None:
             return self._json({"error": "File troppo grande."}, 413)
@@ -893,7 +1143,10 @@ def main():
     if a.no_piper:
         PIPER.state = "non_supportato"
     else:
-        PIPER.start()               # la prima volta scarica Piper e le voci (in sottofondo)
+        # la prima volta scarica Piper e le voci (in sottofondo), poi prepara le frasi comuni
+        # per i personaggi scelti da chi usa la voce del server
+        PIPER.start(lambda: sorted({engineer_ai.load_config(t.config_path).get("voice_char", voci.DEFAULT)
+                                    for t in TENANTS.values()}))
     setup_tenants(a.udp_port)
     for t in TENANTS.values():
         threading.Thread(target=t.udp_loop, daemon=True).start()

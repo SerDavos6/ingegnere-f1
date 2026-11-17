@@ -11,11 +11,14 @@ Livelli di parlato (scelti dalla dashboard):
 import bisect
 import json
 import os
+import time
 
 import curve
 from frasi import Frasi
 import ideale
 from assetto import SetupAdvisor
+from energia import Energy
+from allenamento import Training
 from parlato import fmt_lap, fmt_lap_voice, num, tenths
 from race import RaceEngineer
 from recorder import Recorder
@@ -157,7 +160,14 @@ class Coach:
         self.recorder = Recorder(data_dir) if data_dir else Recorder()
         self.race = RaceEngineer(self)
         self.setup = SetupAdvisor()
+        self.energy = Energy(self)
+        self.training = Training(self)
         self.frasi = Frasi()
+        self.muted = False          # "Radio, silenzio": parla solo per le cose urgenti
+        self.last_spoken = None     # per "Radio, ripeti"
+        self.targets = {}           # tempo obiettivo per pista e categoria (ms), dalle impostazioni
+        self.teammates = lambda: []  # amici del server nella stessa gara: [(nome, indice auto)]
+        self.setups_dir = None      # assetti salvati (uno per pista e categoria, quello del giro migliore)
         self.reset()
 
     # ------------------------------------------------------------ stato
@@ -186,16 +196,30 @@ class Coach:
         self.ideal_said = None
         self.flag_pending = None     # bandiera a scacchi vista, aspetto il tempo dell'ultimo giro
         self.race_done = False       # gara finita: il giro di rientro non si registra
+        self.intro_pending = False   # annuncio "Gara di N giri…": lo dico solo se la gara deve ancora partire
+        self.quali_pos_at = None     # qualifica: quando dire la posizione provvisoria dopo il giro
+        self.outlap_said = None      # giro di uscita in cui ho già detto le temperature delle gomme
+        self.target_said = None      # obiettivo già annunciato come raggiunto
+        self.car_setup = None        # assetto attuale (pacchetto Car Setups)
+        self.setup_said = False
         self.race.reset()
         self.setup.reset()
+        self.energy.reset()
+        self.training.reset()
 
     def say(self, text, kind="info", level=2, urgent=False):
-        """Mostra sempre il messaggio; lo legge a voce solo se il livello scelto lo prevede."""
+        """Mostra sempre il messaggio; lo legge a voce solo se il livello scelto lo prevede.
+        In qualifica, durante il giro lanciato, parla solo per le cose urgenti (come una radio vera)."""
         spoken = level <= self.verbosity
+        if spoken and not urgent and self.is_quali and self.on_flying_lap():
+            spoken = False
+        if spoken and self.muted and not (urgent and level == 1):
+            spoken = False
         if spoken and not urgent and self.now - self.last_speak_t < SPEAK_COOLDOWN_S:
             spoken = False
         if spoken:
             self.last_speak_t = self.now
+            self.last_spoken = text
         self.emit(kind, text, spoken, 2 if urgent else 1)
 
     def _once(self, key, interval):
@@ -208,6 +232,21 @@ class Coach:
     @property
     def in_race(self):
         return bool(self.session.get("is_race"))
+
+    @property
+    def is_quali(self):
+        return 5 <= (self.session.get("session_type") or 0) <= 14
+
+    def target_key(self):
+        return f"{self.track_id}|{self.category or 'f1_2025'}" if self.track_id is not None else None
+
+    def target_ms(self):
+        k = self.target_key()
+        return self.targets.get(k) if k else None
+
+    def on_flying_lap(self):
+        """Stato del pilota dal gioco: 0 garage, 1 giro veloce, 2 rientro, 3 uscita, 4 in pista."""
+        return (self.last_lapdata or {}).get("driver_status") == 1
 
     # --------------------------------------------------------- ingressi
     def on_header(self, h):
@@ -238,14 +277,50 @@ class Coach:
                 who = f" (giro di {self.ref.owner})" if self.ref.owner else ""
                 msg += f" Riferimento: {fmt_lap(self.ref.lap_ms)}{who}, {len(self.ref.zones)} staccate."
             self.emit("sistema", msg, False, 0)
+        self._quali_clock(s)
         if first and s["is_race"] and s["total_laps"]:
-            self.say(f"Gara di {s['total_laps']} giri a {self.track_name}. Pista a {s['track_temp']} gradi. Buona gara!",
-                     "gara", level=1, urgent=True)
+            # non subito: dopo la bandiera a scacchi il gioco apre una "nuova sessione" (podio, risultati)
+            # con gli stessi dati della gara, e l'annuncio partirebbe a gara finita. Aspetto i dati del giro.
+            self.intro_pending = self.now
         self.race.on_session(s)
+
+    def _quali_clock(self, s):
+        """Qualifica: avviso per uscire in tempo per l'ultimo giro, e la bandiera a scacchi."""
+        left = s.get("time_left")
+        if not self.is_quali or left is None:
+            return
+        ld = self.last_lapdata or {}
+        status = ld.get("driver_status")
+        in_box = status in (0, None) or bool(ld.get("pit_status"))
+        if 60 <= left <= 240 and in_box and "q_esci" not in self.warned:
+            self.warned["q_esci"] = self.now
+            mins = max(1, round(left / 60))
+            self.say(f"Mancano {mins} minuti alla fine della qualifica: esci adesso per avere il tempo di un ultimo giro.",
+                     "qualifica", level=1, urgent=True)
+        if left == 0 and self.warned.get("q_live") and "q_fine" not in self.warned:
+            self.warned["q_fine"] = self.now
+            if status == 1:
+                self.say("Bandiera a scacchi della qualifica: questo giro vale ancora, chiudilo!", "qualifica",
+                         level=1, urgent=True)
+        if left > 0:
+            self.warned["q_live"] = True
 
     def on_lap(self, ld):
         prev = self.last_lapdata
         self.last_lapdata = ld
+        if self.quali_pos_at is not None and self.now >= self.quali_pos_at:
+            self.quali_pos_at = None
+            pos = ld.get("position")
+            if pos:
+                self.say("Sei in pole provvisoria!" if pos == 1 else f"Provvisoriamente sei P{pos}.",
+                         "qualifica", level=1, urgent=True)
+        # briefing prima del via: aspetto i nomi dei piloti (al massimo 6 secondi)
+        if self.intro_pending is not False and (self.race.names or self.now - self.intro_pending >= 6):
+            self.intro_pending = False
+            # solo al primo giro con la gara in corso (non a gara finita, non se entri a gara iniziata)
+            if self.in_race and ld.get("lap_num", 0) <= 1 and ld.get("result_status") in (None, 2) \
+                    and not ld.get("total_distance", 0) > 1500:
+                self.say(self.race.briefing(), "gara", level=1, urgent=True)
         if self.lap_num is None:
             self.lap_num = ld["lap_num"]
         # tornato nel garage (anche dal menu) a metà giro: salvo quello che c'è come giro parziale
@@ -307,9 +382,50 @@ class Coach:
             self.analyzed = {n for n in self.analyzed if self.ref.zones[n - 1]["exit"] < d}
         self._check_zones(d)
         self._check_tyres(tel)
+        self._outlap_tyres(ld, tel)
+
+    # ------------------------------------------------ assetti salvati
+    def on_setup(self, setup):
+        self.car_setup = setup
+        # prova e qualifica: se su questa pista hai già un assetto salvato, lo ricordo una volta
+        if not self.setup_said and not self.in_race and self.track_id is not None and self.setups_dir:
+            self.setup_said = True
+            saved = self.saved_setup()
+            if saved:
+                self.say(f"Su {self.track_name} hai un assetto salvato, quello del {fmt_lap_voice(saved['ms'])}: "
+                         f"lo trovi in Dettagli, Assetti, insieme a quelli degli amici.", "assetto", level=2)
+
+    def _setup_path(self):
+        key = f"{self.track_id}_{self.category or 'f1_2025'}"
+        return os.path.join(self.setups_dir, key + ".json") if self.setups_dir else None
+
+    def saved_setup(self):
+        p = self._setup_path()
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def _save_setup(self, lap_ms):
+        """L'assetto del giro migliore valido, per pista e categoria."""
+        if not self.car_setup or not self.setups_dir:
+            return
+        old = self.saved_setup()
+        if old and old.get("ms") and old["ms"] <= lap_ms:
+            return
+        try:
+            os.makedirs(self.setups_dir, exist_ok=True)
+            with open(self._setup_path(), "w") as f:
+                json.dump({"ms": lap_ms, "date": time.time(), "track": self.track_name, "track_id": self.track_id,
+                           "category": self.category, "category_name": self.session.get("category_name"),
+                           "session": self.session.get("session_name"), "setup": self.car_setup}, f, ensure_ascii=False)
+        except OSError as e:
+            print("Impossibile salvare l'assetto:", e, flush=True)
 
     def on_status(self, st):
         self.status = st
+        self.energy.on_status(st)
         if st.get("fia_flag") is not None:
             self.race.on_fia_flag(st["fia_flag"])
         fl = st.get("fuel_laps")
@@ -398,6 +514,9 @@ class Coach:
         self.lap_zone_results.append(res)
 
         tip_level = 3 if self.in_race else 2   # in gara i consigli di guida solo con "tanto"
+        focus = self.training.focus_zone()      # allenamento mirato: a voce solo la staccata su cui lavori
+        if focus is not None:
+            tip_level = 1 if z["n"] == focus else 4
         tag, tag_l, f = self.zone_label(z, capital=True), self.zone_label(z), self.frasi
         if loss >= 0.08:
             bd, vd, fd = res["brake_delta"], res["vmin_delta"], res["full_delta"]
@@ -419,11 +538,35 @@ class Coach:
             self.tip_mem[z["n"]] = (kind, lap, times)
             perdi = f("perdi", loss=tenths(loss))
             text = f("ancora" if times >= 2 else "consiglio", tag=tag, tag_l=tag_l, tip=tip, perdi=perdi)
-            self.say(text[0].upper() + text[1:], "consiglio", level=3 if times >= 3 else tip_level)
+            self.say(text[0].upper() + text[1:], "consiglio",
+                     level=tip_level if focus is not None else 3 if times >= 3 else tip_level)
         elif loss <= -0.12:
             self.tip_mem.pop(z["n"], None)
             text = f("bene_zona", tag=tag, tag_l=tag_l, gain=tenths(loss))
-            self.say(text[0].upper() + text[1:], "consiglio", level=3)
+            self.say(text[0].upper() + text[1:], "consiglio", level=1 if focus == z["n"] else 3)
+
+    def _outlap_tyres(self, ld, tel):
+        """Prova e qualifica, giro di uscita: verso la fine dico se le gomme sono pronte per il giro."""
+        length = self.session.get("track_length") or 0
+        if (self.in_race or not length or ld.get("driver_status") != 3 or self.outlap_said == self.lap_num
+                or ld["lap_distance"] < length * 0.75 or (self.session.get("session_type") == 18)):
+            return
+        self.outlap_said = self.lap_num
+        t = tel.get("tyre_inner") or tel.get("tyre_surface")
+        if not t:
+            return
+        front, rear = round((t[2] + t[3]) / 2), round((t[0] + t[1]) / 2)
+        cold = [n for n, v in (("anteriori", front), ("posteriori", rear)) if v < 80]
+        hot = [n for n, v in (("anteriori", front), ("posteriori", rear)) if v > 108]
+        if cold:
+            self.say(f"Gomme {' e '.join(cold)} ancora fredde: anteriori {front}, posteriori {rear} gradi. "
+                     f"Scaldale nelle ultime curve: frenate decise e trazione.", "qualifica", level=1, urgent=True)
+        elif hot:
+            self.say(f"Gomme {' e '.join(hot)} già calde: anteriori {front}, posteriori {rear} gradi. "
+                     f"Vai piano nelle ultime curve.", "qualifica", level=1, urgent=True)
+        else:
+            self.say(f"Gomme pronte: anteriori {front}, posteriori {rear} gradi. Lancia il giro.",
+                     "qualifica", level=1, urgent=True)
 
     def _check_tyres(self, tel):
         temps = tel["tyre_surface"]
@@ -531,11 +674,16 @@ class Coach:
             delta = (lap_ms - best_before) / 1000.0
             key = ("piu" if delta >= 0 else "meno") + ("_di" if owner else "")
             parts.append(f(key, d=tenths(delta), chi=owner))
+        target = self.target_ms()
+        if target and valid and complete and lap_ms > target:
+            parts.append(f"a {tenths((lap_ms - target) / 1000)} dall'obiettivo")
         worst = sorted([r for r in self.lap_zone_results if r["loss"] > 0.05], key=lambda r: -r["loss"])[:2]
         if worst:
             parts.append(f("perdi_in", dove=" e ".join(self.zone_label(r) for r in worst)))
 
         lap_level = 3 if self.in_race else 1   # in gara il riepilogo lo fa l'ingegnere di gara
+        if valid and complete:
+            self._save_setup(lap_ms)
         if valid and complete and (best_before is None or lap_ms < best_before):
             self.ref = Reference.from_lap(self.lap, lap_ms)
             self._save_ref()
@@ -552,6 +700,18 @@ class Coach:
         self.emit("fine_giro", json.dumps(entry), False, 0)
         if complete and valid:
             self._update_ideal(lap_ms)
+        if target and valid and complete and lap_ms <= target and self.target_said != target:
+            self.target_said = target
+            self.say(f"Obiettivo raggiunto! {fmt_lap_voice(lap_ms)}, sotto il {fmt_lap_voice(target)} che volevi. "
+                     f"Se vuoi alzare l'asticella, metti un nuovo tempo nei Dettagli.", "giro", level=1, urgent=True)
+        ttip = self.training.on_lap_complete(entry, complete, valid)
+        if ttip:
+            self.say(ttip, "allenamento", level=1, urgent=True)
+        if complete and valid and self.is_quali:
+            self.quali_pos_at = self.now + 3.0     # la classifica si aggiorna un attimo dopo il traguardo
+        etip = self.energy.on_lap_complete(valid, complete)
+        if etip:
+            self.say(etip, "energia", level=2, urgent=not self.in_race)
         if complete:
             if self.outline is None:
                 self._make_outline()
@@ -658,8 +818,11 @@ class Coach:
         ld, tel, st = self.last_lapdata or {}, self.telemetry, self.status
         corner, straight = self.corner_state()
         delta = None
+        target = self.target_ms()
         if self.ref and ld and len(self.lap) > 5 and ld.get("lap_distance", -1) > 0:
-            delta = round(ld["current_lap_ms"] / 1000.0 - self.ref.t_at(ld["lap_distance"]), 2)
+            # con un tempo obiettivo il riferimento è "stirato" fino a quel tempo
+            scale = target / self.ref.lap_ms if target and self.ref.lap_ms else 1.0
+            delta = round(ld["current_lap_ms"] / 1000.0 - self.ref.t_at(ld["lap_distance"]) * scale, 2)
         last = self.history[-1] if self.history else None
         return {
             "track": self.track_name, "lap": ld.get("lap_num"),
@@ -677,7 +840,10 @@ class Coach:
             "front_wing": self.damage.get("front_wing"),
             "fuel_laps": st.get("fuel_laps"), "compound": st.get("compound"),
             "tyre_age": st.get("tyre_age"),
-            "ers": round(st["ers_store"] / 4e6 * 100) if st.get("ers_store") is not None else None,
+            "ers": self.energy.now_pct, "ers_mode": self.energy.snapshot()["mode"],
+            "is_quali": self.is_quali, "muted": self.muted, "target_ms": target,
+            "training": self.training.snapshot(), "session_name": self.session.get("session_name"),
+            "time_left": self.session.get("time_left"),
             "verbosity": self.verbosity,
             "setup": self.setup.advice(), "setup_laps": self.setup.laps,
             "outline_v": self.outline_v if self.outline else 0, "dots": self.race.dots(),

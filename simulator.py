@@ -79,8 +79,11 @@ def speed_profile(brake_factor, vmin_off):
     return v, braking, accel
 
 
+PLAYER = 0     # indice della tua auto (con --player si prova una seconda PS5 nella stessa gara)
+
+
 def header(pid, uid, st, frame):
-    return struct.pack(P.HEADER_FMT, FORMAT, 25, 1, 0, 1, pid, uid, st, frame, frame, 0, 255)
+    return struct.pack(P.HEADER_FMT, FORMAT, 25, 1, 0, 1, pid, uid, st, frame, frame, PLAYER, 255)
 
 
 def cars_block(fmt, rows, trailing=b""):
@@ -88,7 +91,8 @@ def cars_block(fmt, rows, trailing=b""):
     size = struct.calcsize(fmt)
     out = b""
     for i in range(P.num_cars(FORMAT)):
-        out += struct.pack(fmt, *rows[i]) if i in rows else b"\x00" * size
+        j = 0 if i == PLAYER else PLAYER if i == 0 else i      # la tua auto va all'indice PLAYER
+        out += struct.pack(fmt, *rows[j]) if j in rows else b"\x00" * size
     return out + trailing
 
 
@@ -104,16 +108,19 @@ def offset_m(v, d, secs):
     return out
 
 
-def lap_row(last_ms, cur_ms, d, lap, pos, front_ms, pit=0, stops=0, invalid=0, sector=0, off=0.0, result=2):
+def lap_row(last_ms, cur_ms, d, lap, pos, front_ms, pit=0, stops=0, invalid=0, sector=0, off=0.0, result=2,
+            status=4, grid=None):
     return [last_ms, cur_ms, 30000, 0, 30000, 0, front_ms % 60000, front_ms // 60000, 0, 0,
             d, (lap - 1) * LENGTH + d + off, 0.0, pos, lap, pit, stops, sector, invalid, 0, 0, 0, 0, 0,
-            pos, 4, result, 0, 0, 0, 0, 300.0, 1]
+            grid or pos, status, result, 0, 0, 0, 0, 300.0, 1]
 
 
-def session_packet(uid, st, frame, a, weather, sc, forecast, race, yellow=None):
+def session_packet(uid, st, frame, a, weather, sc, forecast, race, yellow=None, time_left=1800):
     b = bytearray(700)
-    struct.pack_into(P.SESSION_FMT, b, 0, weather, 32, 24, a.laps, int(LENGTH), 15 if race else 1, 11)
+    stype = 15 if race else (10 if a.quali else 1)
+    struct.pack_into(P.SESSION_FMT, b, 0, weather, 32, 24, a.laps, int(LENGTH), stype, 11)
     b[8] = a.formula            # categoria: 0 F1 2025, 13 F1 2026, 2 F2
+    struct.pack_into("<H", b, 9, max(0, int(time_left)))
     zones = [0.0, 0.17, 0.33, 0.5, 0.67, 0.83]          # 6 settori di pista
     b[18] = len(zones)
     for k, z in enumerate(zones):
@@ -161,19 +168,25 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--format", type=int, default=2025, help="2025 o 2026")
     ap.add_argument("--practice", action="store_true", help="prova libera invece della gara")
+    ap.add_argument("--quali", action="store_true", help="qualifica: giro di uscita, giri lanciati, tempo che scade")
     ap.add_argument("--formula", type=int, default=0, help="categoria: 0 = F1 2025, 13 = F1 2026, 2 = F2")
     ap.add_argument("--dry", action="store_true", help="gara asciutta (niente pioggia): per provare la strategia")
     ap.add_argument("--replay", help="rivede una sessione registrata (file .f1rec.gz dalla dashboard)")
+    ap.add_argument("--uid", type=int, default=None, help="sessione del gioco fissa: due simulatori con lo stesso uid "
+                                                          "sono la stessa gara online")
+    ap.add_argument("--player", type=int, default=0, help="indice della tua auto (per la seconda PS5 usa 3)")
     a = ap.parse_args()
     if a.replay:
         return replay(a)
     FORMAT = a.format
-    race = not a.practice
+    race = not (a.practice or a.quali)
     random.seed(a.seed)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (a.host, a.port)
     send = lambda pkt: sock.sendto(pkt, dest)
-    uid = random.SystemRandom().getrandbits(63)
+    global PLAYER
+    PLAYER = a.player
+    uid = a.uid if a.uid is not None else random.SystemRandom().getrandbits(63)
     xs, zs = track_shape()
     dt = 1 / 60
     st, frame = 0.0, 0
@@ -241,7 +254,11 @@ def main():
             cur = int(t_lap * 1000)
             # in prova il primo giro parte dalla corsia box (giro di uscita)
             pit0 = 1 if (not race and lap == 1 and d < 500) else 0
-            rows = {0: lap_row(last_ms, cur, d, lap, 3, int(gap_ahead * 1000), invalid=invalid, sector=sector, pit=pit0)}
+            # qualifica: giro 1 di uscita, poi giri lanciati; la posizione migliora a ogni giro
+            dstat = (3 if lap == 1 else 1) if a.quali else 4
+            qpos = max(1, 6 - lap) if a.quali else 3
+            rows = {0: lap_row(last_ms, cur, d, lap, qpos, int(gap_ahead * 1000), invalid=invalid, sector=sector,
+                               pit=pit0, status=dstat, grid=6 if race else None)}
             if race:
                 # il distacco "del gioco" di chi ti segue a volte è sbagliato (come succede davvero):
                 # per mezzo giro al giro 2 dice 0,6 secondi anche se è molto più lontano
@@ -252,13 +269,15 @@ def main():
                 rows[3] = lap_row(last_ms, cur, d, lap, 3 if after else 4, game_behind, off=off[3])
                 rows[4] = lap_row(last_ms, cur, d, lap, 4 if after else 5, 2500, off=off[4])
                 if after:
-                    rows[0] = lap_row(last_ms, cur, d, lap, 2, 4500, sector=sector)
+                    rows[0] = lap_row(last_ms, cur, d, lap, 2, 4500, sector=sector, grid=6)
             send(header(P.PID_LAP, uid, st, frame) + cars_block(P.LAP_FMT, rows, b"\x00\x00"))
 
             if frame % 10 == 0:
                 blue = 2 if (race and lap == 3 and 2000 < d < 2600) else 0   # bandiera blu al giro 3
+                # batteria: in gara scende di circa il 10% a giro, in qualifica resta alta (giro "risparmiato")
+                ers = max(0.2e6, 3.6e6 - (lap - 1 + d / LENGTH) * 0.42e6) if race else 3.0e6
                 srows = {0: [0, 0, 1, 56, 0, 40.0, 110.0, fuel, 13000, 4000, 8, 0, 0, 16, 16, lap - 1, blue,
-                             0.0, 0.0, 3e6, 1, 0.0, 0.0, 0.0, 0]}
+                             0.0, 0.0, ers, 2, 0.0, 0.0, 0.0, 0]}
                 if race:
                     srows[2] = [0] * 13 + [17, 17, lap, 0] + [0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0]
                 send(header(P.PID_STATUS, uid, st, frame) + cars_block(P.STATUS_FMT, srows))
@@ -270,9 +289,14 @@ def main():
                 forecast = ([(0, 1, 0), (15, 1, 5)] if a.dry else
                             [(0, weather, 10), (15, 3, 60), (30, 3, 70)] if lap < 5 else [(0, 3, 80)])
                 # bandiera gialla nel quarto settore di pista durante il giro 2 della gara
-                send(session_packet(uid, st, frame, a, weather, sc, forecast, race, yellow=3 if race and lap == 2 else None))
+                send(session_packet(uid, st, frame, a, weather, sc, forecast, race, yellow=3 if race and lap == 2 else None,
+                                    time_left=(a.laps * 95 - st) if a.quali else 1800))
             if frame % 300 == 2:
                 send(participants_packet(uid, st, frame))
+            if frame % 300 == 5:   # assetto: ala 28/24, bilanciamento freni 56%
+                send(header(P.PID_SETUPS, uid, st, frame) + cars_block(P.SETUP_FMT, {0: [
+                    28, 24, 50, 55, -3.2, -1.7, 0.05, 0.2, 30, 12, 8, 5, 30, 45, 100, 56, 50,
+                    22.5, 22.5, 24.0, 24.0, 6, 40.0]}, b"\x00" * 4))
             # avvertimenti per i limiti della pista (giri 2 e 3) e una penalità di 5 secondi (giro 3)
             if race and lap in (2, 3) and int((d - spd * dt) / 10) != int(d / 10) and int(d / 10) == 150:
                 send(header(P.PID_EVENT, uid, st, frame) + b"PENA" + bytes([5, 7, 0, 255, 0, lap, 0]))
@@ -291,7 +315,7 @@ def main():
         # non cambia, e il tempo dell'ultimo giro arriva un paio di pacchetti dopo
         for k, lm in ((1, prev_last), (2, prev_last), (3, last_ms), (4, last_ms)):
             send(header(P.PID_LAP, uid, st + k / 60, frame + k) + cars_block(
-                P.LAP_FMT, {0: lap_row(lm, 0, 5.0, a.laps, 2, 4500, result=3)}, b"\x00\x00"))
+                P.LAP_FMT, {0: lap_row(lm, 0, 5.0, a.laps, 2, 4500, result=3, grid=6)}, b"\x00\x00"))
     else:
         send(header(P.PID_LAP, uid, st, frame + 1) + cars_block(
             P.LAP_FMT, {0: lap_row(last_ms, 0, 0.0, a.laps + 1, 2, 4500)}, b"\x00\x00"))

@@ -1,0 +1,17 @@
+# dati personali e segreti: restano solo sul server o sul telefono
+utenti.json
+sessioni.json
+invito.json
+nomi_curve.json
+utenti_dati/
+config.json
+dati/
+riferimenti/
+cert.pem
+key.pem
+__pycache__/
+*.tmp
+amici/
+voce_cache/
+registrazioni/
+piper/

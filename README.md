@@ -194,6 +194,37 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **🏆 Campionato tra amici** (pagina /campionato): le gare online fatte insieme sullo stesso server (stessa sessione
+  del gioco, almeno due utenti) si riconoscono da sole; punti come in F1, classifica piloti e risultati gara per gara.
+- **🤝 Radio di squadra**: se un amico del server è nella tua stessa gara online, l'ingegnere ti dice a ogni giro dov'è
+  ("il tuo compagno Marco è P4, a 3 secondi davanti"), lo chiama per nome e ti avvisa quando è subito davanti o dietro.
+- **🔧 Assetti salvati e condivisi** (pagina /assetti): l'assetto del tuo giro valido più veloce si salva da solo per
+  pista e categoria (dal pacchetto Car Setups del gioco); vedi anche quelli degli amici, con i valori diversi in giallo.
+  In prova e qualifica l'ingegnere ti ricorda che ne hai uno salvato.
+- **Vista per tablet**: in verticale due colonne, in orizzontale (iPad) tre colonne con la mappa grande, senza scorrere.
+- **🔌 Controllo del collegamento** (pagina /collegamento, anche dalla dashboard quando non arrivano dati): le
+  impostazioni da mettere sulla PS5 con il tuo IP e la tua porta, se i dati arrivano, da che IP, in che formato e con
+  che frequenza, e cosa cambiare se qualcosa non va.
+- **Comandi a voce** con 📻 Radio: «Radio, silenzio» (solo cose urgenti), «Radio, parla», «Radio, parla di più» /
+  «di meno», «Radio, ripeti», «Radio, allenamento». Restano salvati.
+- **Briefing prima del via**: griglia, chi hai davanti e dietro, gomme, piano, finestra box, meteo.
+- **🧠 Allenamento mirato** (`allenamento.py`, prova libera e time trial): una staccata alla volta, con i progressi giro dopo giro.
+- **🎯 Tempo obiettivo** per pista e categoria (Dettagli): delta, barra e fine giro calcolati su quel tempo.
+- **🏁 Le mie gare** (pagina /gare, `storico.py`): tutte le gare con partenza, arrivo, giro migliore, costanza e soste,
+  e le statistiche per pista e totali.
+- **💾 Backup dei dati** (Dettagli): scarica e ripristina giri, riferimenti, giri degli amici e impostazioni.
+- **Batteria (ERS)** (`energia.py`): in gara ti dice quando attaccare chi hai davanti sul rettilineo lungo, quando
+  tenere energia per difenderti e se la batteria cala troppo giro dopo giro; in prova e qualifica, a fine giro, se
+  ne hai avanzata o se è finita prima del traguardo. Domanda a voce: "Radio, come va la batteria?".
+  Sulla dashboard: percentuale e modalità sotto la velocità.
+- **Qualifica**: durante il giro lanciato l'ingegnere parla solo per le cose urgenti; nel giro di uscita ti dice se
+  le gomme sono pronte; dopo il giro la posizione provvisoria ("Sei in pole provvisoria!"); con 4 minuti alla fine,
+  se sei ai box, ti dice di uscire; sulla dashboard il tempo che manca.
+- **Riassunto della gara** alla radio dopo la bandiera a scacchi: posizioni guadagnate, giro più veloce, costanza,
+  soste, penalità e la staccata dove hai perso di più.
+- **Voce del server più veloce**: le frasi restano salvate una per una e le più comuni ("Sei P4.", "Box, box!")
+  sono preparate in anticipo per il personaggio scelto.
+- L'annuncio "Gara di N giri…" non riparte più a gara finita.
 - **App sul telefono**: "Aggiungi a schermata Home" crea l'app con la sua icona, a schermo intero.
 - **Schermo sempre acceso** mentre la dashboard è aperta (Dettagli → ⚙️ Impostazioni, attivo di default).
 - **🔭 Vista da lontano**: solo posizione, distacchi (o delta in prova) e ultimo messaggio, enormi, per il telefono vicino alla TV.
@@ -253,6 +284,7 @@ python3 simulator.py --replay registrazioni/20261116-174235.f1rec.gz
 python3 server.py
 python3 simulator.py --laps 6 --speed 4    # gara: avversari, safety car, pioggia
 python3 simulator.py --practice --laps 3   # prova libera
+python3 simulator.py --quali --laps 4      # qualifica: giro di uscita, giri lanciati, tempo che scade
 python3 simulator.py --dry --laps 12       # gara asciutta: strategia, avvertimenti, penalità
 ```
 
@@ -280,6 +312,11 @@ solo al primo avvio, se manca.
 - `registra.py`: registrazione e lettura delle sessioni vere
 - `race.py`: ingegnere di gara (distacchi, avversari, box, safety car, meteo, gomme, penalità)
 - `strategia.py`: piano delle soste, scelta della gomma, consiglio con safety car
+- `energia.py`: batteria (ERS): attacco, difesa, ricarica, riepilogo del giro
+- `allenamento.py`: allenamento mirato su una staccata alla volta
+- `storico.py`: storico delle gare, backup e ripristino, diagnosi del collegamento
+- `static/campionato.html`, `static/assetti.html`: campionato tra amici, assetti salvati
+- `static/gare.html`, `static/collegamento.html`: le mie gare, controllo del collegamento
 - `recorder.py`: salvataggio di ogni giro per l'analisi
 - `parlato.py`: tempi e numeri scritti per la voce
 - `risposte.py`: risposte gratuite a regole (box, rientro, meteo, gomme…)
@@ -305,6 +342,10 @@ solo al primo avvio, se manca.
   specifica F1 25 formato 2025; vanno verificati in un vero GP.
 - I consigli d'assetto leggono il pacchetto Motion Ex secondo la specifica F1 25 e le soglie sono
   stimate: vanno verificati con qualche sessione vera.
+- Assetti, radio di squadra e campionato sono provati solo con il simulatore (due PS5 finte nella stessa gara):
+  il formato del pacchetto Car Setups e il riconoscimento del compagno online vanno verificati in una gara vera.
+- Batteria e qualifica sono provate solo con il simulatore: capacità della batteria (4 MJ come nelle F1 25),
+  tempo che manca alla sessione e soglie delle gomme pronte (80–108 gradi) vanno verificati in una sessione vera.
 - La voce AI usa il modello Gemini TTS con piano gratuito (gemini-3.1-flash-tts-preview, poi i modelli 3.8
   se viene ritirato); i limiti della quota gratuita non sono noti con precisione.
 - Idee: numeri ufficiali delle curve (servono dati affidabili per ogni pista), avvio automatico (Termux:Boot/Widget).

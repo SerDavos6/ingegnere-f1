@@ -8,7 +8,7 @@ attivato "Mostra nomi online", il gioco non manda il nome e l'ingegnere dice
 import re
 
 from distacchi import GapTimer
-from parlato import num, plural, tenths
+from parlato import fmt_lap_voice, num, plural, tenths
 from strategia import Strategy
 
 # nomi generici che il gioco manda al posto dell'ID online nascosto (varie lingue)
@@ -103,6 +103,7 @@ class RaceEngineer:
         self.pos_candidate = (None, 0.0)
         self.pos_announced = None
         self.warnings = 0
+        self.mate_close = {}          # compagno -> giro dell'ultimo avviso "è vicino"
         self.strategy = Strategy(self)
 
     # ---------------------------------------------------------- utilità
@@ -135,6 +136,9 @@ class RaceEngineer:
 
     def name(self, idx, voice=True):
         """Come chiamare un pilota. voice=False: nome completo per la dashboard."""
+        mate = self.mate_name(idx) if voice else None
+        if mate:
+            return f"il tuo compagno {mate}"
         p = self.names.get(idx) or {}
         n = p.get("name", "")
         if n and not GENERIC.match(n) and (p.get("ai") or p.get("show_name", True)):
@@ -158,6 +162,16 @@ class RaceEngineer:
             return False
         self.announced.add(key)
         return True
+
+    def mates(self):
+        """Amici del server nella stessa gara: [(nome, indice auto)]."""
+        try:
+            return [(n, i) for n, i in self.c.teammates() if i in self.by_idx and i != self.c.player_idx]
+        except Exception:
+            return []
+
+    def mate_name(self, idx):
+        return next((n for n, i in self.mates() if i == idx), None)
 
     def _wear(self):
         w = self.c.damage.get("tyre_wear")
@@ -323,6 +337,21 @@ class RaceEngineer:
         else:
             self.close_since = None
 
+        # radio di squadra: il compagno (un amico del server) è subito davanti o dietro
+        if me["lap_num"] > 1 and stable and me["pit_status"] == 0:
+            for off, where in ((-1, "davanti"), (1, "dietro")):
+                car = self.rel(off)
+                mate = self.mate_name(car["idx"]) if car else None
+                if not mate or car["pit_status"]:
+                    continue
+                gap = self.gap_between(car, me) if off < 0 else self.gap_between(me, car)
+                if 0 < gap < 1.0 and me["lap_num"] - self.mate_close.get(mate, -10) >= 3:
+                    self.mate_close[mate] = me["lap_num"]
+                    say(f"{where.capitalize()} c'è il tuo compagno {mate}, a {num(gap)}. " +
+                        ("Se lo attacchi fallo pulito, niente contatti." if off < 0 else
+                         "Lascia spazio in staccata, non buttiamo via punti per la squadra."),
+                        "squadra", level=2, urgent=True)
+
         # il tuo pit stop
         if self.my_stops is None:
             self.my_stops = me["pit_stops"]
@@ -429,6 +458,9 @@ class RaceEngineer:
 
         if self.c.race_done:            # bandiera a scacchi
             say(self.c.frasi("bandiera_scacchi", p=me["position"]), "gara", level=1, urgent=True)
+            text = self.debrief(me)
+            if text:
+                say(text, "debrief", level=2, urgent=True)
             return
         if remaining is not None and remaining <= 0:
             return                      # gara finita
@@ -470,6 +502,18 @@ class RaceEngineer:
                     txt += fr("si_avvicina", d=tenths(diff))
             parts.append(txt)
         self.gap_hist[lap] = hist
+        # dove sono i compagni di squadra (amici del server nella stessa gara)
+        for mname, midx in self.mates():
+            car = self.by_idx.get(midx)
+            if not car or car in (ahead, behind) or car.get("result_status") not in (2, 3, None):
+                continue
+            front, back = (car, me) if car["position"] < me["position"] else (me, car)
+            g = self.gap_between(front, back)
+            side = "davanti" if car["position"] < me["position"] else "dietro"
+            txt = f"il tuo compagno {mname} è P{car['position']}"
+            if g and g < 60:
+                txt += f", a {num(g)} {side}"
+            parts.append(txt)
         if remaining != 1:
             say(". ".join(p[0].upper() + p[1:] for p in parts) + ".", "gara", level=2)
 
@@ -501,6 +545,100 @@ class RaceEngineer:
         self._stint_lap(me, lap)
         self._undercut(me, remaining)
         self.strategy.on_lap(me, remaining)
+
+    # ------------------------------------------------------ briefing prima del via
+    def briefing(self):
+        """Il riepilogo prima della partenza: griglia, vicini, gomme, piano, meteo, finestra box."""
+        c, s = self.c, self.c.session
+        parts = [f"Gara di {s['total_laps']} giri a {c.track_name}"]
+        me = self.me()
+        if me:
+            grid = me.get("grid_position") or me["position"]
+            txt = "Parti dalla pole" if grid == 1 else f"Parti P{grid}"
+            front = next((x for x in self.cars if x["position"] == grid - 1), None)
+            back = next((x for x in self.cars if x["position"] == grid + 1), None)
+            if front:
+                txt += f", davanti hai {self.name(front['idx'])}"
+            if back:
+                txt += (" e " if front else ", ") + f"dietro {self.name(back['idx'])}"
+            parts.append(txt)
+        comp = c.status.get("compound")
+        if comp:
+            parts.append(f"Partiamo con le {comp}")
+        try:
+            p = self.strategy.plan()
+        except Exception:
+            p = None
+        if p:
+            parts.append(self.strategy.describe(p).rstrip("."))
+            self.strategy.last_plan = (p["stop"], p.get("lap"), p.get("compound"), p.get("two_stops"))
+            self.strategy.last_plan_lap = 1
+        ideal, latest = s.get("pit_ideal", 0), s.get("pit_latest", 0)
+        if ideal and latest:
+            parts.append(f"Finestra box dal giro {ideal} al {latest}")
+        rain = next((f for f in s.get("forecast", []) if f["min"] > 0 and (f["weather"] >= 3 or f["rain"] >= 50)), None)
+        if s.get("weather", 0) >= 3:
+            parts.append(f"Pista bagnata, {s['track_temp']} gradi")
+        elif rain:
+            parts.append(f"Pista a {s['track_temp']} gradi, ma pioggia prevista tra {rain['min']} minuti")
+        else:
+            parts.append(f"Pista asciutta a {s['track_temp']} gradi, niente pioggia prevista")
+        return ". ".join(x[0].upper() + x[1:] for x in parts) + ". Buona gara!"
+
+    # ------------------------------------------------------ debrief dopo la bandiera a scacchi
+    def debrief(self, me):
+        """Il riassunto della gara alla radio, come dopo il traguardo vero: posizioni, giro migliore,
+        costanza, soste, penalità e il punto dove hai perso di più."""
+        c, parts = self.c, []
+        pos, grid = me["position"], me.get("grid_position") or 0
+        if grid:
+            d = grid - pos
+            how = (f"{d} posizioni guadagnate" if d > 1 else "una posizione guadagnata" if d == 1 else
+                   f"{-d} posizioni perse" if d < -1 else "una posizione persa" if d == -1 else "stessa posizione del via")
+            parts.append(f"Partito P{grid}, arrivato P{pos}: {how}")
+        laps = [h for h in c.history if h.get("valid") and h.get("ms")]
+        if laps:
+            best = min(laps, key=lambda h: h["ms"])
+            parts.append(f"Il tuo giro più veloce è {fmt_lap_voice(best['ms'])}, al giro {best['lap']}")
+            clean = [h["ms"] / 1000 for h in laps if h["lap"] > 1 and h["ms"] <= best["ms"] * 1.03]
+            if len(clean) >= 4:
+                mean = sum(clean) / len(clean)
+                sd = (sum((x - mean) ** 2 for x in clean) / len(clean)) ** 0.5
+                parts.append(f"Costanza ottima, i giri puliti variano di {tenths(sd)}" if sd < 0.25 else
+                             f"Costanza buona, i giri puliti variano di {tenths(sd)}" if sd < 0.45 else
+                             f"Costanza da migliorare: i giri puliti variano di {tenths(sd)}")
+        stops = me.get("pit_stops") or 0
+        parts.append("Nessuna sosta" if not stops else "Una sosta" if stops == 1 else f"{stops} soste")
+        pen = me.get("penalties_s") or 0
+        if pen or self.warnings >= 2:
+            bits = []
+            if pen:
+                bits.append(f"{pen} secondi di penalità")
+            if self.warnings >= 2:
+                bits.append(f"{self.warnings} avvertimenti per i limiti della pista")
+            parts.append("Attenzione: " + " e ".join(bits))
+        # la staccata dove hai perso di più, in media, nei giri di gara
+        loss = {}
+        for h in c.history:
+            for z in h.get("zones") or []:
+                loss.setdefault(z["n"], []).append((z["loss"], z.get("at")))
+        worst = None
+        for n, vals in loss.items():
+            if len(vals) >= 3:
+                avg = sum(v for v, _ in vals) / len(vals)
+                if avg > 0.05 and (worst is None or avg > worst[1]):
+                    worst = (n, avg, vals[0][1])
+        if worst:
+            parts.append(f"Da migliorare: {c.zone_label({'n': worst[0], 'at': worst[2]})}, "
+                         f"ci perdi in media {tenths(worst[1])} a giro")
+        if pos == 1:
+            parts.append("Vittoria, grande lavoro!")
+        elif pos <= 3:
+            parts.append("Podio, ottimo lavoro!")
+        if len(parts) <= 1:
+            return None
+        return "Il riassunto della gara. " + ". ".join(p[0].upper() + p[1:] for p in parts).rstrip("!") + (
+            "!" if parts[-1].endswith("!") else ".")
 
     # ------------------------------------------------------ traffico (prove e qualifica)
     def _traffic(self, me):
@@ -646,8 +784,10 @@ class RaceEngineer:
                     gap = self.gap_between(car, me) if off < 0 else self.gap_between(me, car)
                     t = self.tyres.get(car["idx"], {})
                     out[key] = {"name": self.name(car["idx"], voice=False), "gap": round(gap, 1),
+                                "mate": self.mate_name(car["idx"]),
                                 "compound": t.get("compound"), "tyre_age": t.get("tyre_age"),
                                 "pit": car["pit_status"] > 0}
+            out["mates"] = [{"name": n, "position": self.by_idx[i]["position"]} for n, i in self.mates()]
         return out
 
     def context(self):

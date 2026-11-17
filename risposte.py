@@ -186,6 +186,9 @@ class Answers:
     def setup(self):
         return self.c.setup.text()
 
+    def energy(self):
+        return self.c.energy.answer()
+
     def driving(self):
         return rule_based_debrief(self.c.context_for_ai())
 
@@ -200,6 +203,7 @@ class Answers:
         ("weather", ("piov", "pioggia", "meteo", "che tempo", "bagnat", "asciug", "temporale")),
         ("tyres", ("gomm", "usura", "pneumatic", "temperatur")),
         ("gaps", ("davanti", "dietro", "distacc", "gap", "quanto ho", "secondi da")),
+        ("energy", ("batteri", "energia", " ers ", "elettric", "overtake", "ricaric")),
         ("fuel", ("carburant", "benzin", "fuel")),
         ("laps", ("quanti giri", "mancano", "giri mancanti")),
         ("position", ("posizione", "che posto", "in che posto")),
@@ -207,8 +211,56 @@ class Answers:
         ("driving", ("dove perdo", "come vado", "staccat", "consigl", "miglior", "frenat", "debrief")),
     ]
 
+    # ------------------------------------------------------------ comandi della radio
+    COMMANDS = [
+        ("training", ("allenamento",)),
+        ("mute", ("silenzio", "stai zitto", "zitto", "basta parlare", "non parlare", "taci")),
+        ("more", ("parla di piu", "parla piu", "piu messaggi", "piu informazioni")),
+        ("less", ("parla di meno", "parla meno", "meno messaggi", "meno informazioni")),
+        ("unmute", ("parla di nuovo", "riprendi a parlare", "torna a parlare", "puoi parlare", "riprendi")),
+        ("repeat", ("ripeti", "cosa hai detto", "puoi ripetere", "ridillo")),
+    ]
+    LEVELS = {1: "poco", 2: "normale", 3: "tanto"}
+
+    def command(self, q):
+        c = self.c
+        name = next((n for n, words in self.COMMANDS if _has(q, *words)), None)
+        if name is None and q.strip() in ("parla", "parla pure", "vai"):
+            name = "unmute"
+        if name == "mute":
+            c.muted = True
+            return ("Ricevuto, silenzio radio. Ti parlo solo per le cose importanti: safety car, box, bandiere e "
+                    "penalità. Dimmi «Radio, parla» quando vuoi che riprenda.")
+        if name == "unmute":
+            c.muted = False
+            return "Ok, riprendo a parlarti normalmente."
+        if name in ("more", "less"):
+            c.muted = False
+            old = c.verbosity
+            c.verbosity = min(3, old + 1) if name == "more" else max(1, old - 1)
+            if c.verbosity == old:
+                return f"Sono già al livello {self.LEVELS[old]}."
+            return {1: "Ok, parlo di meno: solo le cose importanti.",
+                    2: "Ok, livello normale: anche i distacchi a ogni giro.",
+                    3: "Ok, parlo di più: anche i consigli di guida in gara."}[c.verbosity]
+        if name == "repeat":
+            return c.last_spoken or "Non ho ancora detto niente."
+        if name == "training":
+            t = c.training
+            if "spegni" in q or "basta" in q or "stop" in q or "ferma" in q:
+                t.set_enabled(False)
+                return "Allenamento mirato spento: ti parlo di tutte le staccate."
+            if "accendi" in q or "attiva" in q or "riprendi" in q or "inizia" in q:
+                t.set_enabled(True)
+                return "Allenamento mirato acceso: in prova lavoriamo su una staccata alla volta."
+            return t.status_text()
+        return None
+
     def answer(self, question):
         q = _norm(question) + " "
+        cmd = self.command(q)
+        if cmd is not None:
+            return cmd
         found = []
         for name, words in self.INTENTS:
             if _has(q, *words) and name not in found:
@@ -219,5 +271,5 @@ class Answers:
             return None
         return " ".join(getattr(self, n)() for n in found[:2])
 
-    HELP = ("Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
-            "distacchi, carburante, quanti giri mancano, dove perdo tempo, consigli d'assetto.")
+    HELP = ("Comandi: silenzio, parla, parla di più, parla di meno, ripeti, allenamento. Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
+            "distacchi, batteria, carburante, quanti giri mancano, dove perdo tempo, consigli d'assetto.")

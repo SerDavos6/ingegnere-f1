@@ -19,6 +19,7 @@ HEADER_SIZE = struct.calcsize(HEADER_FMT)  # 29
 
 PID_MOTION, PID_SESSION, PID_LAP, PID_EVENT = 0, 1, 2, 3
 PID_PARTICIPANTS = 4
+PID_SETUPS = 5
 PID_TELEMETRY, PID_STATUS, PID_DAMAGE = 6, 7, 10
 PID_MOTION_EX = 13
 
@@ -130,7 +131,31 @@ def parse_status(data, idx):
         "brake_bias": v[3], "fuel_in_tank": v[5], "fuel_laps": v[7],
         "compound": COMPOUNDS.get(v[14], str(v[14])), "compound_id": v[14], "tyre_age": v[15],
         "ers_store": v[19], "ers_mode": v[20], "fia_flag": v[16],
+        "ers_harvest_k": v[21], "ers_harvest_h": v[22], "ers_deployed": v[23],
     }
+
+
+# assetto (Car Setups, F1 24/25): ali, differenziale, campanatura, convergenza, sospensioni, barre,
+# altezze, freni, freno motore, pressioni (RL, RR, FL, FR), zavorra, benzina. Dopo le auto: 4 byte.
+SETUP_FMT = "<BBBBffffBBBBBBBBBffffBf"
+SETUP_SIZE = struct.calcsize(SETUP_FMT)
+
+
+def parse_setup(data, idx):
+    off = _car_offset(data, SETUP_SIZE, idx, trailing=4)
+    if off is None:
+        return None
+    v = struct.unpack_from(SETUP_FMT, data, off)
+    out = {"ala_ant": v[0], "ala_post": v[1], "diff_gas": v[2], "diff_rilascio": v[3],
+           "camber_ant": round(v[4], 2), "camber_post": round(v[5], 2), "toe_ant": round(v[6], 2),
+           "toe_post": round(v[7], 2), "sosp_ant": v[8], "sosp_post": v[9], "barra_ant": v[10], "barra_post": v[11],
+           "altezza_ant": v[12], "altezza_post": v[13], "pressione_freni": v[14], "bilanciamento_freni": v[15],
+           "freno_motore": v[16], "press_post_sx": round(v[17], 1), "press_post_dx": round(v[18], 1),
+           "press_ant_sx": round(v[19], 1), "press_ant_dx": round(v[20], 1), "zavorra": v[21], "benzina": round(v[22], 1)}
+    # valori assurdi: pacchetto di un altro formato o assetto nascosto (online): lo ignoro
+    if not (0 < out["ala_ant"] <= 60 and 0 < out["ala_post"] <= 60 and 40 <= out["bilanciamento_freni"] <= 80):
+        return None
+    return out
 
 
 def parse_status_all(data):
@@ -269,6 +294,8 @@ def parse_session(data):
         "forecast": [], "safety_car": 0, "pit_ideal": 0, "pit_latest": 0, "pit_rejoin": 0,
     }
     s["category"], s["category_name"] = category_of(s["formula"])
+    # secondi che mancano alla fine della sessione (dopo il byte della categoria)
+    s["time_left"] = struct.unpack_from("<H", data, HEADER_SIZE + 9)[0] if len(data) >= HEADER_SIZE + 11 else None
     b = HEADER_SIZE
     # bandiere dei settori di pista (marshal zones): inizio come frazione del giro, bandiera
     # -1 sconosciuta, 0 nessuna, 1 verde, 2 blu, 3 gialla

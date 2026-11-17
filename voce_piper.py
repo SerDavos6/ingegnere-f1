@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import select
 import shutil
 import struct
@@ -60,6 +61,51 @@ def set_pitch(wav, factor):
             return (wav[:i + 12] + struct.pack("<II", new, new * ch * bits // 8) + wav[i + 20:])
         i += 8 + size + (size & 1)
     return wav
+
+
+def _pcm(wav):
+    """(frequenza, canali, bit, dati PCM) di un file WAV."""
+    i, fmt, data = 12, None, None
+    while i + 8 <= len(wav):
+        cid, size = wav[i:i + 4], struct.unpack("<I", wav[i + 4:i + 8])[0]
+        if cid == b"fmt ":
+            ch, rate = struct.unpack("<HI", wav[i + 10:i + 16])
+            fmt = (rate, ch, struct.unpack("<H", wav[i + 22:i + 24])[0])
+        elif cid == b"data":
+            data = wav[i + 8:i + 8 + size]
+        i += 8 + size + (size & 1)
+    if not fmt or data is None:
+        raise ValueError("WAV non valido")
+    return fmt + (data,)
+
+
+def join_wavs(wavs, pause_s=0.12):
+    """Unisce le frasi (stessa voce) in un solo WAV, con una breve pausa fra una e l'altra."""
+    if len(wavs) == 1:
+        return wavs[0]
+    parts = [_pcm(w) for w in wavs]
+    rate, ch, bits = parts[0][:3]
+    gap = b"\0" * (int(rate * pause_s) * ch * bits // 8)
+    pcm = gap.join(p[3] for p in parts)
+    return (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, ch, rate, rate * ch * bits // 8, ch * bits // 8, bits) +
+            b"data" + struct.pack("<I", len(pcm)) + pcm)
+
+
+SENTENCES = re.compile(r"(?<=[.!?])\s+")
+
+# frasi che l'ingegnere dice spesso, preparate in anticipo per la voce del server
+# (la cache è per frase: "Sei P4. Leclerc è davanti a 1,2." usa la frase "Sei P4." già pronta)
+COMMON = (["Giro invalidato, limiti della pista.", "Dimmi.", "Buona gara!", "Bella gara.", "Ottimo lavoro.",
+           "Box, box!", "Box, box questo giro!", "Safety car in pista!", "Virtual safety car, rispetta il delta.",
+           "Rispetta il delta e tieni calde le gomme.", "La safety car rientra a fine giro.",
+           "Preparati alla ripartenza.", "Fine virtual safety car, via!",
+           "Bandiera blu: fai passare chi arriva, resta sulla traiettoria e alza in rettilineo.",
+           "Ha iniziato a piovere.", "Con le slick valuta le intermedie.", "Ultimo giro utile per la sosta.",
+           "Ingegnere collegato.", "Ricarichiamo e riproviamo.", "Ora allunga.", "Scalda bene le gomme.",
+           "Restagli attaccato.", "Grande, sei P1!"]
+          + [f"Sei P{p}." for p in range(1, 21)] + [f"P{p}." for p in range(1, 21)]
+          + [f"Bandiera a scacchi! Hai chiuso P{p}." for p in range(1, 11)])
 
 
 class _Proc:
@@ -137,9 +183,11 @@ class Piper:
                "errore": "non funziona: " + self.detail, "assente": "non installata"}[self.state]
         return {"state": self.state, "text": txt, "voices": sorted(self.voices())}
 
-    def start(self):
+    def start(self, warm_chars=None):
         def loop():
             self._install()
+            if self.ready() and warm_chars:
+                self.warm(warm_chars())
             while self.state == "errore":     # rete assente o download interrotto: riprovo ogni mezz'ora
                 time.sleep(1800)
                 self._install()
@@ -200,6 +248,8 @@ class Piper:
         raise RuntimeError("nessuna voce installata")
 
     def synth(self, text, char_id, style="normale", timeout=8.0):
+        """Il messaggio, frase per frase: ogni frase resta salvata, così quelle che tornano
+        ("Box, box!", "Sei P4.") sono pronte subito anche dentro messaggi nuovi."""
         char = voci.get(char_id)
         pv = char["piper"]
         # il file WAV "accelerato" del fattore f alza tono e velocità di f; length_scale = tono/velocità
@@ -208,16 +258,29 @@ class Piper:
         factor = pv["tono"] * voci.STILE_PIPER.get(style, 1.0)
         length = pv["tono"] / pv["velocita"]
         voice, model = self._model_for(char)
-        h = hashlib.sha1(f"{voice}|{char_id}|{style}|{text}".encode()).hexdigest()
-        path = os.path.join(self.cache, h + ".wav")
+        end = time.time() + timeout
+        parts = [p for p in SENTENCES.split(" ".join(text.split())) if p.strip()] or [text]
+        wavs = [self._sentence(voice, model, length, p, max(1.0, end - time.time())) for p in parts]
+        return set_pitch(join_wavs(wavs), factor)
+
+    def cached(self, char_id, sentence):
+        voice, _ = self._model_for(voci.get(char_id))
+        pv = voci.get(char_id)["piper"]
+        return os.path.exists(self._cache_path(voice, pv["tono"] / pv["velocita"], sentence))
+
+    def _cache_path(self, voice, length, sentence):
+        h = hashlib.sha1(f"{voice}|{length:.3f}|{sentence}".encode()).hexdigest()
+        return os.path.join(self.cache, h + ".wav")
+
+    def _sentence(self, voice, model, length, sentence, timeout):
+        path = self._cache_path(voice, length, sentence)
         try:
             with open(path, "rb") as f:
                 return f.read()
         except OSError:
             pass
         os.makedirs(self.tmp, exist_ok=True)
-        wav = self._run(model, length, text, timeout)
-        wav = set_pitch(wav, factor)
+        wav = self._run(model, length, sentence, timeout)
         try:
             os.makedirs(self.cache, exist_ok=True)
             with open(path, "wb") as f:
@@ -226,6 +289,23 @@ class Piper:
         except OSError:
             pass
         return wav
+
+    def warm(self, char_ids):
+        """Prepara in sottofondo le frasi comuni per i personaggi scelti (una alla volta, piano)."""
+        def run():
+            for cid in char_ids:
+                for s in COMMON:
+                    if not self.ready():
+                        return
+                    try:
+                        if not self.cached(cid, s):
+                            self.synth(s, cid, timeout=30)
+                            time.sleep(0.3)          # lascio spazio alle frasi vere della gara
+                    except Exception as e:
+                        print("Piper, preparazione frasi interrotta:", e, flush=True)
+                        return
+            print("Voce del server: frasi comuni pronte per", ", ".join(char_ids), flush=True)
+        threading.Thread(target=run, daemon=True).start()
 
     def _run(self, model, length, text, timeout):
         text = " ".join(text.split())
@@ -259,7 +339,7 @@ class Piper:
         os.remove(out)
         return data
 
-    def _trim(self, keep=800):
+    def _trim(self, keep=3000):
         try:
             files = sorted((os.path.join(self.cache, n) for n in os.listdir(self.cache)), key=os.path.getmtime)
             for p in files[:-keep]:
