@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<title>Campionato</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600;
+          --good:#4cc38a; --gold:#ffd24a; --silver:#c9d1da; --bronze:#d08a4a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:820px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:16px; width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 12px; }
+  .row { display:grid; grid-template-columns:34px 1fr auto auto; gap:10px; align-items:center; padding:11px 0; }
+  .row + .row { border-top:1px solid var(--line); }
+  .row.me { background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+            margin:0 -12px; padding-left:12px; padding-right:12px; }
+  .pos { font-size:18px; font-weight:800; text-align:center; }
+  .p1 { color:var(--gold); } .p2 { color:var(--silver); } .p3 { color:var(--bronze); }
+  .who b { display:block; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .who small { color:var(--dim); font-size:12px; }
+  .t { text-align:right; } .t b { display:block; font-size:16px; } .t small { color:var(--dim); font-size:12px; }
+  .cmp { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+         font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap; }
+  .cmp.off { visibility:hidden; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; line-height:1.5; }
+  .hint { font-size:12px; color:var(--dim); line-height:1.45; }
+  .others { display:flex; flex-wrap:wrap; gap:6px; }
+  .others button { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:20px; padding:7px 12px; font-size:13px; }
+  .others button.on { border-color:var(--accent); }
+  .cats button { font-weight:800; }
+  .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .st { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; text-align:center; }
+  .st b { display:block; font-size:22px; font-weight:800; } .st small { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  .race { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:11px 0; }
+  .race + .race { border-top:1px solid var(--line); }
+  .fin { font-size:20px; font-weight:800; min-width:46px; text-align:center; }
+  .up { color:var(--good); } .down { color:#ff5a5a; }
+  .trk { display:grid; grid-template-columns:1fr auto; gap:6px; padding:10px 0; }
+  .trk + .trk { border-top:1px solid var(--line); }
+  .trk small, .race small { color:var(--dim); font-size:12px; display:block; margin-top:2px; }
+  h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; margin-top:6px; }
+  .pts { font-size:20px; font-weight:800; } .gapp { color:var(--dim); font-size:12px; }
+  .res { display:grid; grid-template-columns:34px 1fr auto; gap:8px; align-items:center; padding:6px 0; font-size:14px; }
+  .res.me b { color:var(--accent); }
+  .rc { padding:10px 0; } .rc + .rc { border-top:1px solid var(--line); }
+  .fl { color:#b48cff; font-size:12px; margin-left:4px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Campionato</h1>
+</header>
+<h2>Classifica piloti</h2>
+<div class="card" id="table"><div class="empty">Carico…</div></div>
+<h2>Gare</h2>
+<div class="card" id="races"><div class="empty">Carico…</div></div>
+<p class="hint">Contano le gare online fatte insieme sullo stesso server: stessa sessione del gioco, almeno due di voi.
+  Si riconoscono da sole, non serve fare niente. Punti come in F1 dalla posizione d'arrivo in gara (25, 18, 15, 12, 10,
+  8, 6, 4, 2, 1). Compaiono gli amici che condividono i giri (⚙️ Impostazioni nella dashboard).</p>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
+const day = t => t ? new Date(t * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "short"}) : "";
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
+fetch("/api/campionato").then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); }).then(j => {
+  if (!j.cloud) {
+    $("table").innerHTML = $("races").innerHTML = '<div class="empty">Il campionato c\'è sul server su internet, dove ognuno ha il suo utente.<br>Qui in casa sei da solo.</div>';
+    return;
+  }
+  if (!j.standings.length) {
+    $("table").innerHTML = '<div class="empty">Ancora nessuna gara fatta insieme.<br>Entrate nella stessa lobby online e fate una gara: compare qui da sola.</div>';
+    $("races").innerHTML = '<div class="empty">–</div>';
+    return;
+  }
+  $("table").innerHTML = j.standings.map(r => `<div class="row${r.me ? " me" : ""}">
+      <div class="pos ${r.pos <= 3 ? "p" + r.pos : ""}">${r.pos}</div>
+      <div class="who"><b>${esc(r.driver)}${r.me ? " (tu)" : ""}</b><small>${r.races} ${r.races === 1 ? "gara" : "gare"} · ${r.wins} ${r.wins === 1 ? "vittoria" : "vittorie"} · ${r.podiums} ${r.podiums === 1 ? "podio" : "podi"}</small></div>
+      <div class="t"><b class="pts mono">${r.points}</b><small class="gapp">${r.gap ? "−" + r.gap : "leader"}</small></div><span></span></div>`).join("");
+  $("races").innerHTML = j.races.map(rc => `<div class="rc"><b>${esc(rc.track)}</b> <span class="hint">${day(rc.date)}${rc.category_name ? " · " + esc(rc.category_name) : ""}</span>
+      ${rc.results.map(x => `<div class="res${x.me ? " me" : ""}"><span class="mono">P${x.finish}</span>
+        <span><b>${esc(x.driver)}</b>${x.fastest ? '<span class="fl">⏱ giro più veloce</span>' : ""}<small style="color:var(--dim);display:block">${x.grid ? "partito P" + x.grid + " · " : ""}giro ${fmt(x.best_ms)}</small></span>
+        <span class="mono">+${x.points}</span></div>`).join("")}</div>`).join("");
+}).catch(() => {});
+</script>
+</body>
+</html>

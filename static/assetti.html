@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<title>Assetti</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600;
+          --good:#4cc38a; --gold:#ffd24a; --silver:#c9d1da; --bronze:#d08a4a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:820px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:16px; width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 12px; }
+  .row { display:grid; grid-template-columns:34px 1fr auto auto; gap:10px; align-items:center; padding:11px 0; }
+  .row + .row { border-top:1px solid var(--line); }
+  .row.me { background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+            margin:0 -12px; padding-left:12px; padding-right:12px; }
+  .pos { font-size:18px; font-weight:800; text-align:center; }
+  .p1 { color:var(--gold); } .p2 { color:var(--silver); } .p3 { color:var(--bronze); }
+  .who b { display:block; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .who small { color:var(--dim); font-size:12px; }
+  .t { text-align:right; } .t b { display:block; font-size:16px; } .t small { color:var(--dim); font-size:12px; }
+  .cmp { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+         font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap; }
+  .cmp.off { visibility:hidden; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; line-height:1.5; }
+  .hint { font-size:12px; color:var(--dim); line-height:1.45; }
+  .others { display:flex; flex-wrap:wrap; gap:6px; }
+  .others button { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:20px; padding:7px 12px; font-size:13px; }
+  .others button.on { border-color:var(--accent); }
+  .cats button { font-weight:800; }
+  .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .st { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; text-align:center; }
+  .st b { display:block; font-size:22px; font-weight:800; } .st small { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  .race { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:11px 0; }
+  .race + .race { border-top:1px solid var(--line); }
+  .fin { font-size:20px; font-weight:800; min-width:46px; text-align:center; }
+  .up { color:var(--good); } .down { color:#ff5a5a; }
+  .trk { display:grid; grid-template-columns:1fr auto; gap:6px; padding:10px 0; }
+  .trk + .trk { border-top:1px solid var(--line); }
+  .trk small, .race small { color:var(--dim); font-size:12px; display:block; margin-top:2px; }
+  h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; margin-top:6px; }
+  .su { padding:12px 0; } .su + .su { border-top:1px solid var(--line); }
+  .su h3 { font-size:16px; display:flex; justify-content:space-between; gap:8px; }
+  .su h3 small { color:var(--dim); font-weight:400; font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:5px 18px; margin-top:8px; font-size:13px; }
+  .grid > div { display:flex; justify-content:space-between; gap:8px; white-space:nowrap; }
+  .grid span { color:var(--dim); overflow:hidden; text-overflow:ellipsis; } .grid b { color:var(--txt); }
+  @media (max-width:520px) { .grid { grid-template-columns:1fr; } }
+  .grid .diff b { color:#ffd36b; }
+  .me h3 b { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Assetti</h1>
+</header>
+<div id="tracks" class="others"></div>
+<div class="card" id="list"><div class="empty">Carico…</div></div>
+<p class="hint">Per ogni pista e categoria l'ingegnere salva da solo l'assetto del tuo giro valido più veloce (lo legge dai dati
+  del gioco). Qui vedi anche quelli degli amici che condividono i giri: in giallo i valori diversi dal tuo.
+  Online, se un pilota ha la telemetria "Ristretta", il suo assetto non arriva.</p>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
+const day = t => t ? new Date(t * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "short"}) : "";
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
+const LABELS = [["ala_ant", "Ala anteriore"], ["ala_post", "Ala posteriore"], ["diff_gas", "Diff. in accelerazione", "%"],
+  ["diff_rilascio", "Diff. in rilascio", "%"], ["camber_ant", "Campanatura ant.", "°"], ["camber_post", "Campanatura post.", "°"],
+  ["toe_ant", "Convergenza ant.", "°"], ["toe_post", "Convergenza post.", "°"], ["sosp_ant", "Sospensione ant."], ["sosp_post", "Sospensione post."],
+  ["barra_ant", "Barra antirollio ant."], ["barra_post", "Barra antirollio post."], ["altezza_ant", "Altezza ant."], ["altezza_post", "Altezza post."],
+  ["pressione_freni", "Pressione freni", "%"], ["bilanciamento_freni", "Bilanciamento freni", "%"], ["freno_motore", "Freno motore", "%"],
+  ["press_ant_sx", "Pressione ant. sx", " psi"], ["press_ant_dx", "Pressione ant. dx", " psi"], ["press_post_sx", "Pressione post. sx", " psi"],
+  ["press_post_dx", "Pressione post. dx", " psi"], ["benzina", "Benzina", " kg"]];
+let all = [], cur = null;
+const keyOf = x => x.track + " · " + (x.category_name || "");
+function show(k) {
+  cur = k;
+  for (const b of $("tracks").children) b.classList.toggle("on", b.dataset.k === k);
+  const list = all.filter(x => keyOf(x) === k).sort((a, b) => a.ms - b.ms);
+  const mine = list.find(x => x.me);
+  $("list").innerHTML = list.map(x => `<div class="su${x.me ? " me" : ""}">
+      <h3><b>${esc(x.driver)}${x.me && x.driver !== "Tu" ? " (tu)" : ""} · <span class="mono">${fmt(x.ms)}</span></b><small>${esc(x.session || "")} · ${day(x.date)}</small></h3>
+      <div class="grid">${LABELS.filter(([k]) => x.setup[k] != null).map(([k, l, u]) => {
+        const diff = mine && !x.me && mine.setup[k] !== x.setup[k];
+        return `<div class="${diff ? "diff" : ""}"><span>${l}</span> <b class="mono">${x.setup[k]}${u || ""}</b></div>`; }).join("")}</div></div>`).join("");
+}
+fetch("/api/assetti").then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); }).then(j => {
+  all = j.setups || [];
+  if (!all.length) { $("list").innerHTML = '<div class="empty">Ancora nessun assetto salvato.<br>Fai un giro valido completo: l\'assetto di quel giro si salva da solo.</div>'; return; }
+  const keys = [...new Set(all.map(keyOf))];
+  $("tracks").innerHTML = keys.map(k => `<button data-k="${esc(k)}">${esc(k)}</button>`).join("");
+  for (const b of $("tracks").children) b.onclick = () => show(b.dataset.k);
+  const first = keys.find(k => j.current && k.startsWith(j.current + " ·")) || keys[0];
+  show(first);
+}).catch(() => {});
+</script>
+</body>
+</html>

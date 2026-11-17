@@ -265,6 +265,8 @@ class RaceEngineer:
                 car = self.rel(off)
                 if car and car["idx"] in self.xz:
                     out[key] = [round(v, 1) for v in self.xz[car["idx"]]]
+            out["mates"] = [[round(v, 1) for v in self.xz[i]] for _, i in self.mates()
+                            if i in self.xz and self.by_idx.get(i) not in (self.rel(-1), self.rel(1))]
         return out
 
     def on_status_all(self, tyres):
@@ -788,6 +790,24 @@ class RaceEngineer:
                                 "compound": t.get("compound"), "tyre_age": t.get("tyre_age"),
                                 "pit": car["pit_status"] > 0}
             out["mates"] = [{"name": n, "position": self.by_idx[i]["position"]} for n, i in self.mates()]
+            # mini classifica: due auto davanti e due dietro (più il compagno, se è lontano)
+            tower, mates = [], dict((i, n) for n, i in self.mates())
+            near = [c for c in self.cars if abs(c["position"] - me["position"]) <= 2]
+            near += [self.by_idx[i] for i in mates if self.by_idx[i] not in near]
+            for car in sorted(near, key=lambda c: c["position"]):
+                mine = car["idx"] == me["idx"]
+                if mine:
+                    gap = None
+                elif car["position"] < me["position"]:
+                    gap = self.gap_between(car, me)
+                else:
+                    gap = -self.gap_between(me, car)
+                t = self.tyres.get(car["idx"], {})
+                tower.append({"pos": car["position"], "name": "Tu" if mine else self.name(car["idx"], voice=False),
+                              "me": mine, "mate": mates.get(car["idx"]), "gap": round(gap, 1) if gap is not None else None,
+                              "team": (self.names.get(car["idx"]) or {}).get("team"), "compound": t.get("compound"),
+                              "pit": car["pit_status"] > 0})
+            out["tower"] = tower
         return out
 
     def context(self):

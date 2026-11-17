@@ -833,7 +833,7 @@ class Coach:
             "ref_owner": self.ref.owner if self.ref else None,
             "ideal_ms": self.ideal["ideal_ms"] if self.ideal else None,
             "delta": delta, "invalid": self.lap_invalid,
-            "speed": tel.get("speed"), "gear": tel.get("gear"), "rpm": tel.get("rpm"),
+            "speed": tel.get("speed"), "gear": tel.get("gear"), "rpm": tel.get("rpm"), "drs": tel.get("drs"),
             "in_curva": corner, "rettilineo_s": straight,
             "throttle": tel.get("throttle"), "brake": tel.get("brake"),
             "tyre_temp": tel.get("tyre_surface"), "tyre_wear": self.damage.get("tyre_wear"),

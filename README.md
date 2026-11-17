@@ -194,6 +194,8 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **Nuova interfaccia** in stile grafica F1 TV: sezioni Pista / Box / Impostazioni, mappa, classifica e telemetria
+  a linguette, radio con il nome del personaggio, pulsanti di stato a un tocco (vedi "La dashboard").
 - **🏆 Campionato tra amici** (pagina /campionato): le gare online fatte insieme sullo stesso server (stessa sessione
   del gioco, almeno due utenti) si riconoscono da sole; punti come in F1, classifica piloti e risultati gara per gara.
 - **🤝 Radio di squadra**: se un amico del server è nella tua stessa gara online, l'ingegnere ti dice a ogni giro dov'è
@@ -240,17 +242,21 @@ controlla l'impostazione.
 - **🛠 Gestione server** (solo l'amministratore, il primo utente): utenti, codice invito, nuova password, rimozione.
 
 ## La dashboard
-- **In pista**: posizione (o delta in prova/qualifica) con la **barra del delta** (verde se sei più veloce
-  del riferimento, rossa se più lento), chi hai davanti e dietro con gomme e distacco (rosso se chi ti segue
-  è a meno di un secondo), **telemetria live** (freno, gas, marcia, velocità, giri motore, ERS),
-  **mappa live** con te, chi ti precede e chi ti segue (compare dopo il primo giro completo e usa la
-  stessa rotazione scelta in Analisi), gomme, carburante, finestra box, meteo e l'ultimo messaggio
-  dell'ingegnere. In basso i due pulsanti grandi **Parla** e **Radio**.
-- **Dettagli**: tempi, velocità, quanto parla l'ingegnere, domanda scritta, debrief, tutti i
-  messaggi, analisi giri e impostazioni.
-- Sopra i pulsanti c'è sempre lo stato del microfono ("In ascolto", "Dimmi…", oppure l'errore):
-  se Radio non parte, lì c'è scritto perché.
-- In orizzontale i pulsanti vanno sulla destra.
+Tre sezioni, dalla barra in basso:
+- **Pista** (mentre guidi): posizione grande (o delta in prova e qualifica, sul migliore o sull'obiettivo) con la
+  barra del delta; il riquadro con tre linguette **Mappa** (te, chi ti precede, chi ti segue e i compagni, con i
+  distacchi), **Classifica** (2 auto davanti e 2 dietro, con gomme e distacchi; il compagno con l'etichetta) e
+  **Telemetria** (freno, gas, marcia, velocità, giri motore, DRS, batteria); l'ultimo messaggio della radio con il nome
+  del personaggio (‹ › per rileggere i precedenti); la macchina con le 4 gomme (temperatura e usura), benzina,
+  batteria, finestra box e meteo. In basso **Parla** e **Radio**.
+- **Box** (quello che guardi dopo): l'ultima gara, campionato, le mie gare, assetti, classifica giri, analisi, tempi,
+  consigli d'assetto, domanda scritta e debrief, tutti i messaggi, registrazioni, backup e collegamento.
+- **Impostazioni**: quanto parla, silenzio radio, schermo (vista da lontano), tempo obiettivo, allenamento, voce e
+  personaggio, chiavi AI, profilo e colore della scuderia.
+- In alto, sempre: collegamento con la PS5 (verde quando arrivano dati; toccalo per il controllo del collegamento),
+  silenzio radio a un tocco, voce, registrazione a un tocco.
+- Sopra i pulsanti c'è lo stato del microfono ("In ascolto", "Dimmi…", oppure l'errore).
+- Tablet: in verticale due colonne, in orizzontale tre colonne con i pulsanti sulla destra.
 
 ## 3. Sul telefono
 1. Stessa rete Wi-Fi del server. Apri `http://IP-DEL-SERVER:8080` (Safari o Chrome): la pagina

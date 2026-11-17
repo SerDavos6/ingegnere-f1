@@ -210,7 +210,9 @@ async function loadSessions() {
   const q = new URLSearchParams(location.search);
   const want = q.get("track") && (sessions.find(x => x.track === q.get("track") && (x.category || "") === (q.get("cat") || ""))
                                    || sessions.find(x => x.track === q.get("track")));
-  if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
+  const bySid = q.get("s") && sessions.find(x => x.id === q.get("s"));      // arrivo da "Le mie gare"
+  if (bySid) { s.value = bySid.id; pickSession(bySid.id); }
+  else if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
   else pickSession(sessions[0].id);
 }
 // giri parziali: uscita dai box, rientro ai box, o interrotti (garage, fine sessione)

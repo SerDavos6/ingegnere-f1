@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<title>Le mie gare</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600;
+          --good:#4cc38a; --gold:#ffd24a; --silver:#c9d1da; --bronze:#d08a4a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:820px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:16px; width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 12px; }
+  .row { display:grid; grid-template-columns:34px 1fr auto auto; gap:10px; align-items:center; padding:11px 0; }
+  .row + .row { border-top:1px solid var(--line); }
+  .row.me { background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+            margin:0 -12px; padding-left:12px; padding-right:12px; }
+  .pos { font-size:18px; font-weight:800; text-align:center; }
+  .p1 { color:var(--gold); } .p2 { color:var(--silver); } .p3 { color:var(--bronze); }
+  .who b { display:block; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .who small { color:var(--dim); font-size:12px; }
+  .t { text-align:right; } .t b { display:block; font-size:16px; } .t small { color:var(--dim); font-size:12px; }
+  .cmp { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+         font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap; }
+  .cmp.off { visibility:hidden; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; line-height:1.5; }
+  .hint { font-size:12px; color:var(--dim); line-height:1.45; }
+  .others { display:flex; flex-wrap:wrap; gap:6px; }
+  .others button { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:20px; padding:7px 12px; font-size:13px; }
+  .others button.on { border-color:var(--accent); }
+  .cats button { font-weight:800; }
+  .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .st { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; text-align:center; }
+  .st b { display:block; font-size:22px; font-weight:800; } .st small { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  .race { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:11px 0; }
+  .race + .race { border-top:1px solid var(--line); }
+  .fin { font-size:20px; font-weight:800; min-width:46px; text-align:center; }
+  .up { color:var(--good); } .down { color:#ff5a5a; }
+  .trk { display:grid; grid-template-columns:1fr auto; gap:6px; padding:10px 0; }
+  .trk + .trk { border-top:1px solid var(--line); }
+  .trk small, .race small { color:var(--dim); font-size:12px; display:block; margin-top:2px; }
+  h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Le mie gare</h1>
+</header>
+<div class="stats" id="tot"></div>
+<p class="hint" id="bestw"></p>
+<h2>Per pista</h2>
+<div class="card" id="tracks"><div class="empty">Carico…</div></div>
+<h2>Tutte le gare</h2>
+<div class="card" id="races"><div class="empty">Carico…</div></div>
+<p class="hint">Contano le gare con almeno 2 giri completi. Partenza e arrivo sono quelli che manda il gioco; la costanza è
+  quanto variano i tuoi giri puliti (senza il primo giro e i giri lenti di pit o safety car). Tocca una gara per aprirla in Analisi.</p>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
+const day = t => t ? new Date(t * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "short", year: "2-digit"}) : "";
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
+const gained = g => g == null ? "" : g > 0 ? `<span class="up">▲ ${g}</span>` : g < 0 ? `<span class="down">▼ ${-g}</span>` : "=";
+fetch("/api/gare").then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); }).then(j => {
+  const t = j.total;
+  $("tot").innerHTML = [["Gare", t.races], ["Vittorie", t.wins], ["Podi", t.podiums],
+    ["Arrivo medio", t.avg_finish != null ? "P" + t.avg_finish : "–"], ["Miglior arrivo", t.best_finish ? "P" + t.best_finish : "–"],
+    ["Posizioni guadagnate", (t.gained > 0 ? "+" : "") + t.gained]]
+    .map(([l, v]) => `<div class="st"><b class="mono">${esc(v)}</b><small>${l}</small></div>`).join("");
+  $("bestw").innerHTML = (j.best_track ? `Pista migliore: <b>${esc(j.best_track)}</b>. ` : "") +
+                         (j.worst_track ? `Da migliorare: <b>${esc(j.worst_track)}</b>.` : "");
+  if (!j.races.length) {
+    $("tracks").innerHTML = $("races").innerHTML = '<div class="empty">Ancora nessuna gara salvata.<br>Fai una gara e torna qui.</div>';
+    return;
+  }
+  $("tracks").innerHTML = j.tracks.map(x => `<div class="trk"><div><b>${esc(x.track)}</b>
+      <small>${esc(x.category_name || "")} · ${x.races} ${x.races === 1 ? "gara" : "gare"} · ${x.wins} ${x.wins === 1 ? "vittoria" : "vittorie"} · ${x.podiums} ${x.podiums === 1 ? "podio" : "podi"}</small></div>
+      <div class="t mono"><b>${x.avg_finish != null ? "P" + x.avg_finish : "–"}</b><small>giro ${fmt(x.best_ms)}</small></div></div>`).join("");
+  $("races").innerHTML = j.races.map(r => `<a class="race" style="color:inherit;text-decoration:none" href="/analisi?s=${encodeURIComponent(r.id)}">
+      <div class="fin mono">${r.finish ? "P" + r.finish : "–"}</div>
+      <div><b>${esc(r.track)}</b><small>${day(r.date)} · ${r.grid ? "partito P" + r.grid + " " : ""}${gained(r.gained)} · ${r.laps} giri ·
+        ${r.stops === 0 ? "nessuna sosta" : r.stops === 1 ? "1 sosta" : r.stops + " soste"}</small></div>
+      <div class="t mono"><b>${fmt(r.best_ms)}</b><small>${r.consistency != null ? "costanza ±" + r.consistency.toFixed(2) : ""}</small></div></a>`).join("");
+}).catch(() => {});
+</script>
+</body>
+</html>
