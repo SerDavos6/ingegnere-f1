@@ -39,6 +39,8 @@
   .others { display:flex; flex-wrap:wrap; gap:6px; }
   .others button { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:20px; padding:7px 12px; font-size:13px; }
   .others button.on { border-color:var(--accent); }
+  .cats button { font-weight:800; }
+  .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
 </style>
 </head>
 <body>
@@ -46,9 +48,11 @@
   <a class="back" href="/">← Dashboard</a>
   <h1><b>F1</b> Classifica</h1>
 </header>
+<div id="cats" class="others cats"></div>
 <div id="tracks" class="others"></div>
 <div class="card" id="board"><div class="empty">Carico…</div></div>
-<p class="hint">Il giro valido più veloce di ognuno, pista per pista. Compaiono gli utenti del server che condividono i giri
+<p class="hint">Il giro valido più veloce di ognuno, per categoria di macchine (F1 2025, F1 2026, F2…) e pista per pista.
+  La categoria la riconosce da sola dai dati del gioco. Compaiono gli utenti del server che condividono i giri
   (⚙️ Impostazioni nella dashboard). Tocca <b>Confronta</b> per aprire il giro in Analisi accanto al tuo: mappa "Dove perdi",
   grafici e staccate.</p>
 
@@ -59,22 +63,39 @@ const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); ret
 const day = t => t ? new Date(t * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "short"}) : "";
 try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
 
-let data = [], current = null;
+let data = [], cat = null, current = null;
+const keyOf = t => t.category + "|" + t.track;
+function showCats() {
+  const cats = [];
+  for (const t of data) if (!cats.some(c => c.k === t.category)) cats.push({k: t.category, n: t.category_name});
+  $("cats").innerHTML = cats.map(c => `<button data-c="${esc(c.k)}" class="${c.k === cat ? "on" : ""}">${esc(c.n)}</button>`).join("");
+  $("cats").style.display = cats.length > 1 ? "" : "none";
+  for (const b of $("cats").children) b.onclick = () => pickCat(b.dataset.c);
+}
+function pickCat(c, track) {
+  cat = c;
+  try { localStorage.setItem("classifica_cat", c); } catch (e) {}
+  showCats();
+  const list = data.filter(t => t.category === c);
+  $("tracks").innerHTML = list.map(t => `<button data-t="${esc(t.track)}">${esc(t.track)} · ${t.rows.length}</button>`).join("");
+  for (const b of $("tracks").children) b.onclick = () => show(b.dataset.t);
+  show(list.some(t => t.track === track) ? track : list[0].track);
+}
 function show(track) {
   current = track;
   try { localStorage.setItem("classifica_pista", track); } catch (e) {}
   for (const b of $("tracks").children) b.classList.toggle("on", b.dataset.t === track);
-  const t = data.find(x => x.track === track);
+  const t = data.find(x => x.track === track && x.category === cat);
   if (!t) return;
   $("board").innerHTML = t.rows.map(r => `
     <div class="row${r.me ? " me" : ""}">
       <div class="pos ${r.pos <= 3 ? "p" + r.pos : ""}">${r.pos}</div>
       <div class="who"><b>${esc(r.driver)}${r.me && r.driver !== "Tu" ? " (tu)" : ""}</b><small>${esc(r.session || "")} · ${day(r.date)}</small></div>
       <div class="t mono"><b>${fmt(r.ms)}</b><small>${r.gap ? "+" + (r.gap / 1000).toFixed(3) : "—"}</small></div>
-      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&friend=${encodeURIComponent(r.id)}">Confronta</a>`
+      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&cat=${encodeURIComponent(t.category)}&friend=${encodeURIComponent(r.id)}">Confronta</a>`
                        : `<span class="cmp off">Confronta</span>`}
     </div>`).join("") +
-    (!t.mine ? `<div class="hint" style="padding:8px 0">Per confrontarti fai almeno un giro valido su questa pista.</div>` : "");
+    (!t.mine ? `<div class="hint" style="padding:8px 0">Per confrontarti fai almeno un giro valido su questa pista con questa categoria.</div>` : "");
 }
 fetch("/api/classifica").then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); }).then(j => {
   data = j.tracks || [];
@@ -82,10 +103,9 @@ fetch("/api/classifica").then(r => { if (r.status === 401) { location.href = "/l
     $("board").innerHTML = '<div class="empty">Ancora nessun giro valido.<br>Fai qualche giro completo e torna qui.</div>';
     return;
   }
-  $("tracks").innerHTML = data.map(t => `<button data-t="${esc(t.track)}">${esc(t.track)} · ${t.rows.length}</button>`).join("");
-  for (const b of $("tracks").children) b.onclick = () => show(b.dataset.t);
-  let saved = null; try { saved = localStorage.getItem("classifica_pista"); } catch (e) {}
-  show(data.some(t => t.track === saved) ? saved : data[0].track);
+  let sc = null, st = null;
+  try { sc = localStorage.getItem("classifica_cat"); st = localStorage.getItem("classifica_pista"); } catch (e) {}
+  pickCat(data.some(t => t.category === sc) ? sc : data[0].category, st);
 }).catch(() => {});
 </script>
 </body>

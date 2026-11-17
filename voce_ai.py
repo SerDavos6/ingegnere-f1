@@ -61,7 +61,9 @@ def _wav(pcm, rate=24000):
     return head + pcm
 
 
-def _request(model, text, style, voice, key, timeout):
+def _request(model, text, style, voice, key, timeout, persona=""):
+    if persona:                         # personaggio scelto: come deve recitare, oltre al tono del messaggio
+        style = f"{style}; il personaggio: {persona}"
     if model.startswith("gemini-3.8"):
         body = {"contents": [{"role": "user", "parts": [{"text": text, "speech_metadata": {"style": style}}]}],
                 "generationConfig": {"responseModalities": ["AUDIO"],
@@ -88,10 +90,10 @@ class VoiceAI:
         self.model_idx = 0
         self.pause_until = 0.0          # dopo un errore di quota aspetto prima di riprovare
 
-    def synth(self, text, style_key, voice, key, timeout=8.0):
-        voice = voice if voice in VOICES else DEFAULT_VOICE
+    def synth(self, text, style_key, voice, key, timeout=8.0, persona=""):
+        voice = voice if voice in VOICES or persona else DEFAULT_VOICE
         style = STYLES.get(style_key, STYLES["normale"])
-        h = hashlib.sha1(f"{voice}|{style_key}|{text}".encode()).hexdigest()
+        h = hashlib.sha1(f"{voice}|{style_key}|{persona}|{text}".encode()).hexdigest()
         path = os.path.join(self.cache_dir, h + ".wav")
         try:
             with open(path, "rb") as f:
@@ -105,7 +107,7 @@ class VoiceAI:
         last = None
         while self.model_idx < len(MODELS):
             try:
-                wav = _request(MODELS[self.model_idx], text, style, voice, key, timeout)
+                wav = _request(MODELS[self.model_idx], text, style, voice, key, timeout, persona)
                 break
             except urllib.error.HTTPError as e:
                 last = e

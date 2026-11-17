@@ -100,6 +100,10 @@ crea una nuova password per chi l'ha dimenticata e rimuove un utente, senza Clou
 - **Sicurezza**: chiunque conosca l'IP potrebbe mandare dati finti alla porta UDP. Non è pericoloso, ma se
   succede cambia la porta (`python3 utenti.py aggiungi nome NUOVAPORTA`) e aprila su Oracle.
 
+- **Voce del server**: al primo avvio dopo l'aggiornamento il server scarica da solo Piper e le voci
+  italiane (circa 150 MB). Non serve fare niente: dopo qualche minuto in Dettagli → 🔊 la voce "Server"
+  risulta pronta. Nei messaggi del servizio compare "Voce del server (Piper) pronta".
+
 ## Comandi utili (sul server, via SSH)
 ```
 sudo journalctl -u ingegnere-f1 -f          # messaggi in tempo reale (Ctrl+C per uscire)

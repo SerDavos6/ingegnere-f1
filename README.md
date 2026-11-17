@@ -97,6 +97,15 @@ tempo a finirla prima della curva (fino a 4 secondi di rettilineo). Se il rettil
   mappa, grafici di delta, velocità, gas, freno e marcia, tabella delle staccate), da condividere o salvare.
 
 ### La voce dell'ingegnere (Dettagli → 🔊 Voce dell'ingegnere)
+Tre voci tra cui scegliere: **Telefono**, **Server** (di default) e **Voce AI**.
+- **Voce del server** (`voce_piper.py`): la genera il server con Piper, gratis, senza chiavi e **senza limiti**.
+  Al primo avvio il server scarica da solo Piper e le voci italiane (circa 150 MB, qualche minuto): intanto
+  parla il telefono, e in Dettagli → 🔊 c'è scritto a che punto è. Funziona su Linux a 64 bit (server Oracle,
+  Raspberry Pi, PC); su Termux e sul Mac non è disponibile e resta la voce del telefono. Si spegne con `--no-piper`.
+- **Personaggi** (`voci.py`): Il Veterano, Il Giovane Grintoso, La Stratega, La Calma, Il Romagnolo,
+  Radio Anni '90. Valgono per la voce del server e per la voce AI: con il server ognuno ha la sua voce,
+  velocità e tono; con la voce AI ha anche il suo modo di recitare (l'accento romagnolo e il tono da
+  telecronista ci sono solo con la voce AI). ▶ Prova fa sentire una frase tipica del personaggio.
 - **Voce del telefono**: scegli la voce (quelle di qualità migliore hanno ★), velocità e tono, con ▶ Prova.
   Il tono cambia da solo in base al messaggio: deciso e veloce per box, safety car e penalità, acceso per
   sorpassi e giri migliori, calmo per i consigli. Legge una frase alla volta, con le pause.
@@ -109,7 +118,8 @@ tempo a finirla prima della curva (fino a 4 secondi di rettilineo). Se il rettil
 - **Voce AI (Gemini)** (`voce_ai.py`): voce naturale ed espressiva, con la stessa chiave Gemini gratuita delle
   domande. Ogni messaggio ha il suo stile (urgente, entusiasta, calmo). L'audio si prepara appena arriva il
   messaggio, mentre l'ingegnere aspetta il rettilineo; se non è pronto entro 4 secondi o finisce la quota
-  gratuita, parla la voce del telefono. Le frasi già dette restano in cache (`voce_cache/`).
+  gratuita, parla la voce del server (e se manca anche quella il telefono). Le frasi già dette restano in
+  cache (`voce_cache/`, `piper/cache/`).
 
 ### Parlare con l'ingegnere
 - **🎙️ Parla**: tocchi, fai la domanda a voce, ti risponde a voce.
@@ -264,6 +274,8 @@ solo al primo avvio, se manca.
 - `assetto.py`: consigli d'assetto (sottosterzo, sovrasterzo, bloccaggi, trazione, gomme)
 - `amici.py`: giri degli amici (file caricati e altri utenti del server)
 - `voce_ai.py`: voce AI dell'ingegnere con Gemini TTS
+- `voce_piper.py`: voce del server con Piper (si installa da sola in `piper/`)
+- `voci.py`: i personaggi della voce
 - `ideale.py`: giro ideale (somma dei tratti migliori)
 - `registra.py`: registrazione e lettura delle sessioni vere
 - `race.py`: ingegnere di gara (distacchi, avversari, box, safety car, meteo, gomme, penalità)

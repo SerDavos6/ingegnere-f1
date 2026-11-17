@@ -31,12 +31,27 @@ import recorder
 import registra
 import utenti
 import voce_ai
+import voce_piper
+import voci
 from coach import Coach
 from risposte import Answers
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(BASE, "static")
 ARGS = None
+PIPER = voce_piper.Piper(os.path.join(BASE, "piper"))   # voce del server, condivisa fra gli utenti
+ENGINES = ("dev", "piper", "ai")
+
+
+def voice_engine(cfg):
+    """Motore scelto (dev = telefono, piper = server, ai = Gemini) e quello che si usa davvero adesso."""
+    chosen = cfg.get("voice_engine") or ("ai" if cfg.get("ai_voice_on") else "piper")
+    eff = chosen
+    if eff == "ai" and not cfg.get("gemini_key"):
+        eff = "piper"
+    if eff == "piper" and not PIPER.ready():
+        eff = "dev"
+    return chosen, eff
 
 
 # --------------------------------------------------------------------------- utente / PS5
@@ -202,19 +217,33 @@ class Tenant:
 
     # ---- voce AI
     def tts(self, body):
-        """Audio WAV della frase con la voce AI, oppure (None, motivo) se va usata la voce del telefono."""
+        """(audio WAV, None, motore usato) oppure (None, motivo, None) se va usata la voce del telefono.
+        Voce AI che non risponde (quota, rete) → voce del server (Piper) → voce del telefono."""
         text = str(body.get("text", "")).strip()[:600]
         if not text:
-            return None, "testo vuoto"
+            return None, "testo vuoto", None
         cfg = engineer_ai.load_config(self.config_path)
+        engine = body.get("engine") if body.get("engine") in ENGINES else voice_engine(cfg)[1]
+        cid = body.get("char") if voci.valid(body.get("char")) else cfg.get("voice_char", voci.DEFAULT)
+        char = voci.get(cid)
         style = body.get("style") or voce_ai.style_for(text, str(body.get("kind", "")), int(body.get("prio") or 1))
-        try:
-            return self.voice.synth(text, style, body.get("voice") or cfg.get("ai_voice"), cfg.get("gemini_key")), None
-        except voce_ai.QuotaError as e:
-            return None, str(e)
-        except Exception as e:   # rete, chiave sbagliata, risposta strana: si usa la voce del telefono
-            print(f"[{self.name}] voce AI non disponibile: {e}", flush=True)
-            return None, "voce AI non disponibile"
+        why = None
+        if engine == "ai":
+            try:
+                return self.voice.synth(text, style, char["gemini"], cfg.get("gemini_key"),
+                                        persona=char["descrizione"]), None, "ai"
+            except voce_ai.QuotaError as e:
+                why = str(e)
+            except Exception as e:   # rete, chiave sbagliata, risposta strana
+                print(f"[{self.name}] voce AI non disponibile: {e}", flush=True)
+                why = "voce AI non disponibile"
+        if engine in ("ai", "piper") and PIPER.ready():
+            try:
+                return PIPER.synth(text, cid, style), why, "piper"
+            except Exception as e:
+                print(f"[{self.name}] voce del server non disponibile: {e}", flush=True)
+                why = why or "voce del server non disponibile"
+        return None, why or ("voce del server " + PIPER.status()["text"]), None
 
     # ---- giri degli amici
     def share_laps(self):
@@ -249,8 +278,9 @@ class Tenant:
                 "gemini_key": mask(cfg.get("gemini_key", "")), "anthropic_key": mask(cfg.get("anthropic_key", "")),
                 "pit_loss": self.coach.pit_loss, "user": self.name if MODE == "cloud" else None,
                 "share_laps": cfg.get("share_laps", True) is not False,
-                "ai_voice_on": bool(cfg.get("ai_voice_on")) and bool(cfg.get("gemini_key")),
-                "ai_voice": cfg.get("ai_voice", voce_ai.DEFAULT_VOICE), "ai_voices": voce_ai.VOICES,
+                "voice_engine": voice_engine(cfg)[0], "voice_engine_now": voice_engine(cfg)[1],
+                "voice_char": cfg.get("voice_char", voci.DEFAULT), "voice_chars": voci.elenco(),
+                "piper": PIPER.status(),
                 "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
                 "team_color": cfg.get("team_color") or None,
                 "admin": MODE == "cloud" and utenti.is_admin(self.name)}
@@ -267,10 +297,10 @@ class Tenant:
                 cfg[k] = str(body[k]).strip()
         if "share_laps" in body:
             cfg["share_laps"] = bool(body["share_laps"])
-        if "ai_voice_on" in body:
-            cfg["ai_voice_on"] = bool(body["ai_voice_on"])
-        if body.get("ai_voice") in voce_ai.VOICES:
-            cfg["ai_voice"] = body["ai_voice"]
+        if body.get("voice_engine") in ENGINES:
+            cfg["voice_engine"] = body["voice_engine"]
+        if voci.valid(body.get("voice_char")):
+            cfg["voice_char"] = body["voice_char"]
         if "team_color" in body:
             c = str(body["team_color"] or "")
             cfg["team_color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
@@ -782,10 +812,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(t.rec.delete(str(body.get("name", ""))))
             return self._json(t.rec.status())
         if self.path == "/tts":
-            wav, why = t.tts(body)
+            wav, why, used = t.tts(body)
             if wav is None:
                 return self._json({"error": why}, 503)
-            return self._send(200, wav, "audio/wav")
+            hdr = {"X-Voce": used}
+            if why:
+                hdr["X-Voce-Nota"] = urllib.parse.quote(why)
+            return self._send(200, wav, "audio/wav", hdr)
         if self.path == "/api/friend_upload":
             out = amici.save_upload(t.friends_dir, body)
             return self._json(out, 400 if "error" in out else 200)
@@ -855,7 +888,12 @@ def main():
     ap.add_argument("--https-port", type=int, default=8443, help="0 per disattivare")
     ap.add_argument("--bind", default="0.0.0.0", help="127.0.0.1 dietro Caddy sul server cloud")
     ap.add_argument("--public-ip", default=None, help="IP pubblico del server cloud (mostrato nelle impostazioni)")
+    ap.add_argument("--no-piper", action="store_true", help="non installare né usare la voce del server (Piper)")
     ARGS = a = ap.parse_args()
+    if a.no_piper:
+        PIPER.state = "non_supportato"
+    else:
+        PIPER.start()               # la prima volta scarica Piper e le voci (in sottofondo)
     setup_tenants(a.udp_port)
     for t in TENANTS.values():
         threading.Thread(target=t.udp_loop, daemon=True).start()

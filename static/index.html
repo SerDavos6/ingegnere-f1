@@ -405,7 +405,8 @@
 
   <div class="card" id="voicecard">
     <div class="lbl">🔊 Voce dell'ingegnere</div>
-    <div class="seg two" id="vmode"><button data-m="dev" class="on">Voce del telefono</button><button data-m="ai">Voce AI (Gemini)</button></div>
+    <div class="seg" id="vmode"><button data-m="dev">Telefono</button><button data-m="piper" class="on">Server</button><button data-m="ai">Voce AI</button></div>
+    <div class="hint" id="vmodehint"></div>
     <div class="set" id="vdev">
       <label>Voce <select class="inp" id="vsel"></select></label>
       <label>Velocità <b id="vrateL"></b><input type="range" id="vrate" min="0.8" max="1.5" step="0.05"></label>
@@ -417,14 +418,14 @@
          "Sintesi vocale", motore Google, e scarica la voce italiana. Poi ricarica questa pagina: le voci migliori hanno ★.</p>
     </div>
     <div class="set" id="vai" style="display:none">
-      <label>Voce AI <select class="inp" id="aisel"></select></label>
-      <p id="aihint">Voce naturale ed espressiva, con pronuncia corretta. Usa la chiave Gemini delle Impostazioni (piano gratuito).
-         Se la voce AI non è pronta in tempo o finisce la quota gratuita, parla il telefono.</p>
+      <label>Personaggio <select class="inp" id="csel"></select></label>
+      <p id="vsrvhint"></p>
     </div>
     <label class="chk" style="margin-top:10px;font-size:14px"><input type="checkbox" id="radiofx">
       <span>Effetto radio di squadra: bip prima e dopo ogni messaggio (con la voce AI anche il suono della radio)</span></label>
     <div class="ask"><button class="btn" id="vtest" style="flex:1">▶ Prova la voce</button></div>
     <div class="hint" id="ainote"></div>
+    <div class="hint" id="vnote" style="color:var(--warn)"></div>
   </div>
 
   <div class="card">
@@ -525,10 +526,14 @@ $("tabs").onclick = e => {
 let voiceWanted = store.get("voce", "on") === "on", voiceUnlocked = false, itVoice = null, speakQ = [], lastSpokeEnd = 0;
 let devVoices = [];
 const vcfg = { name: store.get("voce_nome", ""), rate: +store.get("voce_vel", "1.1"), pitch: +store.get("voce_tono", "1") };
-let aiVoice = false, aiName = "", aiPauseUntil = 0, aiNote = "";
+// aiVoice: l'audio lo prepara il server (Piper o Gemini). vEngine = scelta, vEngineNow = quello attivo adesso
+let aiVoice = false, aiPauseUntil = 0, aiNote = "";
+let vEngine = "piper", vEngineNow = "dev", charId = "", voiceChars = [], piperState = {};
 const audioEl = new Audio(); audioEl.preload = "auto";
 let audioPlaying = false;
-const voiceScore = v => (/enhanced|premium|migliorat|neural|natural|online|siri/i.test(v.name) ? 3 : 0) +
+const badVoices = new Set(JSON.parse(store.get("voci_mute", "[]") || "[]"));   // voci che su questo telefono non parlano
+const voiceScore = v => (badVoices.has(v.name) ? -10 : 0) + (/siri/i.test(v.name) ? -5 : 0) +
+                        (/enhanced|premium|migliorat|neural|natural|online/i.test(v.name) ? 3 : 0) +
                         (/google/i.test(v.name) ? 1 : 0) + (v.lang === "it-IT" ? 1 : 0) + (v.localService === false ? 1 : 0);
 function pickVoice() {
   devVoices = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().replace("_", "-").startsWith("it"))
@@ -591,13 +596,17 @@ function say(text, prio, kind) {
   speakQ.push(it);
   pump();
 }
-function fetchAI(it, voiceName) {
+function fetchAI(it, charName) {
   it.ai = "pending";
   return fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text: it.text, kind: it.kind, prio: it.prio, style: it.style, voice: voiceName || aiName }) })
+                  body: JSON.stringify({ text: it.text, kind: it.kind, prio: it.prio, style: it.style,
+                                         engine: vEngineNow, char: charName || charId }) })
     .then(async r => {
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "errore"); }
-      it.url = URL.createObjectURL(await r.blob()); it.ai = "ready"; aiNote = ""; showAiNote();
+      it.url = URL.createObjectURL(await r.blob()); it.ai = "ready";
+      const used = r.headers.get("X-Voce"), why = decodeURIComponent(r.headers.get("X-Voce-Nota") || "");
+      aiNote = vEngineNow === "ai" && used === "piper" ? `Voce AI in pausa (${why || "non disponibile"}): parla la voce del server.` : "";
+      showAiNote();
     })
     .catch(e => {
       it.ai = "failed";
@@ -610,21 +619,59 @@ function fetchAI(it, voiceName) {
     })
     .finally(() => pump());
 }
-function speakDevice(it, done) {
+function voiceNote(t) { const n = $("vnote"); if (n) n.textContent = t || ""; }
+function speakDevice(it, done, plain) {
+  // plain: voce standard del telefono, senza scelta di voce né tono (se quella scelta non parte)
   const base = PROSODY[it.style] || PROSODY.normale;
-  const parts = pronounce(it.text).split(/(?<=[.!?])\s+/).filter(Boolean);
-  let left = parts.length;
+  // iPhone: un solo blocco per messaggio (più frasi in coda a volte restano mute o fuori ordine);
+  // altrove una frase alla volta, con le pause e il tono più deciso sulla prima
+  const text = pronounce(it.text);
+  const parts = (isIOS ? [text] : text.split(/(?<=[.!?])\s+/)).filter(Boolean);
+  if (!parts.length) return done();
+  let left = parts.length, started = false, finished = false;
+  // Safari: senza una voce assegnata a volte non parla (bug noto di WebKit), quindi anche la
+  // "voce standard" è una voce precisa: la prima italiana che non è risultata muta
+  const all = speechSynthesis.getVoices();
+  const fallback = all.find(v => /^it/i.test(v.lang) && !badVoices.has(v.name) && v !== itVoice)
+                || all.find(v => /^it/i.test(v.lang)) || all.find(v => v.default) || null;
+  const fin = () => { if (!finished) { finished = true; clearTimeout(watch); done(); } };
   parts.forEach((p, i) => {
     const u = new SpeechSynthesisUtterance(p);
-    u.lang = "it-IT"; if (itVoice) u.voice = itVoice;
-    // la prima frase di un messaggio urgente ancora più decisa
-    const boost = it.style === "urgente" && i === 0 ? 1.04 : 1;
-    u.rate = Math.min(2, vcfg.rate * base.rate * boost);
-    u.pitch = Math.min(2, vcfg.pitch * base.pitch * boost);
-    u.onend = u.onerror = () => { if (--left <= 0) done(); };
+    u.lang = "it-IT";
+    const voice = plain ? fallback : itVoice;
+    if (voice) u.voice = voice;
+    if (!plain) {
+      // la prima frase di un messaggio urgente ancora più decisa
+      const boost = it.style === "urgente" && i === 0 ? 1.04 : 1;
+      u.rate = Math.min(1.6, vcfg.rate * base.rate * boost);
+      u.pitch = Math.min(1.6, vcfg.pitch * base.pitch * boost);
+    }
+    u.volume = 1;
+    u.onstart = () => { started = true; voiceNote(""); };
+    u.onend = () => { if (--left <= 0) fin(); };
+    u.onerror = e => {
+      if (e.error && e.error !== "interrupted" && e.error !== "canceled") voiceNote("Errore della voce del telefono: " + e.error);
+      if (--left <= 0) fin();
+    };
     speechSynthesis.speak(u);
   });
-  if (!parts.length) done();
+  // iPhone: alcune voci (e a volte la sintesi dopo un altro audio) restano mute senza dare errori.
+  // Se dopo 2,5 secondi non è partita, riprovo con la voce standard e mi ricordo di quella muta.
+  const watch = setTimeout(() => {
+    if (started || finished) return;
+    speechSynthesis.cancel();
+    if (!plain) {
+      if (itVoice) {
+        badVoices.add(itVoice.name); store.set("voci_mute", JSON.stringify([...badVoices]));
+        voiceNote(`La voce «${itVoice.name}» su questo telefono non parla: uso quella standard.`);
+      }
+      finished = true;
+      setTimeout(() => speakDevice(it, done, true), 250);
+    } else {
+      voiceNote("La voce del telefono non parte. Controlla l'interruttore del silenzioso (laterale) e il volume, poi riprova.");
+      fin();
+    }
+  }, 2500);
 }
 function playAudio(it, done) {
   audioPlaying = true;
@@ -691,11 +738,19 @@ function routeAudio() {
   mediaSrc.disconnect();
   mediaSrc.connect(radioFx ? fxIn : ctx.destination);
 }
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function withRadio(it, done) {
   // bip di apertura → messaggio → bip di chiusura
   const start = () => {
-    const after = () => { const ms = beep("out"); setTimeout(done, ms); };
-    if (it.ai === "ready") { routeAudio(); playAudio(it, after); } else speakDevice(it, after);
+    const after = () => {
+      // iPhone: riaccendo l'audio dei bip solo dopo che la voce ha finito
+      const close = () => { const ms = beep("out"); setTimeout(done, ms); };
+      if (isIOS && actx && actx.state === "suspended" && radioFx) actx.resume().then(close, close); else close();
+    };
+    if (it.ai === "ready") { routeAudio(); playAudio(it, after); return; }
+    // iPhone: con l'audio dei bip acceso la voce del telefono può restare muta, quindi lo spengo mentre parla
+    if (isIOS && actx && actx.state === "running" && !mediaSrc) actx.suspend().then(() => speakDevice(it, after), () => speakDevice(it, after));
+    else speakDevice(it, after);
   };
   const ms = beep("in");
   ms ? setTimeout(start, ms) : start();
@@ -718,7 +773,8 @@ function pump() {
   if (Date.now() - it.t > maxAge) { speakQ.shift(); return pump(); }   // avviso vecchio: ormai inutile
   if (!canSpeakNow(it)) { pumpTimer = setTimeout(pump, 120); return; }
   // voce AI in preparazione: la aspetto al massimo 4 secondi dall'arrivo del messaggio
-  if (it.ai === "pending" && Date.now() - it.t < 4000) { pumpTimer = setTimeout(pump, 120); return; }
+  // (la voce del server sul server gratuito è più lenta: fino a 6 secondi)
+  if (it.ai === "pending" && Date.now() - it.t < (vEngineNow === "piper" ? 6000 : 4000)) { pumpTimer = setTimeout(pump, 120); return; }
   speakQ.shift();
   const done = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
   withRadio(it, done);
@@ -726,6 +782,9 @@ function pump() {
 function unlockVoice(greet) {
   if (voiceUnlocked) return;
   voiceUnlocked = true;
+  // iPhone (Safari 16.4+): l'audio della pagina come "riproduzione", così suona anche con
+  // l'interruttore del silenzioso e la voce non viene zittita dai bip della radio
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   audioCtx();                    // l'audio del browser si attiva solo con un tocco
   speechSynthesis.cancel();
   // sblocca anche l'audio della voce AI (iPhone: serve un tocco), con un audio muto brevissimo
@@ -926,7 +985,7 @@ function addMsg(m) {
 }
 
 // ---------- stato ----------
-const COMP = { soft: ["S", "var(--soft)"], medie: ["M", "var(--medium)"], dure: ["H", "var(--hard)"],
+const COMP = { supersoft: ["SS", "#c04cff"], soft: ["S", "var(--soft)"], medie: ["M", "var(--medium)"], dure: ["H", "var(--hard)"],
                intermedie: ["I", "var(--inter)"], "da bagnato": ["W", "var(--wet)"] };
 const compChip = c => COMP[c] ? `<i class="comp" style="--c:${COMP[c][1]}">${COMP[c][0]}</i>` : "";
 const WX = ["Sereno ☀️", "Nuvoloso 🌤️", "Coperto ☁️", "Pioggia 🌦️", "Pioggia forte 🌧️", "Temporale ⛈️"];
@@ -940,7 +999,7 @@ function render(s) {
   inCorner = !!s.in_curva && !!s.online; straightS = s.online ? s.rettilineo_s ?? null : null;
   $("dot").classList.toggle("on", !!s.online);
   if (s.track && s.track !== "-") $("track").textContent = s.track;
-  $("sess").innerHTML = esc(s.online ? (s.race?.session_name || "in pista") : "in attesa della PS5…") +
+  $("sess").innerHTML = esc(s.online ? (s.race?.session_name || "in pista") + (s.category_name ? " · " + s.category_name : "") : "in attesa della PS5…") +
     (s.rec ? ' · <b style="color:var(--bad)">● REC</b>' : "");
   $("hero-race").style.display = race ? "" : "none";
   $("hero-quali").style.display = race ? "none" : "";
@@ -1013,7 +1072,7 @@ function farBox(i, label, value, sub, cls = "") {
 }
 function renderFar(s) {
   const r = s.race || {};
-  $("farTrack").textContent = (s.track && s.track !== "-" ? s.track + " · " : "") +
+  $("farTrack").textContent = (s.track && s.track !== "-" ? s.track + " · " : "") + (s.category_name ? s.category_name + " · " : "") +
     (s.online ? (r.session_name || "in pista") : "in attesa della PS5…");
   const wear = s.tyre_wear ? Math.round(Math.max(...s.tyre_wear)) : null;
   const tyre = s.compound ? `${compChip(s.compound)} ${wear != null ? wear + "%" : ""}` : "";
@@ -1147,12 +1206,28 @@ function fillVoiceUI() {
 function showVoiceSettings() {
   $("vrate").value = vcfg.rate; $("vrateL").textContent = vcfg.rate.toFixed(2);
   $("vpitch").value = vcfg.pitch; $("vpitchL").textContent = vcfg.pitch.toFixed(2);
-  for (const b of $("vmode").children) b.classList.toggle("on", (b.dataset.m === "ai") === aiVoice);
-  $("vdev").style.display = aiVoice ? "none" : ""; $("vai").style.display = aiVoice ? "" : "none";
+  for (const b of $("vmode").children) b.classList.toggle("on", b.dataset.m === vEngine);
+  const srv = vEngine !== "dev";
+  $("vdev").style.display = srv ? "none" : ""; $("vai").style.display = srv ? "" : "none";
+  const ch = voiceChars.find(c => c.id === charId);
+  $("vmodehint").textContent = { dev: "La voce del telefono: sempre disponibile, la qualità dipende dal telefono.",
+    piper: "Voce generata dal tuo server: gratis, senza chiavi e senza limiti.",
+    ai: "Voce AI di Gemini: la più naturale ed espressiva, con la chiave gratuita (ha una quota al giorno)." }[vEngine];
+  let h = "";
+  if (vEngine === "piper" || vEngine === "ai") {
+    if (piperState.state !== "pronta") h += `Voce del server: ${piperState.text || "non disponibile"}. `;
+    if (vEngine === "ai" && vEngineNow !== "ai") h += "Per la voce AI inserisci la chiave Gemini in ⚙️ Impostazioni. ";
+    if (vEngineNow === "dev") h += "Intanto parla il telefono. ";
+    if (vEngine === "ai") h += "Se finisce la quota gratuita parla la voce del server, e se manca anche quella il telefono. ";
+    if (ch && ch.nota && vEngine === "piper") h += "Con questo personaggio " + ch.nota + ". ";
+    if (vEngine === "piper") h += "Tono e velocità cambiano da soli: più deciso per box e safety car, più calmo per i consigli.";
+  }
+  $("vsrvhint").textContent = h.trim();
 }
 function showAiNote() { $("ainote").textContent = aiVoice ? aiNote : ""; }
 fillVoiceUI(); showVoiceSettings();
-$("vsel").onchange = () => { vcfg.name = $("vsel").value; store.set("voce_nome", vcfg.name); itVoice = devVoices.find(v => v.name === vcfg.name) || itVoice; };
+$("vsel").onchange = () => { vcfg.name = $("vsel").value; store.set("voce_nome", vcfg.name);
+  badVoices.delete(vcfg.name); store.set("voci_mute", JSON.stringify([...badVoices])); voiceNote(""); itVoice = devVoices.find(v => v.name === vcfg.name) || itVoice; };
 $("vrate").oninput = () => { vcfg.rate = +$("vrate").value; store.set("voce_vel", vcfg.rate); showVoiceSettings(); };
 $("vpitch").oninput = () => { vcfg.pitch = +$("vpitch").value; store.set("voce_tono", vcfg.pitch); showVoiceSettings(); };
 async function saveVoice(body) {
@@ -1162,29 +1237,41 @@ async function saveVoice(body) {
     applyTeam(s.team_color || "");
   } catch (e) {}
 }
+let piperPoll = 0;
 function applyVoiceSettings(s) {
-  aiVoice = !!s.ai_voice_on; aiName = s.ai_voice || aiName;
-  const sel = $("aisel");
-  if (s.ai_voices && !sel.options.length)
-    sel.innerHTML = Object.entries(s.ai_voices).map(([n, d]) => `<option value="${esc(n)}">${esc(n)} · ${esc(d)}</option>`).join("");
-  sel.value = aiName;
+  if (!s.voice_engine) return;
+  vEngine = s.voice_engine; vEngineNow = s.voice_engine_now || "dev"; aiVoice = vEngineNow !== "dev";
+  charId = s.voice_char || charId; piperState = s.piper || {};
+  const sel = $("csel");
+  if (s.voice_chars) {
+    voiceChars = s.voice_chars;
+    if (!sel.options.length) sel.innerHTML = voiceChars.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join("");
+  }
+  sel.value = charId;
   showVoiceSettings(); showAiNote();
+  // mentre il server installa la sua voce controllo ogni 10 secondi quando è pronta
+  clearTimeout(piperPoll);
+  if (piperState.state === "scarico" || piperState.state === "assente")
+    piperPoll = setTimeout(() => fetch("/settings").then(r => r.json()).then(applyVoiceSettings).catch(() => {}), 10000);
 }
 $("vmode").onclick = async e => {
   const m = e.target.dataset.m; if (!m) return;
-  await saveVoice({ ai_voice_on: m === "ai" });
-  if (m === "ai" && !aiVoice) { aiNote = "Per la voce AI inserisci prima la chiave Gemini in ⚙️ Impostazioni."; $("ainote").textContent = aiNote; }
+  aiNote = "";
+  await saveVoice({ voice_engine: m });
 };
-$("aisel").onchange = () => saveVoice({ ai_voice: $("aisel").value });
+$("csel").onchange = () => saveVoice({ voice_char: $("csel").value });
 $("vtest").onclick = async () => {
-  if (!voiceUnlocked) unlockVoice(false);
   stopSpeech();
-  const it = { text: "Box, box questo giro! Montiamo le medie e rientri P5. Verstappen è a un secondo e due: difendi in uscita dalla Parabolica.",
-               prio: 2, kind: "strategia", t: Date.now(), style: "urgente" };
+  if (!voiceUnlocked) unlockVoice(false);
+  voiceNote("");
+  const ch = voiceChars.find(c => c.id === $("csel").value);
+  const text = aiVoice && ch ? ch.prova
+    : "Box, box questo giro! Montiamo le medie e rientri P5. Verstappen è a un secondo e due: difendi in uscita dalla Parabolica.";
+  const it = { text, prio: 2, kind: "strategia", t: Date.now(), style: styleOf(text, 2, "strategia") };
   const done = () => { lastSpokeEnd = Date.now(); };
   if (aiVoice) {
-    $("vtest").textContent = "⏳ Preparo la voce AI…";
-    await fetchAI(it, $("aisel").value);
+    $("vtest").textContent = vEngineNow === "ai" ? "⏳ Preparo la voce AI…" : "⏳ Preparo la voce…";
+    await fetchAI(it, $("csel").value);
     $("vtest").textContent = "▶ Prova la voce";
     if (it.ai !== "ready") it.ai = "failed";
   }

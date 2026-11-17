@@ -202,13 +202,14 @@ async function loadSessions() {
   for (const x of sessions) {
     const o = document.createElement("option");
     const dt = new Date(x.started * 1000).toLocaleString("it-IT", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
-    o.value = x.id; o.textContent = `${x.track} · ${x.session} · ${dt} · ${x.laps.length} giri`;
+    o.value = x.id; o.textContent = `${x.track} · ${x.category_name ? x.category_name + " · " : ""}${x.session} · ${dt} · ${x.laps.length} giri`;
     s.appendChild(o);
   }
   s.onchange = () => pickSession(s.value);
   // arrivo dalla Classifica: apro l'ultima sessione su quella pista e confronto con il giro dell'amico
   const q = new URLSearchParams(location.search);
-  const want = q.get("track") && sessions.find(x => x.track === q.get("track"));
+  const want = q.get("track") && (sessions.find(x => x.track === q.get("track") && (x.category || "") === (q.get("cat") || ""))
+                                   || sessions.find(x => x.track === q.get("track")));
   if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
   else pickSession(sessions[0].id);
 }
@@ -264,7 +265,7 @@ function buildRefSelect() {
 }
 async function loadFriends() {
   const track = cur.track;
-  const list = await fetch(`/api/friends?track=${encodeURIComponent(track)}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  const list = await fetch(`/api/friends?track=${encodeURIComponent(track)}&cat=${encodeURIComponent(cur.category || "")}`).then(r => r.ok ? r.json() : []).catch(() => []);
   if (!cur || cur.track !== track) return;
   friends = list;
   if (pendingFriend && list.some(f => f.id === pendingFriend)) {
@@ -308,9 +309,9 @@ async function loadIdeal() {
 // ---------------------------------------------------------- progressi
 async function loadProgress() {
   const track = cur.track;
-  const list = await fetch(`/api/progress?track=${encodeURIComponent(track)}`).then(r => r.json()).catch(() => []);
+  const list = await fetch(`/api/progress?track=${encodeURIComponent(track)}&cat=${encodeURIComponent(cur.category || "")}`).then(r => r.json()).catch(() => []);
   if (cur.track !== track) return;
-  $("proglbl").textContent = `Progressi a ${track} · giro migliore di ogni sessione`;
+  $("proglbl").textContent = `Progressi a ${track}${cur.category_name ? " in " + cur.category_name : ""} · giro migliore di ogni sessione`;
   const c = $("prog"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
   c.width = W * dpr; c.height = H * dpr;
   const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -597,7 +598,7 @@ function redrawCursor() {
 }
 
 // ------------------------------------------------------------ riepilogo gara
-const COMP_IT = { soft: "Soft", medie: "Medie", dure: "Dure", intermedie: "Intermedie", "da bagnato": "Bagnato" };
+const COMP_IT = { supersoft: "Supersoft", soft: "Soft", medie: "Medie", dure: "Dure", intermedie: "Intermedie", "da bagnato": "Bagnato" };
 function raceStats(s) {
   const laps = s.laps.filter(l => !l.partial).sort((a, b) => a.lap - b.lap);
   if (!/gara|sprint/i.test(s.session || "") || laps.length < 3) return null;
@@ -747,7 +748,7 @@ function renderFriendBox() {
 $("fexport").onclick = async () => {
   if (!sel) return;
   const driver = myUser || $("fname").value.trim() || "Pilota";
-  const lap = Object.assign({}, sel, { driver, track: cur.track, track_id: cur.track_id ?? null, formato: "ingegnere-f1-giro" });
+  const lap = Object.assign({}, sel, { driver, track: cur.track, track_id: cur.track_id ?? null, category: cur.category || null, formato: "ingegnere-f1-giro" });
   const name = `giro-${cur.track}-${driver}-${fmt(sel.ms).replace(/[:.]/g, "-")}.json`.replace(/\s+/g, "_");
   const file = new File([JSON.stringify(lap)], name, { type: "application/json" });
   try {
