@@ -75,7 +75,8 @@ def validate(lap):
            "track_id": track_id_of(lap), "ms": ms, "valid": bool(lap.get("valid", True)),
            "lap": _int(lap.get("lap")), "s1": _int(lap.get("s1")), "s2": _int(lap.get("s2")),
            "s3": _int(lap.get("s3")),
-           "compound": str(lap.get("compound") or "")[:20] or None, "trace": clean}
+           "compound": str(lap.get("compound") or "")[:20] or None, "trace": clean,
+           "category": str(lap.get("category") or "")[:20] or None}
     return out
 
 
@@ -89,7 +90,7 @@ def save_upload(friends_dir, lap):
         json.dump(lap, f, ensure_ascii=False, separators=(",", ":"))
     index = _load_index(friends_dir)
     index.append({"id": "f:" + fid, "driver": lap["driver"], "track": lap["track"], "ms": lap["ms"],
-                  "added": time.time()})
+                  "added": time.time(), "category": lap.get("category")})
     with open(_index_path(friends_dir), "w") as f:
         json.dump(index, f, ensure_ascii=False)
     return {"ok": True, "id": "f:" + fid, "driver": lap["driver"], "track": lap["track"], "ms": lap["ms"]}
@@ -110,30 +111,37 @@ def delete_upload(friends_dir, lap_id):
 
 
 # --------------------------------------------------------- altri utenti del server
-def _best_of_user(tenant, track):
-    """Il giro valido più veloce di un utente su una pista: (sid, info del giro) oppure None."""
+def same_category(a, b):
+    """Le sessioni registrate prima della divisione per categoria non hanno la categoria: valgono per tutte."""
+    return not a or not b or a == b
+
+
+def _best_of_user(tenant, track, category=None):
+    """Il giro valido più veloce di un utente su una pista (e categoria): (sid, info del giro) oppure None."""
     best = None
     for s in recorder.list_sessions(tenant.data_dir):
         if str(s.get("track", "")).lower() != track.lower():
             continue
+        if category and s.get("category") != category:
+            continue
         for l in s["laps"]:
-            if l.get("valid") and (best is None or l["ms"] < best[1]["ms"]):
+            if l.get("valid") and not l.get("partial") and (best is None or l["ms"] < best[1]["ms"]):
                 best = (s["id"], l)
     return best
 
 
-def list_laps(me, tenants, track):
-    """Giri degli amici per una pista: quelli degli altri utenti e quelli caricati da file."""
+def list_laps(me, tenants, track, category=None):
+    """Giri degli amici per una pista e categoria: quelli degli altri utenti e quelli caricati da file."""
     out = []
     for name, t in tenants.items():
         if t is me or not t.share_laps():
             continue
-        b = _best_of_user(t, track)
+        b = _best_of_user(t, track, category)
         if b:
             out.append({"id": f"u:{name}:{b[0]}:{b[1]['lap']}", "driver": name, "track": track,
                         "ms": b[1]["ms"], "source": "server"})
     for x in _load_index(me.friends_dir):
-        if x["track"].lower() == track.lower():
+        if x["track"].lower() == track.lower() and same_category(x.get("category"), category):
             out.append(dict(x, source="file"))
     return sorted(out, key=lambda x: x["ms"])
 
@@ -162,6 +170,6 @@ def load(me, tenants, lap_id):
             return None
         out = json.loads(body)
         meta = next((s for s in recorder.list_sessions(t.data_dir) if s["id"] == sid), {})
-        out.update(driver=name, track=meta.get("track"), track_id=track_id_of(meta))
+        out.update(driver=name, track=meta.get("track"), track_id=track_id_of(meta), category=meta.get("category"))
         return out
     return None

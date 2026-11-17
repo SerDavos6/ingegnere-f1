@@ -194,6 +194,8 @@ controlla l'impostazione.
 - **Nomi delle curve**: in Analisi, ✏️ accanto a una staccata. L'ingegnere poi dice "perdi di più in Parabolica".
 - **🏁 Riepilogo gara** in Analisi: partenza → arrivo, giro più veloce, costanza, soste, grafico delle posizioni e
   dell'usura; si condivide su WhatsApp con 📤.
+- **Categorie di macchine**: l'app riconosce da sola se guidi F1 2025, F1 2026 o F2 (dal campo "formula" che manda il
+  gioco). Giro di riferimento, classifica, confronti con gli amici e progressi sono separati per categoria.
 - **🛠 Gestione server** (solo l'amministratore, il primo utente): utenti, codice invito, nuova password, rimozione.
 
 ## La dashboard

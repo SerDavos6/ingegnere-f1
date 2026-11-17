@@ -45,7 +45,10 @@ def spoken_name(raw):
     n = re.sub(r"\s+", " ", n).strip()
     return n if re.search(r"[A-Za-zÀ-ù]", n) else raw.strip()
 
-SLICKS = {16, 17, 18}
+SLICKS = {16, 17, 18, 19, 20, 21, 22}     # F1 e F2
+PIT_CONFIRM_S = 3.0                         # secondi di attesa prima di dire "è entrato ai box"
+RETIRED_STATUS = {4, 5, 6, 7}               # result status: non finisce, squalificato, non classificato, ritirato
+RETIRE_REASONS = {3: " per i danni", 8: " per un guasto"}     # motivo dell'evento ritiro (6 = squalifica)
 
 DRS_GAP = 1.0          # sotto questo distacco chi ti segue ha il DRS
 CLOSE_CONFIRM_S = 2.0  # deve restare sotto il secondo almeno per questo tempo prima dell'avviso
@@ -74,6 +77,10 @@ class RaceEngineer:
         self.cars = []
         self.tyres = {}
         self.prev_pit = {}
+        self.pit_pending = {}         # idx -> (quando è entrato, davanti/dietro): lo dico solo se non si ritira
+        self.retired = set()          # auto ritirate già annunciate
+        self.prev_pos = {}
+        self.retire_t = -1e9          # ultimo ritiro: la posizione guadagnata non è un sorpasso
         self.last_sc = 0
         self.last_weather = None
         self.rain_warn = (None, -1e9)
@@ -163,6 +170,10 @@ class RaceEngineer:
     def on_event(self, ev):
         say, me_idx = self.c.say, self.c.player_idx
         code = ev["code"]
+        if code == "RTMT":
+            if ev["car"] != me_idx:
+                self._retired(ev["car"], ev.get("reason", 0))
+            return
         if code == "RDFL":
             say("Bandiera rossa! Rallenta e rientra ai box.", "gara", level=1, urgent=True)
             return
@@ -200,6 +211,31 @@ class RaceEngineer:
         elif t == 17:
             say("Bandiera nera in arrivo: smetti di tagliare e restituisci le posizioni.", "avviso", level=1, urgent=True)
 
+    def _retired(self, idx, reason):
+        """Un avversario si è ritirato: lo dico una volta sola, con il motivo se il gioco lo manda."""
+        if idx in self.retired or not self.is_race:
+            return
+        self.retired.add(idx)
+        self.pit_pending.pop(idx, None)
+        me_idx = self.c.player_idx
+        car_pos = self.prev_pos.get(idx) or (self.by_idx.get(idx) or {}).get("position")
+        me_pos = self.prev_pos.get(me_idx) or (self.me() or {}).get("position")
+        self.retire_t = self.c.now
+        n = self.name(idx)
+        if reason == 6:
+            msg = f"{cap(n)} è stato squalificato."
+        else:
+            msg = self.c.frasi("ritiro", nome=n, Nome=cap(n), why=RETIRE_REASONS.get(reason, ""))
+        near = False
+        if car_pos and me_pos:
+            if car_pos < me_pos:
+                msg += " Era davanti a te: guadagni una posizione." if car_pos == me_pos - 1 else " Guadagni una posizione."
+                near = car_pos == me_pos - 1
+            elif car_pos == me_pos + 1:
+                msg += " Era dietro di te."
+                near = True
+        self.c.say(msg, "gara", level=1 if near else 2, urgent=near)
+
     def on_motion_all(self, xz):
         self.xz = xz
 
@@ -222,6 +258,8 @@ class RaceEngineer:
 
     def on_laps(self, cars):
         self.timer.update(cars, self.c.now)
+        # posizioni del giro di dati precedente: quando uno si ritira la classifica cambia subito
+        self.prev_pos = {c["idx"]: c["position"] for c in self.cars} or self.prev_pos
         self.cars = cars
         self.by_idx = {c["idx"]: c for c in cars}
         me = self.me()
@@ -232,20 +270,37 @@ class RaceEngineer:
             return
         say = self.c.say
 
-        # avversari vicini che rientrano ai box
+        # ritiri visti dallo stato di gara (se l'evento del gioco non è arrivato)
+        for c in cars:
+            if c["idx"] != me["idx"] and c.get("result_status") in RETIRED_STATUS:
+                self._retired(c["idx"], 6 if c["result_status"] == 5 else 0)
+
+        # avversari vicini che rientrano ai box: aspetto PIT_CONFIRM_S secondi prima di dirlo,
+        # perché chi si ritira spesso passa prima dalla pit lane o dal garage
         for off in (-1, 1):
             car = self.rel(off)
-            if not car:
+            if not car or car["idx"] in self.retired:
                 continue
-            if car["pit_status"] == 1 and self.prev_pit.get(car["idx"], 1) == 0 and me["pit_status"] == 0:
-                where = "davanti" if off < 0 else "dietro"
-                msg = f"{cap(self.name(car['idx']))}, {where} a te, è entrato ai box."
-                deg, age = self.degradation(), self.c.status.get("tyre_age") or 0
-                if off < 0 and deg is not None and deg * age < 0.8 and me["pit_stops"] == car["pit_stops"]:
-                    msg += " Le tue gomme tengono ancora: resta fuori e spingi, proviamo l'overcut."
-                elif self._in_window(me) and me["pit_stops"] == 0:
-                    msg += " Possiamo fermarci al prossimo giro per coprirlo."
-                say(msg, "gara", level=1, urgent=True)
+            if (car["pit_status"] == 1 and self.prev_pit.get(car["idx"], 1) == 0 and me["pit_status"] == 0
+                    and car.get("result_status") in (2, None)):
+                self.pit_pending[car["idx"]] = (self.c.now, "davanti" if off < 0 else "dietro")
+        for idx, (since, where) in list(self.pit_pending.items()):
+            car = self.by_idx.get(idx)
+            if (car is None or idx in self.retired or car.get("result_status") not in (2, None)
+                    or car.get("driver_status") == 0):
+                self.pit_pending.pop(idx)          # si è ritirato o è tornato in garage: niente "box"
+                continue
+            if self.c.now - since < PIT_CONFIRM_S:
+                continue
+            self.pit_pending.pop(idx)
+            n = self.name(idx)
+            msg = self.c.frasi("box_rivale", nome=n, Nome=cap(n), dove=where)
+            deg, age = self.degradation(), self.c.status.get("tyre_age") or 0
+            if where == "davanti" and deg is not None and deg * age < 0.8 and me["pit_stops"] == car["pit_stops"]:
+                msg += " Le tue gomme tengono ancora: resta fuori e spingi, proviamo l'overcut."
+            elif self._in_window(me) and me["pit_stops"] == 0:
+                msg += " Possiamo fermarci al prossimo giro per coprirlo."
+            say(msg, "gara", level=1, urgent=True)
         self.prev_pit = {c["idx"]: c["pit_status"] for c in cars}
 
         # chi ti segue entro un secondo: l'avviso parte solo se resta sotto il secondo
@@ -261,8 +316,8 @@ class RaceEngineer:
                 elif (self.c.now - self.close_since[1] >= CLOSE_CONFIRM_S
                       and me["lap_num"] - self.drs_warned_lap >= 2):
                     self.drs_warned_lap = me["lap_num"]
-                    say(f"{cap(self.name(behind['idx']))} è a {num(gap)}, dentro il secondo. "
-                        "Difendi in uscita dalle curve lente.", "gara", level=1, urgent=True)
+                    n = self.name(behind["idx"])
+                    say(self.c.frasi("dentro_secondo", nome=n, Nome=cap(n), gap=num(gap)), "gara", level=1, urgent=True)
             else:
                 self.close_since = None
         else:
@@ -277,7 +332,7 @@ class RaceEngineer:
         if self.pit_exit_pending and me["pit_status"] == 0:
             self.pit_exit_pending = False
             self.wear_hist = []
-            say(f"Pit fatto. Rientri in posizione {me['position']}.", "gara", level=1, urgent=True)
+            say(self.c.frasi("pit_fatto", p=me["position"]), "gara", level=1, urgent=True)
 
         # cambi di posizione (stabili da 3 secondi, per ignorare i sorpassi a metà)
         pos = me["position"]
@@ -285,11 +340,13 @@ class RaceEngineer:
         if pos != cand:
             self.pos_candidate = (pos, self.c.now)
         elif self.c.now - since >= 3 and pos != self.pos_announced:
-            if self.pos_announced is not None and me["pit_status"] == 0:
+            if self.c.now - self.retire_t < 15 and pos < (self.pos_announced or 99):
+                pass                                   # posizione guadagnata per un ritiro: già detto
+            elif self.pos_announced is not None and me["pit_status"] == 0:
                 if pos < self.pos_announced:
-                    say(f"Bel sorpasso, sei P{pos}.", "gara", level=2)
+                    say(self.c.frasi("sorpasso", p=pos), "gara", level=2)
                 else:
-                    say(f"Hai perso una posizione, sei P{pos}.", "gara", level=2)
+                    say(self.c.frasi("perso", p=pos), "gara", level=2)
             self.pos_announced = pos
 
     # ------------------------------------------------------------- bandiere
@@ -371,32 +428,32 @@ class RaceEngineer:
         remaining = total - lap + 1 if total else None
 
         if self.c.race_done:            # bandiera a scacchi
-            say(f"Bandiera a scacchi! Hai chiuso P{me['position']}. Bella gara.", "gara", level=1, urgent=True)
+            say(self.c.frasi("bandiera_scacchi", p=me["position"]), "gara", level=1, urgent=True)
             return
         if remaining is not None and remaining <= 0:
             return                      # gara finita
         if remaining == 1:
-            say(f"Ultimo giro, sei P{me['position']}. Dai tutto!", "gara", level=1, urgent=True)
+            say(self.c.frasi("ultimo_giro", p=me["position"]), "gara", level=1, urgent=True)
 
         # distacchi e tendenza
         hist = {}
-        first = f"P{me['position']}"
-        if remaining and remaining > 1:
-            first += f", mancano {remaining} giri"
+        fr = self.c.frasi
+        first = (fr("pos_mancano", p=me["position"], n=remaining) if remaining and remaining > 1
+                 else fr("pos", p=me["position"]))
         parts = [first]
         prev = self.gap_hist.get(lap - 1, {})
         ahead, behind = self.rel(-1), self.rel(1)
         if ahead and me["pit_status"] == 0:
             gap = self.gap_between(ahead, me)
             hist["ahead"] = (ahead["idx"], gap)
-            txt = f"davanti {self.name(ahead['idx'])} a {num(gap)}"
+            txt = fr("davanti", nome=self.name(ahead["idx"]), gap=num(gap))
             p = prev.get("ahead")
             if p and p[0] == ahead["idx"]:
                 diff = p[1] - gap
                 if diff >= 0.05:
-                    txt += f", recuperi {tenths(diff)} al giro"
+                    txt += ", " + fr("recuperi", d=tenths(diff))
                 elif diff <= -0.05:
-                    txt += f", perdi {tenths(diff)} al giro"
+                    txt += ", " + fr("perdi_giro", d=tenths(diff))
             t = self.tyres.get(ahead["idx"])
             mine = self.c.status.get("compound")
             if t and t.get("compound") and mine and t["compound"] != mine:
@@ -405,12 +462,12 @@ class RaceEngineer:
         if behind and behind["pit_status"] == 0:
             gap = self.gap_between(me, behind)
             hist["behind"] = (behind["idx"], gap)
-            txt = f"dietro {self.name(behind['idx'])} a {num(gap)}"
+            txt = fr("dietro", nome=self.name(behind["idx"]), gap=num(gap))
             p = prev.get("behind")
             if p and p[0] == behind["idx"]:
                 diff = p[1] - gap
                 if diff >= 0.05:
-                    txt += f" e si avvicina di {tenths(diff)}"
+                    txt += fr("si_avvicina", d=tenths(diff))
             parts.append(txt)
         self.gap_hist[lap] = hist
         if remaining != 1:

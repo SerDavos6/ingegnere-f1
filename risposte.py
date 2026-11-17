@@ -9,7 +9,7 @@ import unicodedata
 from parlato import num, plural
 from engineer_ai import rule_based_debrief
 
-SLICKS = {"soft", "medie", "dure"}
+SLICKS = {"supersoft", "soft", "medie", "dure"}
 WX = {0: "sereno", 1: "poco nuvoloso", 2: "coperto", 3: "pioggia leggera", 4: "pioggia forte", 5: "temporale"}
 
 

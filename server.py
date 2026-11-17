@@ -185,11 +185,13 @@ class Tenant:
             res.pop("loss_by_seg", None)
         return res
 
-    def progress(self, track):
-        """Il giro migliore di ogni sessione su una pista, dalla più vecchia alla più recente."""
+    def progress(self, track, category=None):
+        """Il giro migliore di ogni sessione su una pista (e categoria), dalla più vecchia alla più recente."""
         out = []
         for s in recorder.list_sessions(self.data_dir):
             if str(s.get("track", "")).lower() != track.lower():
+                continue
+            if not amici.same_category(s.get("category"), category):
                 continue
             ok = [l for l in s["laps"] if l.get("valid") and not l.get("partial")]
             if ok:
@@ -228,7 +230,7 @@ class Tenant:
             lap = json.loads(raw) if raw else None
             meta = next((x for x in recorder.list_sessions(self.data_dir) if x["id"] == body.get("s")), {})
             if lap:
-                lap.update(track=meta.get("track"), track_id=amici.track_id_of(meta))
+                lap.update(track=meta.get("track"), track_id=amici.track_id_of(meta), category=meta.get("category"))
             owner = None
         if not lap or not lap.get("trace"):
             return {"error": "Giro non trovato."}
@@ -236,7 +238,7 @@ class Tenant:
         if tid is None:
             return {"error": "Non riconosco la pista di questo giro."}
         with self.lock:
-            ref = self.coach.set_reference(tid, lap["trace"], int(lap["ms"]), owner)
+            ref = self.coach.set_reference(tid, lap["trace"], int(lap["ms"]), owner, lap.get("category"))
         return {"ok": True, "owner": owner, "ms": ref.lap_ms, "zones": len(ref.zones), "track": lap.get("track")}
 
     # ---- impostazioni
@@ -289,7 +291,7 @@ def leaderboard(me):
             continue
         best = {}
         for sess in recorder.list_sessions(t.data_dir):
-            key = str(sess.get("track", "-"))
+            key = (str(sess.get("track", "-")), sess.get("category") or "")
             for l in sess["laps"]:
                 if l.get("valid") and not l.get("partial") and (key not in best or l["ms"] < best[key]["ms"]):
                     best[key] = {"ms": l["ms"], "sid": sess["id"], "lap": l["lap"], "date": sess.get("started"),
@@ -299,12 +301,14 @@ def leaderboard(me):
                        id=None if t is me else f"u:{name}:{b['sid']}:{b['lap']}")
             tracks.setdefault(key, []).append(row)
     out = []
-    for key, rows in tracks.items():
+    for (track, cat), rows in tracks.items():
         rows.sort(key=lambda r: r["ms"])
         for i, r in enumerate(rows):
             r["gap"] = r["ms"] - rows[0]["ms"]
             r["pos"] = i + 1
-        out.append({"track": key, "rows": rows, "mine": any(r["me"] for r in rows)})
+        out.append({"track": track, "category": cat,
+                    "category_name": P.CATEGORY_NAMES.get(cat, "Prima della divisione per categoria" if not cat else cat),
+                    "rows": rows, "mine": any(r["me"] for r in rows)})
     out.sort(key=lambda x: (not x["mine"], -len(x["rows"]), x["track"]))
     return out
 
@@ -681,14 +685,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, body, "application/json")
         elif path == "/api/friends":
-            self._json(amici.list_laps(t, dict(TENANTS), params.get("track", "")))
+            self._json(amici.list_laps(t, dict(TENANTS), params.get("track", ""), params.get("cat") or None))
         elif path == "/api/friend_lap":
             lap = amici.load(t, dict(TENANTS), params.get("id", ""))
             self._json(lap or {}, 200 if lap else 404)
         elif path == "/api/ideal":
             self._json(t.ideal_of(params.get("s", "")) or {})
         elif path == "/api/progress":
-            self._json(t.progress(params.get("track", "")))
+            self._json(t.progress(params.get("track", ""), params.get("cat") or None))
         elif path == "/api/rec":
             self._json(t.rec.status())
         elif path == "/api/rec_file":

@@ -113,6 +113,7 @@ def lap_row(last_ms, cur_ms, d, lap, pos, front_ms, pit=0, stops=0, invalid=0, s
 def session_packet(uid, st, frame, a, weather, sc, forecast, race, yellow=None):
     b = bytearray(700)
     struct.pack_into(P.SESSION_FMT, b, 0, weather, 32, 24, a.laps, int(LENGTH), 15 if race else 1, 11)
+    b[8] = a.formula            # categoria: 0 F1 2025, 13 F1 2026, 2 F2
     zones = [0.0, 0.17, 0.33, 0.5, 0.67, 0.83]          # 6 settori di pista
     b[18] = len(zones)
     for k, z in enumerate(zones):
@@ -160,6 +161,7 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--format", type=int, default=2025, help="2025 o 2026")
     ap.add_argument("--practice", action="store_true", help="prova libera invece della gara")
+    ap.add_argument("--formula", type=int, default=0, help="categoria: 0 = F1 2025, 13 = F1 2026, 2 = F2")
     ap.add_argument("--dry", action="store_true", help="gara asciutta (niente pioggia): per provare la strategia")
     ap.add_argument("--replay", help="rivede una sessione registrata (file .f1rec.gz dalla dashboard)")
     a = ap.parse_args()

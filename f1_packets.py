@@ -41,7 +41,20 @@ TRACKS = {
     39: "Silverstone (inversa)", 40: "Red Bull Ring (inversa)", 41: "Zandvoort (inversa)",
 }
 
-COMPOUNDS = {16: "soft", 17: "medie", 18: "dure", 7: "intermedie", 8: "da bagnato"}
+COMPOUNDS = {16: "soft", 17: "medie", 18: "dure", 7: "intermedie", 8: "da bagnato",
+             # F2 (mescola visiva): 19 super soft, 20 soft, 21 medie, 22 dure, 15 bagnato
+             19: "supersoft", 20: "soft", 21: "medie", 22: "dure", 15: "da bagnato"}
+
+# Categoria di macchine (m_formula della sessione). Riferimenti, classifica e confronti
+# sono separati per categoria: un giro in F2 non si confronta con uno in F1.
+FORMULAS = {0: ("f1_2025", "F1 2025"), 13: ("f1_2026", "F1 2026"), 2: ("f2", "F2"),
+            1: ("f1_classic", "F1 classiche"), 3: ("f1_generic", "F1 generica"), 4: ("beta", "Beta"),
+            6: ("esports", "Esports"), 8: ("f1_world", "F1 World"), 9: ("f1_elim", "F1 Elimination")}
+CATEGORY_NAMES = {k: n for k, n in FORMULAS.values()}
+
+
+def category_of(formula):
+    return FORMULAS.get(formula, (f"formula_{formula}", f"Categoria {formula}"))
 
 
 def parse_header(data):
@@ -186,7 +199,7 @@ def parse_motion_ex(data):
 
 
 def parse_event(data):
-    """Eventi: penalità e avvertimenti (PENA), giro veloce (FTLP), bandiera rossa (RDFL)."""
+    """Eventi: penalità e avvertimenti (PENA), giro veloce (FTLP), bandiera rossa (RDFL), ritiro (RTMT)."""
     if len(data) < HEADER_SIZE + 4:
         return None
     code = data[HEADER_SIZE:HEADER_SIZE + 4].decode("ascii", "ignore")
@@ -198,6 +211,10 @@ def parse_event(data):
     if code == "FTLP" and len(data) >= b + 5:
         car, t = struct.unpack_from("<Bf", data, b)
         return {"code": code, "car": car, "time": t}
+    if code == "RTMT" and len(data) >= b + 1:
+        # ritiro: auto e motivo (F1 25: 1 ritirato, 3 danni, 6 bandiera nera, 8 guasto…)
+        reason = data[b + 1] if len(data) >= b + 2 else 0
+        return {"code": code, "car": data[b], "reason": reason}
     if code in ("RDFL", "CHQF", "LGOT"):
         return {"code": code}
     return None
@@ -248,8 +265,10 @@ def parse_session(data):
         "track_name": TRACKS.get(v[6], f"pista {v[6]}"),
         "session_name": SESSION_NAMES.get(v[5], "sessione"),
         "is_race": v[5] in RACE_TYPES,
+        "formula": data[HEADER_SIZE + 8] if len(data) > HEADER_SIZE + 8 else 0,
         "forecast": [], "safety_car": 0, "pit_ideal": 0, "pit_latest": 0, "pit_rejoin": 0,
     }
+    s["category"], s["category_name"] = category_of(s["formula"])
     b = HEADER_SIZE
     # bandiere dei settori di pista (marshal zones): inizio come frazione del giro, bandiera
     # -1 sconosciuta, 0 nessuna, 1 verde, 2 blu, 3 gialla

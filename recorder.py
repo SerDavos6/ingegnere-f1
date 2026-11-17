@@ -27,7 +27,8 @@ class Recorder:
         os.makedirs(self.session_dir, exist_ok=True)
         meta = {"id": sid, "uid": str(uid), "track": session.get("track_name", "-"),
                 "track_id": session.get("track_id"),
-                "session": session.get("session_name", "sessione"), "started": time.time()}
+                "session": session.get("session_name", "sessione"), "started": time.time(),
+                "category": session.get("category"), "category_name": session.get("category_name")}
         with open(os.path.join(self.session_dir, "meta.json"), "w") as f:
             json.dump(meta, f, ensure_ascii=False)
 

@@ -7,9 +7,9 @@ pit del gioco. Sono stime da ingegnere, non certezze: per questo l'ingegnere dic
 from parlato import plural
 
 LIMIT = 70.0                       # usura oltre la quale le gomme calano molto
-SLICKS = ("soft", "medie", "dure")
+SLICKS = ("supersoft", "soft", "medie", "dure")      # supersoft: solo F2
 # durata relativa delle mescole (soft = 1)
-LIFE = {"soft": 1.0, "medie": 1.45, "dure": 1.9}
+LIFE = {"supersoft": 0.75, "soft": 1.0, "medie": 1.45, "dure": 1.9}
 SC_FACTOR = {1: 0.55, 2: 0.7}      # quanto costa il pit con safety car / VSC rispetto al normale
 
 

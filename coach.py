@@ -13,6 +13,7 @@ import json
 import os
 
 import curve
+from frasi import Frasi
 import ideale
 from assetto import SetupAdvisor
 from parlato import fmt_lap, fmt_lap_voice, num, tenths
@@ -156,6 +157,7 @@ class Coach:
         self.recorder = Recorder(data_dir) if data_dir else Recorder()
         self.race = RaceEngineer(self)
         self.setup = SetupAdvisor()
+        self.frasi = Frasi()
         self.reset()
 
     # ------------------------------------------------------------ stato
@@ -164,6 +166,7 @@ class Coach:
         self.player_idx = 0
         self.track_id = None
         self.track_name = "-"
+        self.category = None
         self.ref = None
         self.lap = Lap()
         self.lap_num = None
@@ -172,6 +175,7 @@ class Coach:
         self.telemetry, self.status, self.damage, self.session, self.motion = {}, {}, {}, {}, {}
         self.analyzed = set()
         self.lap_zone_results = []
+        self.tip_mem = {}            # staccata -> (tipo di consiglio, giro, quante volte di fila)
         self.history = []
         self.last_speak_t = -99.0
         self.now = 0.0
@@ -222,12 +226,14 @@ class Coach:
     def on_session(self, s):
         first = not self.session
         self.session = s
-        if s["track_id"] != self.track_id:
+        cat = s.get("category") or "f1_2025"
+        if s["track_id"] != self.track_id or cat != self.category:
             self.track_id = s["track_id"]
             self.track_name = s["track_name"]
+            self.category = cat
             self.ref = self._load_ref()
             self._load_outline()
-            msg = f"Pista: {self.track_name}, {s['session_name']}."
+            msg = f"Pista: {self.track_name}, {s['session_name']}, {s.get('category_name') or 'F1'}."
             if self.ref:
                 who = f" (giro di {self.ref.owner})" if self.ref.owner else ""
                 msg += f" Riferimento: {fmt_lap(self.ref.lap_ms)}{who}, {len(self.ref.zones)} staccate."
@@ -392,29 +398,40 @@ class Coach:
         self.lap_zone_results.append(res)
 
         tip_level = 3 if self.in_race else 2   # in gara i consigli di guida solo con "tanto"
-        tag = self.zone_label(z, capital=True)
+        tag, tag_l, f = self.zone_label(z, capital=True), self.zone_label(z), self.frasi
         if loss >= 0.08:
             bd, vd, fd = res["brake_delta"], res["vmin_delta"], res["full_delta"]
             if bd is not None and bd <= -12:
-                tip = f"freni {abs(bd):.0f} metri prima, puoi ritardare"
+                kind, tip = "freni_prima", f("freni_prima", m=f"{abs(bd):.0f}")
             elif bd is not None and bd >= 12 and vd is not None and vd <= -3:
-                tip = "freni troppo tardi e perdi velocità a centro curva"
+                kind, tip = "freni_tardi", f("freni_tardi")
             elif vd is not None and vd <= -4:
-                tip = f"porti {abs(vd):.0f} chilometri orari in meno a centro curva, rilascia il freno prima"
+                kind, tip = "vmin", f("vmin", kmh=f"{abs(vd):.0f}")
             elif fd is not None and fd >= 20:
-                tip = f"torni sul gas pieno {fd:.0f} metri dopo"
+                kind, tip = "gas", f("gas", m=f"{fd:.0f}")
             else:
-                tip = "trazione in uscita da migliorare"
-            self.say(f"{tag}: {tip}. Perdi {tenths(loss)}.", "consiglio", level=tip_level)
+                kind, tip = "trazione", f("trazione")
+            # stesso consiglio sulla stessa curva nei giri appena fatti: lo dico in un altro modo,
+            # e dalla terza volta di fila solo con "Tanto" (resta comunque scritto)
+            prev = self.tip_mem.get(z["n"])
+            lap = self.lap_num or 0
+            times = prev[2] + 1 if prev and prev[0] == kind and lap - prev[1] <= 2 else 1
+            self.tip_mem[z["n"]] = (kind, lap, times)
+            perdi = f("perdi", loss=tenths(loss))
+            text = f("ancora" if times >= 2 else "consiglio", tag=tag, tag_l=tag_l, tip=tip, perdi=perdi)
+            self.say(text[0].upper() + text[1:], "consiglio", level=3 if times >= 3 else tip_level)
         elif loss <= -0.12:
-            self.say(f"{tag}: bene, guadagni {tenths(loss)}.", "consiglio", level=3)
+            self.tip_mem.pop(z["n"], None)
+            text = f("bene_zona", tag=tag, tag_l=tag_l, gain=tenths(loss))
+            self.say(text[0].upper() + text[1:], "consiglio", level=3)
 
     def _check_tyres(self, tel):
         temps = tel["tyre_surface"]
         hot = [i for i, x in enumerate(temps) if x >= 110]
         if hot and self._once("tyrehot", 45):
             names = ["posteriore sinistra", "posteriore destra", "anteriore sinistra", "anteriore destra"]
-            self.say(f"Gomma {names[hot[0]]} surriscaldata, {temps[hot[0]]} gradi. Meno slittamento in uscita.",
+            g = names[hot[0]]
+            self.say(self.frasi("gomma_calda", g=g, G=g[0].upper() + g[1:], t=temps[hot[0]]),
                      "avviso", level=2)
 
     # --------------------------------------------------- fine giro
@@ -506,27 +523,28 @@ class Coach:
 
         best_before = self.ref.lap_ms if self.ref else None
         owner = self.ref.owner if self.ref else None
-        parts = [f"Giro {fmt_lap_voice(lap_ms)}"]
+        f = self.frasi
+        parts = [f("giro", t=fmt_lap_voice(lap_ms))]
         if not valid:
             parts.append("non valido")
         elif best_before:
             delta = (lap_ms - best_before) / 1000.0
-            parts.append(("più " if delta >= 0 else "meno ") + tenths(delta) +
-                         (f" dal giro di {owner}" if owner else " dal migliore"))
+            key = ("piu" if delta >= 0 else "meno") + ("_di" if owner else "")
+            parts.append(f(key, d=tenths(delta), chi=owner))
         worst = sorted([r for r in self.lap_zone_results if r["loss"] > 0.05], key=lambda r: -r["loss"])[:2]
         if worst:
-            parts.append("perdi di più in " + " e in ".join(self.zone_label(r) for r in worst))
+            parts.append(f("perdi_in", dove=" e ".join(self.zone_label(r) for r in worst)))
 
         lap_level = 3 if self.in_race else 1   # in gara il riepilogo lo fa l'ingegnere di gara
         if valid and complete and (best_before is None or lap_ms < best_before):
             self.ref = Reference.from_lap(self.lap, lap_ms)
             self._save_ref()
-            text = f"Nuovo riferimento: {fmt_lap_voice(lap_ms)}. Ho trovato {len(self.ref.zones)} staccate."
+            t = fmt_lap_voice(lap_ms)
+            text = f("primo_rif", t=t, n=len(self.ref.zones))
             if best_before and owner:
-                text = (f"Hai battuto il giro di {owner}! {fmt_lap_voice(lap_ms)}, "
-                        f"meno {tenths((best_before - lap_ms) / 1000)}. Ora il riferimento è il tuo.")
+                text = f("battuto", chi=owner, t=t, d=tenths((best_before - lap_ms) / 1000))
             elif best_before:
-                text = f"Giro migliore! {fmt_lap_voice(lap_ms)}, meno {tenths((best_before - lap_ms) / 1000)}."
+                text = f("giro_migliore", t=t, d=tenths((best_before - lap_ms) / 1000))
             self.say(text, "giro", level=2 if self.in_race else 1, urgent=True)
         else:
             # giro di uscita o di rientro: il tempo non dice niente, lo leggo solo con "Tanto"
@@ -544,8 +562,11 @@ class Coach:
         self.race.on_lap_complete()
 
     # ------------------------------------------------ persistenza
-    def _ref_path(self, track_id=None):
-        return os.path.join(self.ref_dir, f"pista_{self.track_id if track_id is None else track_id}.json")
+    def _ref_path(self, track_id=None, category=None):
+        """Un riferimento per pista e per categoria di macchine (F1 2025, F1 2026, F2…)."""
+        tid = self.track_id if track_id is None else track_id
+        cat = category or self.category or "f1_2025"
+        return os.path.join(self.ref_dir, f"pista_{tid}_{cat}.json")
 
     def _save_ref(self):
         if self.track_id is None:
@@ -591,13 +612,14 @@ class Coach:
         except (OSError, ValueError):
             self.outline = None
 
-    def set_reference(self, track_id, trace, lap_ms, owner=None):
-        """Usa un giro salvato (tuo o di un amico) come riferimento del coach per quella pista."""
+    def set_reference(self, track_id, trace, lap_ms, owner=None, category=None):
+        """Usa un giro salvato (tuo o di un amico) come riferimento del coach per quella pista e categoria."""
         ref = Reference.from_trace(trace, lap_ms, owner)
+        category = category or self.category or "f1_2025"
         os.makedirs(self.ref_dir, exist_ok=True)
-        with open(self._ref_path(track_id), "w") as f:
+        with open(self._ref_path(track_id, category), "w") as f:
             json.dump(ref.to_json(), f)
-        if track_id == self.track_id:
+        if track_id == self.track_id and category == (self.category or "f1_2025"):
             self.ref = ref
             self.analyzed = set()
         who = f"il giro di {owner}" if owner else "il tuo giro"
@@ -641,6 +663,7 @@ class Coach:
         last = self.history[-1] if self.history else None
         return {
             "track": self.track_name, "lap": ld.get("lap_num"),
+            "category": self.category, "category_name": self.session.get("category_name"),
             "position": ld.get("position"), "current_ms": ld.get("current_lap_ms"),
             "last_ms": last["ms"] if last else None,
             "best_ms": self.ref.lap_ms if self.ref else None,
