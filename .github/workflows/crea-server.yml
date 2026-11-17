@@ -1,0 +1,142 @@
+# Ingegnere F1 - crea da solo il server Oracle "Always Free" quando si libera un posto.
+# Gira su GitHub ogni 30 minuti (anche a PC spento). Quando ci riesce:
+#   - apre una "Issue" nel repository con l'IP del server (ti arriva un'email da GitHub)
+#   - si disattiva da solo.
+# Prima di usarlo: lancia almeno una volta crea-server.sh nella Cloud Shell (crea la rete)
+# e inserisci i 6 "secrets" spiegati nella guida.
+
+name: Crea server Oracle
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: crea-server-oracle
+  cancel-in-progress: false
+
+jobs:
+  crea:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    env:
+      OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+      SUPPRESS_LABEL_WARNING: "True"
+      NOME: ingegnere-f1
+      DURATA_MINUTI: "28"     # quanto riprova in ogni giro
+      ATTESA: "60"            # secondi tra un tentativo e l'altro
+    steps:
+      - name: Installa OCI CLI
+        run: pip install --quiet oci-cli
+
+      - name: Configura le chiavi
+        env:
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          for v in OCI_USER OCI_TENANCY OCI_FINGERPRINT OCI_REGION OCI_KEY SSH_PUBLIC_KEY; do
+            if [ -z "${!v}" ]; then echo "Manca il secret $v (vedi la guida)"; exit 1; fi
+          done
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=$OCI_USER
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY
+          region=$OCI_REGION
+          key_file=$HOME/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          printf '%s\n' "$SSH_PUBLIC_KEY" > ~/ssh.pub
+          oci iam region list >/dev/null && echo "Collegamento a Oracle riuscito."
+
+      - name: Prova a creare il server
+        env:
+          COMP: ${{ secrets.OCI_TENANCY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -u
+
+          fine() {   # $1 = id istanza
+            oci compute instance get --instance-id "$1" --wait-for-state RUNNING \
+              --max-wait-seconds 600 >/dev/null 2>&1 || true
+            IP=$(oci compute instance list-vnics --instance-id "$1" | jq -r '.data[0]."public-ip" // empty')
+            echo "SERVER PRONTO. IP pubblico: $IP"
+            echo "### Server creato! IP pubblico: \`$IP\`" >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "Il server **$NOME** è stato creato."
+              echo
+              echo "IP pubblico: **$IP**"
+              echo
+              echo "Prossimo passo: guida, passo 5 (installa sul server)."
+              echo "La chiave per collegarti è nella Cloud Shell: ingegnere-f1.key (menu ingranaggio -> Download)."
+            } > ~/messaggio.md
+            gh issue create --title "Server Oracle creato - IP $IP" --body-file ~/messaggio.md || true
+            gh workflow disable crea-server.yml || true
+            exit 0
+          }
+
+          # Server già esistente?
+          ESISTE=$(oci compute instance list -c "$COMP" --display-name "$NOME" --all 2>/dev/null \
+            | jq -r '[.data[]? | select(."lifecycle-state" != "TERMINATED" and ."lifecycle-state" != "TERMINATING")] | .[0].id // empty')
+          if [ -n "$ESISTE" ]; then echo "Il server esiste già."; fine "$ESISTE"; fi
+
+          VCN=$(oci network vcn list -c "$COMP" --display-name ingegnere-vcn --all | jq -r '.data[0].id // empty')
+          if [ -z "$VCN" ]; then
+            echo "Non trovo la rete 'ingegnere-vcn': lancia prima una volta crea-server.sh nella Cloud Shell."
+            exit 1
+          fi
+          SUBNET=$(oci network subnet list -c "$COMP" --vcn-id "$VCN" --all | jq -r '.data[0].id // empty')
+
+          immagine() {
+            oci compute image list -c "$COMP" --operating-system "Canonical Ubuntu" \
+              --operating-system-version "24.04" --shape "$1" --sort-by TIMECREATED --sort-order DESC \
+              | jq -r '.data[0].id // empty'
+          }
+          IMG_AMD=$(immagine VM.Standard.E2.1.Micro)
+          IMG_ARM=$(immagine VM.Standard.A1.Flex)
+          ADS=$(oci iam availability-domain list -c "$COMP" | jq -r '.data[].name')
+
+          SCADENZA=$(( $(date +%s) + DURATA_MINUTI * 60 ))
+          N=0
+          while [ "$(date +%s)" -lt "$SCADENZA" ]; do
+            N=$((N+1))
+            for AD in $ADS; do
+              for SHAPE in VM.Standard.A1.Flex VM.Standard.E2.1.Micro; do
+                if [ "$SHAPE" = "VM.Standard.A1.Flex" ]; then
+                  IMG=$IMG_ARM; EXTRA=(--shape-config '{"ocpus":1,"memoryInGBs":6}')
+                else
+                  IMG=$IMG_AMD; EXTRA=()
+                fi
+                [ -z "$IMG" ] && continue
+                OUT=$(oci compute instance launch -c "$COMP" --availability-domain "$AD" --shape "$SHAPE" \
+                  "${EXTRA[@]}" --image-id "$IMG" --subnet-id "$SUBNET" --assign-public-ip true \
+                  --display-name "$NOME" --ssh-authorized-keys-file ~/ssh.pub 2>&1)
+                if echo "$OUT" | grep -q '"lifecycle-state"'; then
+                  fine "$(echo "$OUT" | jq -r '.data.id')"
+                elif echo "$OUT" | grep -qi 'TooManyRequests'; then
+                  echo "$(date +%H:%M) tentativo $N: troppe richieste, aspetto 3 minuti"; sleep 180
+                elif echo "$OUT" | grep -qi 'capacity'; then
+                  echo "$(date +%H:%M) tentativo $N: $SHAPE -> nessun posto libero"
+                else
+                  echo "$(date +%H:%M) tentativo $N: $SHAPE -> errore:"
+                  echo "$OUT" | grep -iE '"message"|"code"' | head -2
+                fi
+              done
+            done
+            sleep "$ATTESA"
+          done
+          echo "Nessun posto in questo giro. Riprovo tra poco (prossimo avvio automatico)."
