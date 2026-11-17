@@ -7,6 +7,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#08090b">
 <title>Ingegnere di pista</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
 <style>
   :root {
     --bg:#08090b; --panel:#121418; --panel2:#181b20; --line:#23272e; --txt:#f2f4f7; --dim:#8a919b; --faint:#5b626c;
@@ -190,6 +193,44 @@
   .set { display:flex; flex-direction:column; gap:10px; margin-top:8px; font-size:13px; color:var(--dim); }
   .set label { display:flex; flex-direction:column; gap:4px; }
   .set b { color:var(--txt); }
+  .teams { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:6px; }
+  .teams button { display:flex; align-items:center; gap:6px; padding:8px; border-radius:10px; border:1px solid var(--line);
+                  background:#0c0e11; font-size:12px; font-weight:700; color:var(--txt); text-align:left; }
+  .teams button i { width:14px; height:14px; border-radius:50%; flex:none; }
+  .teams button.on { border-color:var(--txt); }
+
+  /* ---------- gomme sulla macchina ---------- */
+  .car { display:grid; grid-template-columns:1fr 46px 1fr; grid-template-rows:auto auto; gap:6px 8px; margin-top:10px; align-items:center; }
+  .car svg { grid-column:2; grid-row:1 / 3; width:46px; height:100%; max-height:150px; }
+  .car .ty { border:2px solid var(--tc,#2a3038); border-radius:14px; background:#0c0e11; }
+  .car .ty b { color:var(--tc,var(--txt)); }
+  .car .ty > * { position:relative; }
+  .car .ty::before { content:""; position:absolute; inset:0; background:var(--tc,transparent); opacity:.13; }
+  .car .ty small { white-space:nowrap; font-size:9px; }
+  .tylegend { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; font-size:9px; white-space:nowrap; color:var(--dim); font-weight:700; margin-top:6px; }
+  .tylegend i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:3px; vertical-align:-1px; }
+
+  /* ---------- vista da lontano ---------- */
+  #far { position:fixed; inset:0; z-index:30; background:var(--bg); display:none; flex-direction:column;
+         padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); gap:2vmin; }
+  body.far #far { display:flex; }
+  body.far { overflow:hidden; }
+  .farTop { display:flex; align-items:center; gap:10px; font-size:3.4vmin; color:var(--dim); font-weight:700; }
+  .farTop span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .farTop button { font-size:4vmin; width:9vmin; height:9vmin; min-width:44px; min-height:44px; border-radius:14px; border:1px solid var(--line); background:var(--panel); }
+  .farMain { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:2vmin; min-height:0; }
+  .farBox { background:var(--panel); border:1px solid var(--line); border-radius:3vmin; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; padding:2vmin; min-height:0; overflow:hidden; text-align:center; }
+  .farBox.big { grid-column:1 / 3; }
+  .farBox small { font-size:3.2vmin; color:var(--dim); font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+  .farBox .fv { font-size:17vmin; font-weight:900; line-height:1; letter-spacing:-.03em; }
+  .farBox.big .fv { font-size:26vmin; }
+  .farBox .fs { font-size:5vmin; font-weight:700; color:var(--dim); margin-top:1vmin; max-width:100%;
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .farBox .good { color:var(--good); } .farBox .bad { color:var(--bad); } .farBox .hot { color:var(--bad); }
+  .farMsg { font-size:4.6vmin; font-weight:700; line-height:1.25; border-left:1.2vmin solid var(--red); padding:1vmin 2vmin;
+            min-height:12vmin; display:flex; align-items:center; }
+  @media (orientation:landscape) { .farMain { grid-template-columns:1.3fr 1fr 1fr; grid-template-rows:1fr; } .farBox.big { grid-column:auto; } }
 
   @media (orientation:landscape) and (min-width:700px) {
     body { padding-bottom:10px; padding-right:calc(212px + env(safe-area-inset-right)); padding-top:max(8px,env(safe-area-inset-top)); }
@@ -219,8 +260,21 @@
     <b id="track">Ingegnere di pista</b>
     <small><span class="dot" id="dot"></span><span id="sess">in attesa della PS5…</span></small>
   </div></div>
+  <button class="icon" id="farbtn" title="Vista da lontano">🔭</button>
   <button class="icon" id="voice" title="Voce">🔇</button>
+  <a class="icon" href="/classifica" title="Classifica">🏆</a>
   <a class="icon" href="/analisi" title="Analisi giri">📈</a>
+</div>
+
+<!-- =============== VISTA DA LONTANO (telefono vicino alla TV) =============== -->
+<div id="far">
+  <div class="farTop"><span id="farTrack">Ingegnere di pista</span><button id="farexit" title="Chiudi">✕</button></div>
+  <div class="farMain">
+    <div class="farBox big"><small id="farL1">Posizione</small><div class="fv num" id="farV1">–</div><div class="fs num" id="farS1"></div></div>
+    <div class="farBox"><small id="farL2">Davanti</small><div class="fv num" id="farV2">–</div><div class="fs" id="farS2"></div></div>
+    <div class="farBox"><small id="farL3">Dietro</small><div class="fv num" id="farV3">–</div><div class="fs" id="farS3"></div></div>
+  </div>
+  <div class="farMsg" id="farMsg">Quando sei in pista ti parlo qui.</div>
 </div>
 
 <div class="tabs" id="tabs"><button data-v="race" class="on">In pista</button><button data-v="more">Dettagli</button></div>
@@ -285,12 +339,20 @@
   <div class="row2">
     <div class="card">
       <div class="tyhead"><span class="lbl">Gomme</span><span id="comp"></span></div>
-      <div class="tyres">
+      <div class="car">
         <div class="ty" id="t2"><b>–</b><span class="w"><i></i></span><small>–</small></div>
+        <svg viewBox="0 0 46 140" aria-hidden="true">
+          <rect x="3" y="4" width="40" height="9" rx="2" fill="var(--red)"/>
+          <path d="M20 13h6l2 26h-10z" fill="#3a414b"/>
+          <path d="M14 40h18l4 22-3 30 4 22H9l4-22-3-30z" fill="#2a3038"/>
+          <ellipse cx="23" cy="66" rx="5" ry="8" fill="#0c0e11"/>
+          <rect x="6" y="124" width="34" height="11" rx="2" fill="var(--red)"/>
+        </svg>
         <div class="ty" id="t3"><b>–</b><span class="w"><i></i></span><small>–</small></div>
         <div class="ty" id="t0"><b>–</b><span class="w"><i></i></span><small>–</small></div>
         <div class="ty" id="t1"><b>–</b><span class="w"><i></i></span><small>–</small></div>
       </div>
+      <div class="tylegend"><span><i style="background:var(--blue)"></i>fredda</span><span><i style="background:var(--good)"></i>giusta</span><span><i style="background:var(--warn)"></i>calda</span><span><i style="background:var(--bad)"></i>troppo</span></div>
     </div>
     <div class="card facts">
       <div class="fact"><span>Carburante</span><b class="num" id="fuel">–</b></div>
@@ -401,9 +463,32 @@
       <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1"></label>
       <label class="chk" id="sharerow" style="display:none"><input type="checkbox" id="share">
         <span>Condividi i miei giri migliori con gli altri utenti del server (per il confronto in Analisi)</span></label>
+      <label class="chk"><input type="checkbox" id="wake">
+        <span>Tieni lo schermo acceso mentre la dashboard è aperta <span id="wakeinfo"></span></span></label>
       <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="btn red">Salva</button><span id="setinfo"></span></div>
       <p id="gamehint"></p>
       <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="text-decoration:underline">Esci</a></p>
+    </div>
+  </details>
+
+  <details class="card" id="profile" style="display:none">
+    <summary class="linkbtn"><span>👤 Profilo</span><span>›</span></summary>
+    <div class="set">
+      <p>Sei collegato come <b id="pname"></b>. <span id="pgame"></span></p>
+      <div class="lbl">Cambia nome utente</div>
+      <label>Nuovo nome (minuscole, numeri, _) <input id="pnew" autocapitalize="none" autocomplete="off"></label>
+      <label>Password attuale <input id="pcur1" type="password" autocomplete="current-password"></label>
+      <div style="display:flex;gap:8px;align-items:center"><button id="prename" class="btn red">Cambia nome</button><span id="pinfo1"></span></div>
+      <div class="lbl" style="margin-top:10px">Cambia password</div>
+      <label>Password attuale <input id="pcur2" type="password" autocomplete="current-password"></label>
+      <label>Nuova password (almeno 8 caratteri) <input id="ppw1" type="password" autocomplete="new-password"></label>
+      <label>Ripeti la nuova password <input id="ppw2" type="password" autocomplete="new-password"></label>
+      <div style="display:flex;gap:8px;align-items:center"><button id="ppass" class="btn red">Cambia password</button><span id="pinfo2"></span></div>
+      <p>I tuoi giri, i riferimenti e le impostazioni restano gli stessi anche se cambi nome.</p>
+      <div class="lbl" style="margin-top:10px">Colore della dashboard</div>
+      <div id="teams" class="teams"></div>
+      <a href="/admin" class="btn" id="adminlink" style="text-align:center;text-decoration:none;display:none">🛠 Gestione server (solo tu)</a>
+      <a href="/logout" class="btn" style="text-align:center;text-decoration:none;display:block">Esci</a>
     </div>
   </details>
 </div>
@@ -638,11 +723,6 @@ function pump() {
   const done = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
   withRadio(it, done);
 }
-let wakeLock = null;
-async function keepAwake() {
-  try { if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
-}
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 function unlockVoice(greet) {
   if (voiceUnlocked) return;
   voiceUnlocked = true;
@@ -838,6 +918,7 @@ function addMsg(m) {
   while ($("log").children.length > 60) $("log").lastChild.remove();
   if (m.kind !== "info") {
     $("lastmsg").textContent = m.text;
+    $("farMsg").textContent = m.text;
     $("lastts").textContent = (KIND[m.kind] ? KIND[m.kind] + " · " : "") + t;
     $("last").className = "card radio " + m.kind;
   }
@@ -849,10 +930,12 @@ const COMP = { soft: ["S", "var(--soft)"], medie: ["M", "var(--medium)"], dure: 
                intermedie: ["I", "var(--inter)"], "da bagnato": ["W", "var(--wet)"] };
 const compChip = c => COMP[c] ? `<i class="comp" style="--c:${COMP[c][1]}">${COMP[c][0]}</i>` : "";
 const WX = ["Sereno ☀️", "Nuvoloso 🌤️", "Coperto ☁️", "Pioggia 🌦️", "Pioggia forte 🌧️", "Temporale ⛈️"];
-function tyreColor(t) { return t >= 110 ? "#5a1520" : t >= 100 ? "#4a360f" : t >= 80 ? "#143522" : "#122539"; }
+function tyreColor(t) { return t >= 110 ? "var(--bad)" : t >= 100 ? "var(--warn)" : t >= 80 ? "var(--good)" : "var(--blue)"; }
 const signed = (v, d) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
 
+let lastState = null;
 function render(s) {
+  lastState = s;
   const race = !!s.race?.is_race;
   inCorner = !!s.in_curva && !!s.online; straightS = s.online ? s.rettilineo_s ?? null : null;
   $("dot").classList.toggle("on", !!s.online);
@@ -899,18 +982,59 @@ function render(s) {
   for (let i = 0; i < 4; i++) {
     const el = $("t" + i), t = s.tyre_temp?.[i], w = s.tyre_wear?.[i];
     el.querySelector("b").textContent = t == null ? "–" : t + "°";
-    el.querySelector("small").textContent = w == null ? "usura –" : "usura " + Math.round(w) + "%";
+    el.querySelector("small").textContent = w == null ? "–" : Math.round(w) + "% usura";
     const bar = el.querySelector(".w i");
     bar.style.width = (w == null ? 0 : Math.min(100, w)) + "%";
     bar.style.background = w >= 70 ? "var(--bad)" : w >= 50 ? "var(--warn)" : "var(--txt)";
-    el.style.background = t == null ? "" : tyreColor(t);
+    el.style.setProperty("--tc", t == null ? "" : tyreColor(t));
   }
   const fl = $("fuel");
   fl.textContent = s.fuel_laps == null ? "–" : signed(s.fuel_laps, 1) + " giri";
   fl.className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
   $("ers").textContent = s.ers == null ? "–" : s.ers + "%";
   renderRace(s.race, s);
+  if (farOn) renderFar(s);
 }
+
+// ---------- vista da lontano ----------
+let farOn = false;
+function setFar(on) {
+  farOn = on;
+  document.body.classList.toggle("far", on);
+  try { localStorage.setItem("vista_lontano", on ? "1" : ""); } catch (e) {}
+  if (on && lastState) renderFar(lastState);
+}
+$("farbtn").onclick = () => setFar(true);
+$("farexit").onclick = () => setFar(false);
+function farBox(i, label, value, sub, cls = "") {
+  $("farL" + i).textContent = label;
+  const v = $("farV" + i); v.innerHTML = value; v.className = "fv num " + cls;
+  $("farS" + i).innerHTML = sub || "";
+}
+function renderFar(s) {
+  const r = s.race || {};
+  $("farTrack").textContent = (s.track && s.track !== "-" ? s.track + " · " : "") +
+    (s.online ? (r.session_name || "in pista") : "in attesa della PS5…");
+  const wear = s.tyre_wear ? Math.round(Math.max(...s.tyre_wear)) : null;
+  const tyre = s.compound ? `${compChip(s.compound)} ${wear != null ? wear + "%" : ""}` : "";
+  if (r.is_race) {
+    farBox(1, "Posizione", `P${r.position ?? "–"}`,
+      (r.total_laps && s.lap ? `Giro ${s.lap}/${r.total_laps}` : `Giro ${s.lap ?? "–"}`) + (r.safety_car ? ' · <b style="color:var(--warn)">SAFETY CAR</b>' : ""));
+    const a = r.ahead, b = r.behind;
+    farBox(2, "Davanti", a ? "+" + a.gap.toFixed(1) : "–", a ? esc(a.name) : "", a && a.gap < 1 ? "good" : "");
+    farBox(3, "Dietro", b ? "−" + b.gap.toFixed(1) : "–", b ? esc(b.name) : tyre, b && b.gap < 1 ? "hot" : "");
+    if (b) $("farS3").innerHTML = esc(b.name);
+    if (tyre && !b) $("farS3").innerHTML = tyre;
+    if (tyre && b) $("farS1").innerHTML += " · " + tyre;
+  } else {
+    const d = s.delta;
+    farBox(1, s.ref_owner ? "Delta su " + esc(s.ref_owner) : "Delta sul migliore", d == null ? "–.––" : signed(d, 2),
+      s.invalid ? '<b style="color:var(--bad)">GIRO NON VALIDO</b>' : `Giro ${s.lap ?? "–"}`, d == null ? "" : d <= 0 ? "good" : "bad");
+    farBox(2, "Ultimo", fmt(s.last_ms), "");
+    farBox(3, "Migliore", fmt(s.best_ms), tyre);
+  }
+}
+try { if (localStorage.getItem("vista_lontano")) setFar(true); } catch (e) {}
 
 // ---------- telemetria live ----------
 for (let k = 0; k < 15; k++) $("rpm").appendChild(document.createElement("i"));
@@ -1035,6 +1159,7 @@ async function saveVoice(body) {
   try {
     const s = await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json());
     applyVoiceSettings(s);
+    applyTeam(s.team_color || "");
   } catch (e) {}
 }
 function applyVoiceSettings(s) {
@@ -1138,7 +1263,12 @@ async function loadSettings() {
     $("akey").placeholder = s.anthropic_key ? "salvata: " + s.anthropic_key : "sk-ant-…";
     $("ploss").value = s.pit_loss;
     $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
-    if (s.user) { $("userline").style.display = "block"; $("uname").textContent = s.user; }
+    if (s.user) {
+      $("userline").style.display = "block"; $("uname").textContent = s.user;
+      $("profile").style.display = ""; $("pname").textContent = s.user;
+      $("pgame").innerHTML = s.server_ip ? `Sulla PS5: IP <b>${esc(s.server_ip)}</b>, porta <b>${esc(s.udp_port)}</b>.` : "";
+      $("adminlink").style.display = s.admin ? "block" : "none";
+    }
     $("sharerow").style.display = s.user ? "" : "none";
     applyVoiceSettings(s);
     $("share").checked = s.share_laps !== false;
@@ -1154,6 +1284,72 @@ $("saveset").onclick = async () => {
   await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   $("gkey").value = $("akey").value = "";
   loadSettings();
+};
+// ---------- colore della dashboard ----------
+const TEAMS = [["", "Rosso classico", "#e10600"], ["#e8002d", "Ferrari", "#e8002d"], ["#ff8000", "McLaren", "#ff8000"],
+  ["#27f4d2", "Mercedes", "#27f4d2"], ["#3671c6", "Red Bull", "#3671c6"], ["#229971", "Aston Martin", "#229971"],
+  ["#ff87bc", "Alpine", "#ff87bc"], ["#64c4ff", "Williams", "#64c4ff"], ["#6692ff", "Racing Bulls", "#6692ff"],
+  ["#b6babd", "Haas", "#b6babd"], ["#bb0a30", "Audi", "#bb0a30"], ["#c9a44c", "Cadillac", "#c9a44c"]];
+let teamColor = "";
+function applyTeam(c) {
+  teamColor = c;
+  document.documentElement.style.setProperty("--red", c || "#e10600");
+  try { localStorage.setItem("colore", c); } catch (e) {}
+  $("teams").innerHTML = TEAMS.map(([v, n, col]) =>
+    `<button data-c="${v}" class="${v === c ? "on" : ""}"><i style="background:${col}"></i>${n}</button>`).join("");
+  for (const b of $("teams").children) b.onclick = async () => {
+    applyTeam(b.dataset.c);
+    try { await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({team_color: b.dataset.c})}); } catch (e) {}
+  };
+}
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--red", c); } catch (e) {}
+
+// ---------- schermo sempre acceso ----------
+let wakeLock = null, wakeWanted = true;
+try { wakeWanted = localStorage.getItem("schermo_acceso") !== "0"; } catch (e) {}
+$("wake").checked = wakeWanted;
+async function keepAwake() {
+  if (!("wakeLock" in navigator)) { $("wakeinfo").textContent = "(questo browser non lo permette)"; return; }
+  if (!wakeWanted) { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } $("wakeinfo").textContent = ""; return; }
+  if (wakeLock || document.visibilityState !== "visible") return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    $("wakeinfo").textContent = "· attivo";
+    wakeLock.addEventListener("release", () => { wakeLock = null; $("wakeinfo").textContent = wakeWanted ? "· in pausa" : ""; });
+  } catch (e) { $("wakeinfo").textContent = "· tocca lo schermo per attivarlo"; }
+}
+$("wake").onchange = () => {
+  wakeWanted = $("wake").checked;
+  try { localStorage.setItem("schermo_acceso", wakeWanted ? "1" : "0"); } catch (e) {}
+  keepAwake();
+};
+document.addEventListener("visibilitychange", keepAwake);
+document.addEventListener("pointerdown", keepAwake);
+keepAwake();
+
+// ---------- app installabile ----------
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+// ---------- profilo ----------
+async function profile(body, info, btn) {
+  $(btn).disabled = true;
+  $(info).textContent = "…";
+  try {
+    const r = await fetch("/api/profile", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const j = await r.json();
+    if (r.status === 401) { location.href = "/login"; return false; }
+    $(info).textContent = j.error ? "⚠️ " + j.error : "✓ Fatto";
+    return !j.error;
+  } catch (e) { $(info).textContent = "⚠️ Server non raggiungibile"; return false; }
+  finally { $(btn).disabled = false; }
+}
+$("prename").onclick = async () => {
+  const ok = await profile({action: "nome", name: $("pnew").value.trim(), current: $("pcur1").value}, "pinfo1", "prename");
+  if (ok) { $("pnew").value = $("pcur1").value = ""; loadSettings(); }
+};
+$("ppass").onclick = async () => {
+  const ok = await profile({action: "password", current: $("pcur2").value, new: $("ppw1").value, new2: $("ppw2").value}, "pinfo2", "ppass");
+  if (ok) $("pcur2").value = $("ppw1").value = $("ppw2").value = "";
 };
 loadSettings();
 setMicUI();

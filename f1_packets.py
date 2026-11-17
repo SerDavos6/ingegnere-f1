@@ -83,7 +83,7 @@ def _lap_dict(v):
         "lap_distance": v[10], "total_distance": v[11], "position": v[13], "lap_num": v[14],
         "pit_status": v[15], "pit_stops": v[16], "sector": v[17], "invalid": v[18],
         "penalties_s": v[19], "total_warnings": v[20], "corner_cutting_warnings": v[21],
-        "unserved_dt": v[22], "unserved_sg": v[23], "driver_status": v[25], "result_status": v[26],
+        "unserved_dt": v[22], "unserved_sg": v[23], "grid_position": v[24], "driver_status": v[25], "result_status": v[26],
     }
 
 

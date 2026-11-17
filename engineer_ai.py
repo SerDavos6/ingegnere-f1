@@ -120,8 +120,9 @@ def rule_based_debrief(context):
     if not totals:
         return f"Ultimo giro {laps[-1]['tempo']}. Serve un giro di riferimento per confrontare le staccate."
     avg = sorted(((sum(v) / len(v), n) for n, v in totals.items()), reverse=True)
-    worst = [f"staccata {n}" for loss, n in avg[:2] if loss > 0.03]
+    names = {z["n"]: z.get("nome") or f"staccata {z['n']}" for z in context.get("staccate_riferimento") or []}
+    worst = [names.get(n, f"staccata {n}") for loss, n in avg[:2] if loss > 0.03]
     if not worst:
         return f"Ultimo giro {laps[-1]['tempo']}. Sei costante su tutte le staccate, continua così."
-    return (f"Ultimo giro {laps[-1]['tempo']}. In media perdi di più alla " + " e alla ".join(worst)
+    return (f"Ultimo giro {laps[-1]['tempo']}. In media perdi di più in " + " e in ".join(worst)
             + ". Concentrati lì nei prossimi giri.")

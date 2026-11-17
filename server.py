@@ -13,6 +13,8 @@ import argparse
 import json
 import os
 import queue
+import re
+import shutil
 import socket
 import ssl
 import threading
@@ -21,6 +23,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import amici
+import curve
 import engineer_ai
 import f1_packets as P
 import ideale
@@ -77,13 +80,26 @@ class Tenant:
 
     # ---- telemetria
     def udp_loop(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock = sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("0.0.0.0", self.udp_port))
         print(f"[{self.name}] in ascolto telemetria UDP sulla porta {self.udp_port}", flush=True)
         while True:
-            data, _ = sock.recvfrom(4096)
+            try:
+                data, _ = sock.recvfrom(4096)
+            except OSError:
+                return              # utente rimosso: socket chiuso
             self.handle(data)
+
+    def close(self):
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except (OSError, AttributeError):
+            pass
+        try:
+            self.sock.close()
+        except (OSError, AttributeError):
+            pass
 
     def handle(self, data):
         self.rec.add(data)
@@ -233,7 +249,9 @@ class Tenant:
                 "share_laps": cfg.get("share_laps", True) is not False,
                 "ai_voice_on": bool(cfg.get("ai_voice_on")) and bool(cfg.get("gemini_key")),
                 "ai_voice": cfg.get("ai_voice", voce_ai.DEFAULT_VOICE), "ai_voices": voce_ai.VOICES,
-                "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None}
+                "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
+                "team_color": cfg.get("team_color") or None,
+                "admin": MODE == "cloud" and utenti.is_admin(self.name)}
 
     def update_settings(self, body):
         cfg = engineer_ai.load_config(self.config_path)
@@ -251,12 +269,90 @@ class Tenant:
             cfg["ai_voice_on"] = bool(body["ai_voice_on"])
         if body.get("ai_voice") in voce_ai.VOICES:
             cfg["ai_voice"] = body["ai_voice"]
+        if "team_color" in body:
+            c = str(body["team_color"] or "")
+            cfg["team_color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
         if "pit_loss" in body:
             try:
                 self.coach.pit_loss = cfg["pit_loss"] = min(60.0, max(10.0, float(body["pit_loss"])))
             except (ValueError, TypeError):
                 pass
         engineer_ai.save_config(cfg, self.config_path)
+
+
+# --------------------------------------------------------------------------- classifica
+def leaderboard(me):
+    """Giro migliore di ogni utente su ogni pista (solo chi condivide i giri, più te)."""
+    tracks = {}
+    for name, t in list(TENANTS.items()):
+        if t is not me and not t.share_laps():
+            continue
+        best = {}
+        for sess in recorder.list_sessions(t.data_dir):
+            key = str(sess.get("track", "-"))
+            for l in sess["laps"]:
+                if l.get("valid") and not l.get("partial") and (key not in best or l["ms"] < best[key]["ms"]):
+                    best[key] = {"ms": l["ms"], "sid": sess["id"], "lap": l["lap"], "date": sess.get("started"),
+                                 "session": sess.get("session")}
+        for key, b in best.items():
+            row = dict(b, driver=name if MODE == "cloud" else "Tu", me=t is me,
+                       id=None if t is me else f"u:{name}:{b['sid']}:{b['lap']}")
+            tracks.setdefault(key, []).append(row)
+    out = []
+    for key, rows in tracks.items():
+        rows.sort(key=lambda r: r["ms"])
+        for i, r in enumerate(rows):
+            r["gap"] = r["ms"] - rows[0]["ms"]
+            r["pos"] = i + 1
+        out.append({"track": key, "rows": rows, "mine": any(r["me"] for r in rows)})
+    out.sort(key=lambda x: (not x["mine"], -len(x["rows"]), x["track"]))
+    return out
+
+
+# --------------------------------------------------------------------------- admin
+def admin_view():
+    users = utenti.load_users()
+    rows = []
+    for name, u in sorted(users.items(), key=lambda kv: int(kv[1].get("udp_port", 0))):
+        t = TENANTS.get(name)
+        last = t.stats["last_packet"] if t else 0
+        sessions = recorder.list_sessions(t.data_dir) if t else []
+        rows.append({"name": name, "port": u.get("udp_port"), "created": u.get("creato"),
+                     "admin": utenti.is_admin(name, users), "online": bool(last and time.time() - last < 5),
+                     "last_packet": last or None, "sessions": len(sessions),
+                     "last_session": sessions[0].get("started") if sessions else None})
+    return {"users": rows, "invite": utenti.invite_code(), "max": utenti.PORTA_MAX - utenti.PORTA_MIN + 1,
+            "server_ip": ARGS.public_ip if ARGS else None}
+
+
+def admin_action(me, body):
+    act, name = body.get("action"), str(body.get("user", "")).strip().lower()
+    if act == "invito":
+        code = str(body.get("code", "")).strip()
+        if code and (len(code) < 4 or len(code) > 40 or " " in code):
+            return {"error": "Il codice deve avere da 4 a 40 caratteri, senza spazi."}
+        utenti.set_invite_code(code)
+        return {"ok": True, "msg": f"Codice invito: {code}" if code else "Registrazione chiusa."}
+    if act in ("reset", "rimuovi") and name not in utenti.load_users():
+        return {"error": "Utente non trovato."}
+    if act == "reset":
+        pw = utenti.reset_password(name)
+        return {"ok": True, "msg": f"Nuova password di {name}: {pw}", "password": pw}
+    if act == "rimuovi":
+        if name == me.name:
+            return {"error": "Non puoi rimuovere te stesso."}
+        u = utenti.remove_user(name)
+        t = TENANTS.pop(name, None)
+        if t:
+            t.close()
+        folder = os.path.join(BASE, "utenti_dati", utenti.folder_of(name, u or {}))
+        if os.path.isdir(folder):    # i suoi giri non passano a chi si registrerà con lo stesso nome
+            dest = os.path.join(BASE, "utenti_dati", "_rimossi", f"{name}-{time.strftime('%Y%m%d-%H%M%S')}")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.move(folder, dest)
+        print(f"[{name}] utente rimosso da {me.name}", flush=True)
+        return {"ok": True, "msg": f"Utente {name} rimosso."}
+    return {"error": "Richiesta non valida."}
 
 
 def state_loop():
@@ -278,7 +374,8 @@ def setup_tenants(udp_port):
     if users:
         MODE = "cloud"
         for name, u in users.items():
-            TENANTS[name] = Tenant(name, int(u["udp_port"]), os.path.join(BASE, "utenti_dati", name))
+            folder = utenti.folder_of(name, u)
+            TENANTS[name] = Tenant(name, int(u["udp_port"]), os.path.join(BASE, "utenti_dati", folder))
     else:
         TENANTS["locale"] = Tenant("locale", udp_port, BASE)   # stesse cartelle delle versioni precedenti
 
@@ -295,7 +392,7 @@ def add_tenant(name, port):
 # --------------------------------------------------------------------------- pagine web
 LOGIN_HTML = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b0d10">
-<title>Accesso · Ingegnere F1</title><style>
+<title>Accesso · Ingegnere F1</title><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="icon" href="/icon-192.png"><style>
 *{box-sizing:border-box;margin:0}body{background:#0b0d10;color:#e8edf2;font-family:-apple-system,Roboto,sans-serif;
 min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
 form{background:#14181d;border:1px solid #232a32;border-radius:14px;padding:22px;width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px}
@@ -317,7 +414,8 @@ a{color:#9fb0c0;font-size:14px;text-align:center}p{color:#9fb0c0;font-size:14px;
 def _page(title, inner):
     return (f'<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b0d10">'
-            f'<title>{title} · Ingegnere F1</title><style>{PAGE_CSS}</style></head><body>{inner}</body></html>')
+            f'<title>{title} · Ingegnere F1</title><link rel="manifest" href="/manifest.webmanifest">'
+            f'<link rel="apple-touch-icon" href="/apple-touch-icon.png"><style>{PAGE_CSS}</style></head><body>{inner}</body></html>')
 
 
 def login_page(err=""):
@@ -351,6 +449,17 @@ Porta: <b>{t.udp_port}</b><br>Frequenza: <b>20 Hz</b><br>Formato: <b>2025</b></d
 
 failed_logins = {}
 failed_regs = {}
+
+# file senza login: servono al telefono per installare l'app (icona, nome, schermo intero)
+PUBLIC_FILES = {
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+    "/icon-maskable.png": ("icon-maskable.png", "image/png"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/favicon.ico": ("icon-192.png", "image/png"),
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -486,10 +595,44 @@ class Handler(BaseHTTPRequestHandler):
         add_tenant(name, port)
         self._redirect("/benvenuto", {"Set-Cookie": self._session_cookie(name)})
 
+    # ---- profilo: cambio password e nome
+    def _profile(self, t, body):
+        if MODE != "cloud":
+            return self._json({"error": "Il profilo c'è solo sul server su internet."}, 400)
+        ip = self._client_ip()
+        fails = failed_logins.get(ip, [0, 0.0])
+        if fails[0] >= 5 and time.time() - fails[1] < 300:
+            return self._json({"error": "Troppi tentativi, riprova tra 5 minuti."}, 429)
+        cur = str(body.get("current", ""))
+        if body.get("action") == "password":
+            err = utenti.change_password(t.name, cur, str(body.get("new", "")), str(body.get("new2", "")))
+        elif body.get("action") == "nome":
+            old = t.name
+            new = str(body.get("name", "")).strip().lower()
+            err = utenti.rename(old, new, cur)
+            if not err:
+                TENANTS[new] = t
+                t.name = new
+                TENANTS.pop(old, None)
+                print(f"[{new}] utente rinominato (prima: {old})", flush=True)
+        else:
+            err = "Richiesta non valida."
+        if err and "password" in err.lower() and "sbagliata" in err:
+            failed_logins[ip] = [fails[0] + 1, time.time()]
+            time.sleep(1)
+        if err:
+            return self._json({"error": err}, 400)
+        failed_logins.pop(ip, None)
+        return self._json({"ok": True, "user": t.name})
+
     # ---- GET
     def do_GET(self):
         path, _, query = self.path.partition("?")
         params = dict(urllib.parse.parse_qsl(query))
+        if path in PUBLIC_FILES:
+            name, ctype = PUBLIC_FILES[path]
+            with open(os.path.join(STATIC, name), "rb") as f:
+                return self._send(200, f.read(), ctype, {"Cache-Control": "no-cache"} if name == "sw.js" else None)
         if path == "/login":
             return self._send(200, login_page(), "text/html; charset=utf-8")
         if path == "/registrati":
@@ -506,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         t = self._tenant()
         if t is None:
-            if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto"):
+            if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto", "/classifica", "/admin"):
                 return self._redirect("/login")
             return self._json({"error": "login"}, 401)
         if path == "/benvenuto":
@@ -515,6 +658,20 @@ class Handler(BaseHTTPRequestHandler):
             self._static("index.html")
         elif path in ("/analisi", "/analisi.html"):
             self._static("analisi.html")
+        elif path in ("/classifica", "/classifica.html"):
+            self._static("classifica.html")
+        elif path in ("/admin", "/admin.html"):
+            if MODE != "cloud" or not utenti.is_admin(t.name):
+                return self._redirect("/")
+            self._static("admin.html")
+        elif path == "/api/classifica":
+            self._json({"tracks": leaderboard(t), "me": t.name if MODE == "cloud" else None})
+        elif path == "/api/admin":
+            if MODE != "cloud" or not utenti.is_admin(t.name):
+                return self._json({"error": "Solo per l'amministratore."}, 403)
+            self._json(admin_view())
+        elif path == "/api/curve":
+            self._json(curve.names(params.get("track_id")))
         elif path == "/api/sessions":
             self._json(recorder.list_sessions(t.data_dir))
         elif path == "/api/lap":
@@ -595,6 +752,19 @@ class Handler(BaseHTTPRequestHandler):
             body = {}
         if not isinstance(body, dict):
             body = {}
+        if self.path == "/api/profile":
+            return self._profile(t, body)
+        if self.path == "/api/admin":
+            if MODE != "cloud" or not utenti.is_admin(t.name):
+                return self._json({"error": "Solo per l'amministratore."}, 403)
+            res = admin_action(t, body)
+            return self._json(res, 400 if res.get("error") else 200)
+        if self.path == "/api/curve":
+            try:
+                tid, m = int(body.get("track_id")), float(body.get("m"))
+            except (TypeError, ValueError):
+                return self._json({"error": "Dati non validi."}, 400)
+            return self._json(curve.set_name(tid, m, body.get("nome", "")))
         if self.path == "/settings":
             t.update_settings(body)
             return self._json(t.settings_view())

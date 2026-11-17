@@ -59,6 +59,10 @@ class Recorder:
             index = []
         index = [x for x in index if x["lap"] != info["lap"]]
         row = {"lap": info["lap"], "ms": info["ms"], "valid": info["valid"]}
+        # per il riepilogo della gara, senza dover aprire ogni giro
+        for k in ("position", "grid", "compound", "tyre_age", "wear", "pit_stops"):
+            if info.get(k) is not None:
+                row[k] = info[k]
         if info.get("partial"):
             row.update(partial=True, kind=info.get("kind", "parziale"))
         index.append(row)

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
 <title>Analisi giri</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
 <style>
   :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --grid:#1f262e; --txt:#e8edf2; --dim:#8b96a2;
           --sel:#3987e5; --ref:#d95926; --brake:#e5484d; --gas:#0ca30c; --part:#fab219; --coast:#5b6672; --accent:#e10600; }
@@ -52,6 +55,7 @@
   th { color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
   th:first-child, td:first-child { text-align:left; }
   tr.click { cursor:pointer; }
+  button.ren { background:none; border:0; font-size:14px; padding:2px 4px; margin-left:4px; cursor:pointer; opacity:.75; }
   .empty { color:var(--dim); padding:30px 10px; text-align:center; }
   .key { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); }
   .key i { width:16px; height:3px; border-radius:2px; display:inline-block; }
@@ -63,6 +67,12 @@
   #fmsg { font-size:13px; color:var(--dim); margin-top:8px; min-height:17px; }
   #fmsg.ok { color:#4cc38a; } #fmsg.err { color:#ff6b72; }
   .hint2 { font-size:12px; color:var(--dim); margin-top:6px; line-height:1.4; }
+  .rgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-top:10px; }
+  .rgrid div b { display:block; font-size:22px; font-weight:700; margin-top:2px; }
+  .rgrid div small { color:var(--dim); font-size:12px; }
+  .rcharts { display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px; }
+  @media (min-width: 700px) { .rcharts { grid-template-columns:1fr 1fr; } }
+  .rcharts canvas { width:100%; height:130px; display:block; margin-top:4px; }
   input.txt { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:15px; }
 </style>
 </head>
@@ -75,6 +85,18 @@
 </header>
 
 <div id="content">
+  <div class="card" id="racecard" hidden style="margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="lbl" style="flex:1">🏁 Riepilogo gara</div>
+      <button class="btn" id="raceshare">📤 Condividi</button>
+    </div>
+    <div class="rgrid" id="rstats"></div>
+    <div class="rcharts">
+      <div><div class="lbl">Posizione giro per giro</div><canvas id="rpos"></canvas></div>
+      <div id="rwearbox"><div class="lbl">Usura gomme (la più consumata)</div><canvas id="rwear"></canvas></div>
+    </div>
+    <div class="hint2" id="rnote"></div>
+  </div>
   <div class="card">
     <div class="lbl" style="margin-bottom:6px">Scegli il giro da analizzare · tieni premuto per usarlo come confronto</div>
     <div id="laps"></div>
@@ -131,12 +153,14 @@
 
 <script>
 const $ = id => document.getElementById(id);
+const escH = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000); return m + ":" + ((ms%60000)/1000).toFixed(3).padStart(6,"0"); };
 const sgn = (x, d=3) => (x > 0 ? "+" : x < 0 ? "−" : "±") + Math.abs(x).toFixed(d);
 
 let sessions = [], cur = null, selLap = null, refLap = null, sel = null, ref = null, cursor = null, mapMode = "input";
-let refFriend = null, friends = [];          // refFriend: id del giro dell'amico usato come confronto
+let refFriend = null, friends = [], pendingFriend = null;          // refFriend: id del giro dell'amico usato come confronto
 const cache = {};
 // c'è un confronto diverso dal giro selezionato?
 const diffRef = () => !!ref && (refFriend != null || refLap !== selLap);
@@ -182,7 +206,11 @@ async function loadSessions() {
     s.appendChild(o);
   }
   s.onchange = () => pickSession(s.value);
-  pickSession(sessions[0].id);
+  // arrivo dalla Classifica: apro l'ultima sessione su quella pista e confronto con il giro dell'amico
+  const q = new URLSearchParams(location.search);
+  const want = q.get("track") && sessions.find(x => x.track === q.get("track"));
+  if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
+  else pickSession(sessions[0].id);
 }
 // giri parziali: uscita dai box, rientro ai box, o interrotti (garage, fine sessione)
 const KINDS = { uscita: "uscita box", rientro: "rientro box", parziale: "parziale" };
@@ -208,6 +236,8 @@ function pickSession(id) {
     load();
   };
   load();
+  loadCurve();
+  renderRaceSummary();
   loadFriends();
   loadIdeal();
   loadProgress();
@@ -237,6 +267,10 @@ async function loadFriends() {
   const list = await fetch(`/api/friends?track=${encodeURIComponent(track)}`).then(r => r.ok ? r.json() : []).catch(() => []);
   if (!cur || cur.track !== track) return;
   friends = list;
+  if (pendingFriend && list.some(f => f.id === pendingFriend)) {
+    refFriend = pendingFriend; refLap = null; pendingFriend = null;
+    buildRefSelect(); load();
+  }
   buildRefSelect();
   renderFriendBox();
 }
@@ -426,6 +460,12 @@ function drawMap() {
     ctx.fillStyle = "#0b0d10"; ctx.beginPath(); ctx.arc(x + 12, y - 12, 9, 0, 7); ctx.fill();
     ctx.strokeStyle = "#5b6672"; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = "#e8edf2"; ctx.fillText(z.n, x + 12, y - 11.5);
+    const nm = curveName(z.at);
+    if (nm) {
+      ctx.save(); ctx.textAlign = "left"; ctx.font = "600 10px -apple-system, Roboto, sans-serif";
+      ctx.lineWidth = 3; ctx.strokeStyle = "#0b0d10"; ctx.strokeText(nm, x + 24, y - 11.5);
+      ctx.fillStyle = "#c7d0da"; ctx.fillText(nm, x + 24, y - 11.5); ctx.restore();
+    }
   }
   // cursore
   if (cursor != null) {
@@ -556,22 +596,139 @@ function redrawCursor() {
   raf = requestAnimationFrame(() => { raf = 0; drawCharts(); drawMap(); renderReadout(); });
 }
 
+// ------------------------------------------------------------ riepilogo gara
+const COMP_IT = { soft: "Soft", medie: "Medie", dure: "Dure", intermedie: "Intermedie", "da bagnato": "Bagnato" };
+function raceStats(s) {
+  const laps = s.laps.filter(l => !l.partial).sort((a, b) => a.lap - b.lap);
+  if (!/gara|sprint/i.test(s.session || "") || laps.length < 3) return null;
+  const best = laps.filter(l => l.valid).reduce((a, b) => (!a || b.ms < a.ms) ? b : a, null);
+  const withPos = laps.filter(l => l.position);
+  const grid = (laps.find(l => l.grid) || {}).grid || null;
+  const finish = withPos.length ? withPos[withPos.length - 1].position : null;
+  // stint: cambi di mescola (o età delle gomme che torna a zero)
+  const stints = [];
+  for (const l of laps) {
+    const last = stints[stints.length - 1];
+    const newSet = !last || (l.compound && l.compound !== last.compound) || (l.tyre_age != null && last.age != null && l.tyre_age < last.age);
+    if (newSet && (l.compound || !last)) stints.push({compound: l.compound, from: l.lap, to: l.lap, age: l.tyre_age});
+    else { last.to = l.lap; last.age = l.tyre_age; }
+  }
+  const stops = laps.length ? Math.max(0, ...laps.map(l => l.pit_stops || 0)) || Math.max(0, stints.filter(x => x.compound).length - 1) : 0;
+  // costanza: giri validi, senza il primo giro, i giri dei box e quelli lenti (safety car, errori)
+  const pitLaps = new Set(stints.slice(1).flatMap(x => [x.from - 1, x.from]));
+  const clean = laps.filter(l => l.valid && l.lap > 1 && !pitLaps.has(l.lap)).map(l => l.ms);
+  let sd = null;
+  if (clean.length >= 4) {
+    const med = [...clean].sort((a, b) => a - b)[Math.floor(clean.length / 2)];
+    const ok = clean.filter(ms => ms <= med * 1.03);
+    if (ok.length >= 3) {
+      const m = ok.reduce((a, b) => a + b, 0) / ok.length;
+      sd = Math.sqrt(ok.reduce((a, b) => a + (b - m) ** 2, 0) / ok.length) / 1000;
+    }
+  }
+  return {laps, best, grid, finish, stints, stops, sd};
+}
+function drawSpark(canvas, pts, {invert = false, color = "#3987e5", min, max, label} = {}) {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const c = canvas.getContext("2d"); c.scale(dpr, dpr); c.clearRect(0, 0, w, h);
+  if (pts.length < 2) { c.fillStyle = "#8b96a2"; c.font = "12px sans-serif"; c.fillText("Dati non disponibili per questa gara", 4, h / 2); return; }
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = min ?? Math.min(...ys), y1 = max ?? Math.max(...ys);
+  const L = 30, R = 6, T = 8, B = 18;
+  const X = x => L + (x - x0) / Math.max(1, x1 - x0) * (w - L - R);
+  const Y = y => { const f = (y - y0) / Math.max(1e-9, y1 - y0); return T + (invert ? f : 1 - f) * (h - T - B); };
+  c.strokeStyle = "#1f262e"; c.lineWidth = 1; c.fillStyle = "#8b96a2"; c.font = "11px sans-serif";
+  for (const v of [y0, (y0 + y1) / 2, y1]) {
+    const yy = Y(v); c.beginPath(); c.moveTo(L, yy); c.lineTo(w - R, yy); c.stroke();
+    c.textAlign = "right"; c.fillText(label ? label(v) : Math.round(v), L - 4, yy + 4);
+  }
+  c.textAlign = "center"; c.fillText("giro " + x0, X(x0) + 14, h - 4); c.fillText(String(x1), X(x1) - 6, h - 4);
+  c.strokeStyle = color; c.lineWidth = 2.2; c.lineJoin = "round"; c.beginPath();
+  pts.forEach(([x, y], i) => { if (i) c.lineTo(X(x), Y(y)); else c.moveTo(X(x), Y(y)); });
+  c.stroke();
+}
+let raceSum = null;
+function renderRaceSummary() {
+  const r = raceStats(cur);
+  raceSum = r;
+  $("racecard").hidden = !r;
+  if (!r) return;
+  const gained = r.grid && r.finish ? r.grid - r.finish : null;
+  const sdTxt = r.sd == null ? "–" : "± " + r.sd.toFixed(2) + " s";
+  const sdVerdict = r.sd == null ? "servono più giri puliti" : r.sd < 0.3 ? "ottima" : r.sd < 0.6 ? "buona" : "da migliorare";
+  const stintTxt = r.stints.filter(x => x.compound).map(x => `${COMP_IT[x.compound] || x.compound} (${x.from}–${x.to})`).join(" → ");
+  $("rstats").innerHTML = `
+    <div><small>Partenza → arrivo</small><b class="mono">${r.grid ? "P" + r.grid : "?"} → ${r.finish ? "P" + r.finish : "?"}</b>
+      ${gained != null ? `<small class="${gained > 0 ? "good" : gained < 0 ? "bad" : ""}">${gained > 0 ? "+" + gained + " posizioni" : gained < 0 ? gained + " posizioni" : "stessa posizione"}</small>` : ""}</div>
+    <div><small>Giro più veloce</small><b class="mono">${r.best ? fmt(r.best.ms) : "–"}</b><small>${r.best ? "giro " + r.best.lap : ""}</small></div>
+    <div><small>Costanza</small><b class="mono">${sdTxt}</b><small>${sdVerdict}</small></div>
+    <div><small>Soste</small><b>${r.stops}</b><small>${escH(stintTxt || "")}</small></div>`;
+  const pos = r.laps.filter(l => l.position).map(l => [l.lap, l.position]);
+  drawSpark($("rpos"), pos, {invert: true, color: css("--accent") || "#e10600", min: 1, max: Math.max(...pos.map(p => p[1]), 2), label: v => "P" + Math.round(v)});
+  const wear = r.laps.filter(l => l.wear != null).map(l => [l.lap, l.wear]);
+  $("rwearbox").hidden = wear.length < 2;
+  if (wear.length >= 2) drawSpark($("rwear"), wear, {color: "#ffb020", min: 0, max: Math.max(70, ...wear.map(p => p[1])), label: v => Math.round(v) + "%"});
+  $("rnote").textContent = pos.length < 2 ? "Posizioni e usura giro per giro sono salvate dalle gare fatte con questa versione in poi." : "";
+}
+$("raceshare").onclick = async () => {
+  const r = raceSum; if (!r) return;
+  const gained = r.grid && r.finish ? r.grid - r.finish : null;
+  const lines = [`🏁 ${cur.track} · gara`,
+    r.grid && r.finish ? `Partenza P${r.grid} → arrivo P${r.finish}${gained ? ` (${gained > 0 ? "+" : ""}${gained})` : ""}` : (r.finish ? `Arrivo P${r.finish}` : ""),
+    r.best ? `Giro più veloce ${fmt(r.best.ms)} (giro ${r.best.lap})` : "",
+    r.sd != null ? `Costanza ± ${r.sd.toFixed(2)} s` : "",
+    `Soste: ${r.stops}` + (r.stints.some(x => x.compound) ? " · " + r.stints.filter(x => x.compound).map(x => COMP_IT[x.compound] || x.compound).join(" → ") : "")];
+  const text = lines.filter(Boolean).join("\n");
+  if (navigator.share) { try { await navigator.share({text}); return; } catch (e) { if (e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(text); fmsg("Riepilogo copiato: incollalo su WhatsApp.", "ok"); } catch (e) {}
+};
+
+// ------------------------------------------------------------ nomi delle curve
+let curveNames = [], curveTrack = null;
+function curveName(m) {
+  let best = null;
+  for (const c of curveNames) { const d = Math.abs(c.m - m); if (d <= 200 && (!best || d < best.d)) best = {d, nome: c.nome}; }
+  return best ? best.nome : null;
+}
+async function loadCurve() {
+  const tid = cur && cur.track_id;
+  if (tid == null) { curveNames = []; return; }
+  if (curveTrack === tid) return;
+  curveTrack = tid;
+  curveNames = await fetch(`/api/curve?track_id=${tid}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (sel) { renderZones(); drawMap(); }
+}
+async function renameCurve(m, n) {
+  const old = curveName(m) || "";
+  const nome = prompt(`Nome della staccata ${n} (per esempio "Variante del Rettifilo").\nLascia vuoto per togliere il nome.`, old);
+  if (nome === null) return;
+  curveNames = await fetch("/api/curve", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({track_id: cur.track_id, m, nome})}).then(r => r.ok ? r.json() : curveNames).catch(() => curveNames);
+  renderZones(); drawMap();
+}
+
 // ------------------------------------------------------------ staccate
 function renderZones() {
   const z = sel.zones || [];
   if (!z.length) { $("zones").innerHTML = '<div class="empty">Nessun dato sulle staccate per questo giro (serve un giro di riferimento del coach).</div>'; return; }
   const f = (v0, u, inv) => { if (v0 == null) return "-"; const v = Math.round(v0);
     return `<span class="${v === 0 ? "" : (inv ? v > 0 : v < 0) ? "bad" : "good"}">${v > 0 ? "+" : ""}${v}${u}</span>`; };
-  let h = `<table><tr><th>Staccata</th><th>Tempo</th><th>Frenata</th><th>V. minima</th><th>Gas pieno</th></tr>`;
+  let h = `<table><tr><th>Curva</th><th>Tempo</th><th>Frenata</th><th>V. minima</th><th>Gas pieno</th></tr>`;
   for (const r of z) {
-    h += `<tr class="click" data-at="${r.at}"><td>${r.n}</td>
+    const nm = curveName(r.at);
+    h += `<tr class="click" data-at="${r.at}"><td>${r.n}${nm ? ` <span style="color:var(--txt);font-weight:600">${escH(nm)}</span>` : ""}
+      ${cur.track_id != null ? `<button class="ren" data-m="${Math.round(r.at)}" data-n="${r.n}" title="Dai un nome a questa curva">✏️</button>` : ""}</td>
       <td class="mono ${r.loss > 0.03 ? "bad" : r.loss < -0.03 ? "good" : ""}">${sgn(r.loss)}</td>
       <td class="mono">${r.brake_delta == null ? "-" : (r.brake_delta < 0 ? Math.round(-r.brake_delta) + " m prima" : r.brake_delta > 0 ? Math.round(r.brake_delta) + " m dopo" : "uguale")}</td>
       <td class="mono">${f(r.vmin_delta, " km/h")}</td>
       <td class="mono">${f(r.full_delta, " m", true)}</td></tr>`;
   }
-  h += `</table><div style="font-size:12px;color:var(--dim);margin-top:6px">Tocca una riga per evidenziarla sulla mappa e sui grafici. "Gas pieno" positivo = torni sul gas più tardi.</div>`;
+  h += `</table><div style="font-size:12px;color:var(--dim);margin-top:6px">Tocca una riga per evidenziarla sulla mappa e sui grafici. "Gas pieno" positivo = torni sul gas più tardi.
+    Con ✏️ dai un nome alla curva: l'ingegnere lo userà anche a voce ("perdi di più in Parabolica") e vale per tutti gli utenti del server.</div>`;
   $("zones").innerHTML = h;
+  for (const b of $("zones").querySelectorAll("button.ren")) b.onclick = e => { e.stopPropagation(); renameCurve(+b.dataset.m, b.dataset.n); };
   for (const tr of $("zones").querySelectorAll("tr.click")) tr.onclick = () => { cursor = +tr.dataset.at; redrawCursor(); };
 }
 
@@ -726,7 +883,7 @@ async function exportImage() {
       x.font = `600 15px ${M}`;
       for (const z of zones) {
         zy += 30;
-        x.fillStyle = "#e8edf2"; x.fillText(String(z.n), PAD, zy);
+        x.fillStyle = "#e8edf2"; x.fillText((String(z.n) + " " + (curveName(z.at) || "")).trim().slice(0, 18), PAD, zy);
         x.fillStyle = z.loss > 0.03 ? "#ff6b72" : z.loss < -0.03 ? "#4cc38a" : "#e8edf2"; x.fillText(sgn(z.loss), PAD + 160, zy);
         x.fillStyle = "#e8edf2";
         const bd = z.brake_delta == null ? null : Math.round(z.brake_delta);

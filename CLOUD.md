@@ -84,7 +84,9 @@ Impostazioni → Telemetria:
 
 ## 7. Sul telefono
 Apri l'indirizzo `https://…sslip.io`, entra con utente e password, poi *Aggiungi alla schermata Home*.
-Il login resta valido 90 giorni. Il microfono funziona subito: la pagina è già https.
+Il login resta valido 90 giorni. Nome utente e password si cambiano dalla dashboard: Dettagli → 👤 Profilo.
+Il primo utente creato è l'amministratore: da 👤 Profilo → 🛠 Gestione server vede gli utenti, cambia il codice invito,
+crea una nuova password per chi l'ha dimenticata e rimuove un utente, senza Cloud Shell. Il microfono funziona subito: la pagina è già https.
 
 ---
 

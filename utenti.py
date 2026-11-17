@@ -31,7 +31,7 @@ USERS_PATH = os.path.join(BASE, "utenti.json")
 SESS_PATH = os.path.join(BASE, "sessioni.json")
 INVITE_PATH = os.path.join(BASE, "invito.json")
 NAME_RE = re.compile(r"^[a-z0-9_]{2,20}$")
-RESERVED = {"locale", "admin", "root"}
+RESERVED = {"locale", "admin", "root", "_rimossi"}
 PORTA_MIN, PORTA_MAX = 20777, 20796      # 20 utenti: le stesse porte vanno aperte su Oracle
 SESSION_DAYS = 90
 _lock = threading.Lock()
@@ -64,6 +64,7 @@ def set_user(name, password, udp_port=None):
     users = load_users()
     salt = secrets.token_hex(16)
     u = users.get(name, {})
+    u.setdefault("creato", time.time())
     u.update({"salt": salt, "hash": _hash(password, salt)})
     if udp_port:
         u["udp_port"] = int(udp_port)
@@ -92,6 +93,11 @@ def set_invite_code(code):
     _save(INVITE_PATH, {"codice": code})
 
 
+def name_taken(name, users):
+    """Usato da un utente, o come cartella dei dati di chi si è rinominato."""
+    return name in users or any(u.get("cartella") == name for u in users.values())
+
+
 def free_port(users=None):
     used = {int(u.get("udp_port", 0)) for u in (users or load_users()).values()}
     for p in range(PORTA_MIN, PORTA_MAX + 1):
@@ -115,13 +121,95 @@ def register(name, password, password2, code):
         return None, "Le due password non coincidono."
     with _lock:
         users = load_users()
-        if name in users:
+        if name_taken(name, users):
             return None, "Questo nome è già usato, scegline un altro."
         port = free_port(users)
         if port is None:
             return None, "Il server è pieno: non ci sono più posti liberi."
         set_user(name, password, port)
     return port, None
+
+
+# ---- profilo (dalla dashboard)
+def folder_of(name, u=None):
+    """Cartella dei dati: resta quella del primo nome anche se l'utente si rinomina."""
+    u = u if u is not None else load_users().get(name, {})
+    return u.get("cartella") or name
+
+
+def change_password(name, current, new, new2):
+    if not verify(name, current):
+        return "La password attuale è sbagliata."
+    if len(new) < 8:
+        return "La nuova password deve avere almeno 8 caratteri."
+    if new != new2:
+        return "Le due nuove password non coincidono."
+    set_user(name, new)
+    return None
+
+
+def rename(old, new, current):
+    new = new.strip().lower()
+    if not verify(old, current):
+        return "La password è sbagliata."
+    if new == old:
+        return "È già il tuo nome."
+    if not NAME_RE.match(new) or new in RESERVED:
+        return "Nome non valido: da 2 a 20 caratteri tra lettere minuscole, numeri e _."
+    with _lock:
+        users = load_users()
+        if name_taken(new, users):
+            return "Questo nome è già usato, scegline un altro."
+        u = users.pop(old)
+        u["cartella"] = folder_of(old, u)
+        users[new] = u
+        _save(USERS_PATH, users)
+        s = _load_sessions()
+        for v in s.values():
+            if v.get("user") == old:
+                v["user"] = new
+        _save(SESS_PATH, s)
+    return None
+
+
+# ---- amministratore (chi gestisce il server)
+def is_admin(name, users=None):
+    """L'utente con "admin": true; se nessuno ce l'ha, il primo utente (la porta più bassa)."""
+    users = users if users is not None else load_users()
+    if name not in users:
+        return False
+    flagged = [n for n, u in users.items() if u.get("admin")]
+    if flagged:
+        return name in flagged
+    return name == min(users, key=lambda n: int(users[n].get("udp_port", 99999)))
+
+
+def reset_password(name):
+    """Password nuova casuale (da dare all'amico); chiude le sue sessioni aperte."""
+    if name not in load_users():
+        return None
+    pw = "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
+    set_user(name, pw)
+    end_sessions_of(name)
+    return pw
+
+
+def remove_user(name):
+    with _lock:
+        users = load_users()
+        u = users.pop(name, None)
+        if u is None:
+            return None
+        _save(USERS_PATH, users)
+    end_sessions_of(name)
+    return u
+
+
+def end_sessions_of(name):
+    with _lock:
+        s = _load_sessions()
+        s = {k: v for k, v in s.items() if v.get("user") != name}
+        _save(SESS_PATH, s)
 
 
 def _load_sessions():
@@ -201,6 +289,9 @@ def main(argv):
         print("Nome non valido: usa da 2 a 20 lettere minuscole, numeri o _.")
         return 1
     if cmd == "aggiungi":
+        if name not in users and name_taken(name, users):
+            print("Nome già usato (cartella di un utente che si è rinominato).")
+            return 1
         port = int(argv[3]) if len(argv) > 3 else (free_port(users) or PORTA_MAX + 1)
         if any(u.get("udp_port") == port for n, u in users.items() if n != name):
             print(f"La porta {port} è già usata da un altro utente.")

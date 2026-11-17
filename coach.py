@@ -12,6 +12,7 @@ import bisect
 import json
 import os
 
+import curve
 import ideale
 from assetto import SetupAdvisor
 from parlato import fmt_lap, fmt_lap_voice, num, tenths
@@ -329,8 +330,17 @@ class Coach:
         lift = 50 if deficit < 0.5 else 100 if deficit < 1.0 else 150
         cost = 0.06 * len(best) * lift / 50          # stima: circa 6 centesimi ogni 50 metri di rilascio
         return (f"Carburante: sei sotto di {num(fl)} {unit}. Lift and coast: alza il piede {lift} metri prima "
-                f"della staccata {best[0]['n']} e della {best[1]['n']}, dove arrivi più veloce. "
+                f"in {self.zone_label(best[0])} e in {self.zone_label(best[1])}, dove arrivi più veloce. "
                 f"Perdi circa {tenths(cost)} al giro.")
+
+    def zone_label(self, z, capital=False):
+        """Il nome della curva, se qualcuno l'ha scritto in Analisi; altrimenti "staccata N".
+        z: una staccata del riferimento (brake) o un risultato del giro (at)."""
+        m = z.get("brake", z.get("at"))
+        name = curve.name_at(self.track_id, m) if m is not None else None
+        if name:
+            return name
+        return ("Staccata " if capital else "staccata ") + str(z["n"])
 
     def on_damage(self, dm):
         self.damage = dm
@@ -382,7 +392,7 @@ class Coach:
         self.lap_zone_results.append(res)
 
         tip_level = 3 if self.in_race else 2   # in gara i consigli di guida solo con "tanto"
-        tag = f"Staccata {z['n']}"
+        tag = self.zone_label(z, capital=True)
         if loss >= 0.08:
             bd, vd, fd = res["brake_delta"], res["vmin_delta"], res["full_delta"]
             if bd is not None and bd <= -12:
@@ -429,7 +439,10 @@ class Coach:
         info = dict(entry, s1=s1, s2=s2,
                     s3=lap_ms - s1 - s2 if s1 and s2 and kind == "completo" else 0,
                     compound=self.status.get("compound"), tyre_age=self.status.get("tyre_age"),
-                    position=prev_ld.get("position"))
+                    position=prev_ld.get("position"), grid=prev_ld.get("grid_position") or None,
+                    pit_stops=prev_ld.get("pit_stops"),
+                    wear=round(max(self.damage["tyre_wear"]), 1) if self.damage.get("tyre_wear") else None,
+                    race=bool(self.in_race))
         if kind != "completo":
             info.update(partial=True, kind=kind)
         try:
@@ -454,7 +467,7 @@ class Coach:
         if res["spots"]:
             sp = res["spots"][0]
             z = next((z for z in (self.ref.zones if self.ref else []) if sp["da_m"] - 150 <= z["brake"] <= sp["a_m"]), None)
-            where = (f", soprattutto alla staccata {z['n']}" if z else
+            where = (f", soprattutto in {self.zone_label(z)}" if z else
                      f", soprattutto tra {num(sp['da_m'] / 1000)} e {num(sp['a_m'] / 1000)} chilometri")
         self.say(f"Giro ideale {fmt_lap_voice(res['ideal_ms'])}: hai ancora {tenths(res['gap_s'])} da trovare{where}.",
                  "giro", level=2)
@@ -502,7 +515,7 @@ class Coach:
                          (f" dal giro di {owner}" if owner else " dal migliore"))
         worst = sorted([r for r in self.lap_zone_results if r["loss"] > 0.05], key=lambda r: -r["loss"])[:2]
         if worst:
-            parts.append("perdi di più alla staccata " + " e ".join(str(r["n"]) for r in worst))
+            parts.append("perdi di più in " + " e in ".join(self.zone_label(r) for r in worst))
 
         lap_level = 3 if self.in_race else 1   # in gara il riepilogo lo fa l'ingegnere di gara
         if valid and complete and (best_before is None or lap_ms < best_before):
@@ -652,7 +665,7 @@ class Coach:
         """Riassunto compatto per l'ingegnere AI."""
         laps = [{"giro": h["lap"], "tempo": fmt_lap(h["ms"]), "valido": h["valid"],
                  "staccate": h["zones"]} for h in self.history[-5:]]
-        zones = [{"n": z["n"], "inizio_frenata_m": z["brake"], "vmin_kmh": round(z["vmin"])}
+        zones = [{"n": z["n"], "nome": self.zone_label(z), "inizio_frenata_m": z["brake"], "vmin_kmh": round(z["vmin"])}
                  for z in (self.ref.zones if self.ref else [])]
         snap = self.snapshot()
         snap.pop("race", None)

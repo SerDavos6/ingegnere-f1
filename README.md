@@ -183,6 +183,19 @@ verificato sui dati reali.
 Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il formato 2026:
 controlla l'impostazione.
 
+## Novità (novembre 2026)
+- **App sul telefono**: "Aggiungi a schermata Home" crea l'app con la sua icona, a schermo intero.
+- **Schermo sempre acceso** mentre la dashboard è aperta (Dettagli → ⚙️ Impostazioni, attivo di default).
+- **🔭 Vista da lontano**: solo posizione, distacchi (o delta in prova) e ultimo messaggio, enormi, per il telefono vicino alla TV.
+- **Gomme sulla macchina**: le 4 gomme attorno al disegno dell'auto, colorate per temperatura (blu fredda, verde giusta,
+  arancio calda, rossa troppo calda) con l'usura.
+- **Colore della dashboard**: in 👤 Profilo scegli il colore della tua scuderia preferita.
+- **🏆 Classifica**: il giro migliore di ogni utente del server per ogni pista; "Confronta" lo apre in Analisi.
+- **Nomi delle curve**: in Analisi, ✏️ accanto a una staccata. L'ingegnere poi dice "perdi di più in Parabolica".
+- **🏁 Riepilogo gara** in Analisi: partenza → arrivo, giro più veloce, costanza, soste, grafico delle posizioni e
+  dell'usura; si condivide su WhatsApp con 📤.
+- **🛠 Gestione server** (solo l'amministratore, il primo utente): utenti, codice invito, nuova password, rimozione.
+
 ## La dashboard
 - **In pista**: posizione (o delta in prova/qualifica) con la **barra del delta** (verde se sei più veloce
   del riferimento, rossa se più lento), chi hai davanti e dietro con gomme e distacco (rosso se chi ti segue
@@ -258,6 +271,10 @@ solo al primo avvio, se manca.
 - `risposte.py`: risposte gratuite a regole (box, rientro, meteo, gomme…)
 - `cert.pem`, `key.pem`: certificato locale per la pagina https (microfono su iPhone), solo modalità casa
 - `utenti.py`: utenti, password e codice invito per registrarsi da soli (modalità server su internet)
+- `curve.py`: nomi delle curve scritti in Analisi (file `nomi_curve.json`, uno per tutto il server)
+- `static/classifica.html`: classifica dei giri migliori fra gli utenti, pista per pista
+- `static/admin.html`: gestione del server per l'amministratore (utenti, codice invito, password)
+- `static/manifest.webmanifest`, `static/sw.js`, icone: app installabile sul telefono
 - `cloud/install.sh`, `CLOUD.md`: installazione su Oracle Cloud
 - `config.json`: chiavi AI e secondi persi al pit (creato dalle impostazioni)
 - `static/analisi.html`: pagina di analisi giri
