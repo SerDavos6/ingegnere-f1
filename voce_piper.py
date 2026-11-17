@@ -167,12 +167,14 @@ class Piper:
         self.tmp = os.path.join(root, "tmp")
         self.state, self.detail = "assente", ""
         self.procs, self.lock = {}, threading.Lock()
-        self.oneshot = False             # se la modalità JSON non funziona, un processo per frase
+        self.oneshot = set()             # modelli per cui la modalità continua non funziona: un processo per frase
+        self.bad = {}                    # voci che non funzionano con questo Piper (nome -> motivo): si saltano
         self.exe = os.environ.get("PIPER_BIN") or os.path.join(root, "piper", "piper")
 
     # ---- stato e installazione
     def voices(self):
-        return {n for n, (f, _) in VOCI.items() if os.path.exists(os.path.join(self.dir_voci, f + ".onnx.json"))}
+        return {n for n, (f, _) in VOCI.items()
+                if n not in self.bad and os.path.exists(os.path.join(self.dir_voci, f + ".onnx.json"))}
 
     def ready(self):
         return self.state == "pronta"
@@ -181,7 +183,7 @@ class Piper:
         txt = {"pronta": "pronta", "scarico": "la sto installando sul server" + (f" ({self.detail})" if self.detail else ""),
                "non_supportato": "non disponibile su questo dispositivo (serve Linux a 64 bit: server Oracle, Raspberry Pi o PC)",
                "errore": "non funziona: " + self.detail, "assente": "non installata"}[self.state]
-        return {"state": self.state, "text": txt, "voices": sorted(self.voices())}
+        return {"state": self.state, "text": txt, "voices": sorted(self.voices()), "skipped": sorted(self.bad)}
 
     def start(self, warm_chars=None):
         def loop():
@@ -231,8 +233,19 @@ class Piper:
                     if name in OBBLIGATORIE:
                         raise
                     print(f"Piper: voce facoltativa {name} non scaricata ({e})", flush=True)
-            self.state, self.detail = "scarico", "prova"
-            self.synth("Prova.", voci.DEFAULT, "normale", timeout=60)
+            # provo ogni voce: quelle che con questo Piper non funzionano (per esempio una voce della
+            # comunità fatta con una versione più nuova) le salto, e i personaggi usano le altre
+            self.state, self.detail = "scarico", "prova delle voci"
+            self.bad = {}
+            for name in sorted(self.voices()):
+                model = os.path.join(self.dir_voci, VOCI[name][0] + ".onnx")
+                try:
+                    self._run(model, 1.0, "Prova.", 60)
+                except Exception as e:
+                    self.bad[name] = str(e)[:200]
+                    print(f"Piper: la voce {name} non funziona, la salto ({e})", flush=True)
+            if not self.voices():
+                raise RuntimeError("nessuna voce funziona: " + "; ".join(f"{k}: {v}" for k, v in self.bad.items()))
             self.state, self.detail = "pronta", ""
             print("Voce del server (Piper) pronta:", ", ".join(sorted(self.voices())), flush=True)
         except Exception as e:
@@ -257,11 +270,20 @@ class Piper:
         # sposta tono e velocità insieme, di poco, senza cambiare processo.
         factor = pv["tono"] * voci.STILE_PIPER.get(style, 1.0)
         length = pv["tono"] / pv["velocita"]
-        voice, model = self._model_for(char)
         end = time.time() + timeout
         parts = [p for p in SENTENCES.split(" ".join(text.split())) if p.strip()] or [text]
-        wavs = [self._sentence(voice, model, length, p, max(1.0, end - time.time())) for p in parts]
-        return set_pitch(join_wavs(wavs), factor)
+        for _ in range(len(VOCI)):
+            voice, model = self._model_for(char)
+            try:
+                wavs = [self._sentence(voice, model, length, p, max(1.0, end - time.time())) for p in parts]
+                return set_pitch(join_wavs(wavs), factor)
+            except TimeoutError:
+                raise
+            except Exception as e:
+                # questa voce non funziona: la salto d'ora in poi e riprovo con la successiva
+                self.bad[voice] = str(e)[:200]
+                print(f"Piper: la voce {voice} non funziona, passo a un'altra ({e})", flush=True)
+        raise RuntimeError("nessuna voce funziona")
 
     def cached(self, char_id, sentence):
         voice, _ = self._model_for(voci.get(char_id))
@@ -309,7 +331,8 @@ class Piper:
 
     def _run(self, model, length, text, timeout):
         text = " ".join(text.split())
-        if not self.oneshot:
+        os.makedirs(self.tmp, exist_ok=True)
+        if model not in self.oneshot:
             key = (model, round(length, 3))
             with self.lock:
                 pr = self.procs.get(key)
@@ -328,12 +351,15 @@ class Piper:
                 with self.lock:
                     self.procs.pop(key, None)
                 pr.close()
-                self.oneshot = True
+                self.oneshot.add(model)
         out = os.path.join(self.tmp, f"{time.time_ns()}.wav")
         env = dict(os.environ, LD_LIBRARY_PATH=os.path.dirname(self.exe))
-        subprocess.run([self.exe, "--model", model, "--length_scale", f"{length:.3f}", "--sentence_silence", "0.12",
-                        "--output_file", out], input=text.encode(), stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=timeout, check=True, env=env, cwd=os.path.dirname(self.exe))
+        r = subprocess.run([self.exe, "--model", model, "--length_scale", f"{length:.3f}", "--sentence_silence", "0.12",
+                            "--output_file", out], input=text.encode(), stdout=subprocess.DEVNULL,
+                           stderr=subprocess.PIPE, timeout=timeout, env=env, cwd=os.path.dirname(self.exe))
+        if r.returncode != 0 or not os.path.exists(out):
+            err = [l for l in r.stderr.decode(errors="replace").splitlines() if l.strip()]
+            raise RuntimeError(f"{os.path.basename(model)}: " + (err[-1][:160] if err else f"codice {r.returncode}"))
         with open(out, "rb") as f:
             data = f.read()
         os.remove(out)
