@@ -53,24 +53,36 @@ echo "==> Utenti"
 if [[ -f "$APP/utenti.json" ]]; then
   echo "    Utenti già presenti:"; sudo -u "$SVC_USER" python3 "$APP/utenti.py" elenco
 fi
-PORT=20777
 while true; do
   read -rp "    Nome nuovo utente (invio per finire): " NAME </dev/tty
   [[ -z "$NAME" ]] && break
-  read -rp "    Porta UDP per la PS5 di $NAME [$PORT]: " P </dev/tty
-  P="${P:-$PORT}"
-  sudo -u "$SVC_USER" python3 "$APP/utenti.py" aggiungi "$NAME" "$P" </dev/tty || true
-  PORT=$((P + 1))
+  sudo -u "$SVC_USER" python3 "$APP/utenti.py" aggiungi "$NAME" </dev/tty || true
 done
 if [[ ! -f "$APP/utenti.json" ]]; then echo "Serve almeno un utente. Rilancia lo script."; exit 1; fi
-UDP_PORTS="$(python3 -c "import json;print(' '.join(str(u['udp_port']) for u in json.load(open('$APP/utenti.json')).values()))")"
 
-echo "==> Firewall del server (porte 80, 443 e UDP $UDP_PORTS)"
-open_port() {  # $1 protocollo, $2 porta
+echo "==> Registrazione degli amici (pagina /registrati)"
+CUR="$(sudo -u "$SVC_USER" python3 "$APP/utenti.py" invito)"
+echo "    $CUR"
+read -rp "    Nuovo codice invito (invio = lascia com'è, 'no' = registrazione chiusa): " CODE </dev/tty
+if [[ "$CODE" == "no" ]]; then
+  sudo -u "$SVC_USER" python3 "$APP/utenti.py" invito --spento
+elif [[ -n "$CODE" ]]; then
+  sudo -u "$SVC_USER" python3 "$APP/utenti.py" invito "$CODE" || true
+fi
+
+UDP_RANGE="$(python3 -B -c "import sys;sys.path.insert(0,'$APP');import utenti;print(f'{utenti.PORTA_MIN}:{utenti.PORTA_MAX}')")"
+UDP_EXTRA="$(python3 -B -c "
+import json,sys;sys.path.insert(0,'$APP');import utenti
+print(' '.join(str(u['udp_port']) for u in json.load(open('$APP/utenti.json')).values()
+               if not utenti.PORTA_MIN<=int(u['udp_port'])<=utenti.PORTA_MAX))")"
+
+echo "==> Firewall del server (porte 80, 443 e UDP ${UDP_RANGE/:/-} $UDP_EXTRA)"
+open_port() {  # $1 protocollo, $2 porta o intervallo a:b
   iptables -C INPUT -p "$1" --dport "$2" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p "$1" --dport "$2" -j ACCEPT
 }
 open_port tcp 80; open_port tcp 443
-for p in $UDP_PORTS; do open_port udp "$p"; done
+open_port udp "$UDP_RANGE"
+for p in $UDP_EXTRA; do open_port udp "$p"; done
 netfilter-persistent save >/dev/null
 
 echo "==> Servizio"
@@ -143,6 +155,8 @@ echo " Nel gioco (Impostazioni > Telemetria):"
 echo "   IP UDP = $PUBLIC_IP   porta = quella dell'utente   broadcast = Off   frequenza = 20 Hz"
 sudo -u "$SVC_USER" python3 "$APP/utenti.py" elenco | sed 's/^/   /'
 echo
-echo " Ricorda: apri le stesse porte anche nella Security List di Oracle (vedi CLOUD.md)."
+sudo -u "$SVC_USER" python3 "$APP/utenti.py" invito | sed 's/^/ /'
+echo " Gli amici si registrano da:  https://$DOMAIN/registrati"
+echo " Ricorda: su Oracle (Security List) apri UDP ${UDP_RANGE/:/-} (vedi CLOUD.md)."
 echo " Log in tempo reale:  sudo journalctl -u ingegnere-f1 -f"
 echo "============================================================"

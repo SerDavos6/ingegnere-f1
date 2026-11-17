@@ -205,7 +205,7 @@ class Tenant:
     def use_reference(self, body):
         """Usa come riferimento del coach un tuo giro salvato o quello di un amico."""
         if body.get("friend"):
-            lap = amici.load(self, TENANTS, str(body["friend"]))
+            lap = amici.load(self, dict(TENANTS), str(body["friend"]))
             owner = lap.get("driver") if lap else None
         else:
             raw = recorder.load_lap(str(body.get("s", "")), str(body.get("l", "")), self.data_dir)
@@ -262,7 +262,7 @@ class Tenant:
 def state_loop():
     while True:
         time.sleep(0.1)
-        for t in TENANTS.values():
+        for t in list(TENANTS.values()):
             if t.clients:
                 t.broadcast("state", t.snapshot())
 
@@ -283,6 +283,15 @@ def setup_tenants(udp_port):
         TENANTS["locale"] = Tenant("locale", udp_port, BASE)   # stesse cartelle delle versioni precedenti
 
 
+def add_tenant(name, port):
+    """Utente appena registrato: parte subito, senza riavviare il server."""
+    t = Tenant(name, int(port), os.path.join(BASE, "utenti_dati", name))
+    TENANTS[name] = t
+    threading.Thread(target=t.udp_loop, daemon=True).start()
+    print(f"[{name}] nuovo utente registrato, porta UDP {port}", flush=True)
+    return t
+
+
 # --------------------------------------------------------------------------- pagine web
 LOGIN_HTML = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b0d10">
@@ -297,9 +306,51 @@ button{background:#e10600;color:#fff;border:0;border-radius:10px;padding:13px;fo
 <form method="post" action="/login"><h1><b>F1</b> Ingegnere</h1>
 <input name="u" placeholder="Utente" autocapitalize="none" autocomplete="username" required>
 <input name="p" type="password" placeholder="Password" autocomplete="current-password" required>
-<div class="err">__ERR__</div><button>Entra</button></form></body></html>"""
+<div class="err">__ERR__</div><button>Entra</button>__REG__</form></body></html>"""
+
+PAGE_CSS = LOGIN_HTML.split("<style>")[1].split("</style>")[0] + """
+a{color:#9fb0c0;font-size:14px;text-align:center}p{color:#9fb0c0;font-size:14px;line-height:1.45}
+.box{background:#0b0d10;border:1px solid #232a32;border-radius:10px;padding:12px;font-size:15px;line-height:1.7}
+.box b{color:#fff;font-size:18px}.btn{background:#e10600;color:#fff;border-radius:10px;padding:13px;font-weight:700;text-decoration:none;font-size:16px}"""
+
+
+def _page(title, inner):
+    return (f'<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b0d10">'
+            f'<title>{title} · Ingegnere F1</title><style>{PAGE_CSS}</style></head><body>{inner}</body></html>')
+
+
+def login_page(err=""):
+    reg = '<a href="/registrati">Non hai un account? Registrati</a>' if utenti.invite_code() else ""
+    return LOGIN_HTML.replace("__ERR__", err).replace("__REG__", reg)
+
+
+def esc(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def register_page(err="", name=""):
+    return _page("Registrati", f"""<form method="post" action="/registrati"><h1><b>F1</b> Ingegnere</h1>
+<p>Crea il tuo utente. Ti serve il codice invito che ti ha dato chi gestisce il server.</p>
+<input name="u" placeholder="Nome utente (minuscole, numeri, _)" value="{esc(name)}" autocapitalize="none" autocomplete="username" required>
+<input name="p" type="password" placeholder="Password (almeno 8 caratteri)" autocomplete="new-password" required>
+<input name="p2" type="password" placeholder="Ripeti la password" autocomplete="new-password" required>
+<input name="c" placeholder="Codice invito" autocapitalize="none" autocomplete="off" required>
+<div class="err">{esc(err)}</div><button>Registrati</button><a href="/login">Hai già un account? Entra</a></form>""")
+
+
+def welcome_page(t):
+    ip = (ARGS.public_ip if ARGS else None) or "l'IP del server"
+    return _page("Benvenuto", f"""<form><h1><b>F1</b> Ingegnere</h1>
+<p>Benvenuto <b style="color:#fff">{esc(t.name)}</b>! Ora sulla PS5 apri F1 → Impostazioni → Telemetria e scrivi:</p>
+<div class="box">Telemetria UDP: <b>On</b><br>Broadcast: <b>Off</b><br>Indirizzo IP: <b>{esc(ip)}</b><br>
+Porta: <b>{t.udp_port}</b><br>Frequenza: <b>20 Hz</b><br>Formato: <b>2025</b></div>
+<p>Questi dati li ritrovi sempre in Dettagli → Impostazioni. Consiglio: dal browser del telefono scegli
+"Aggiungi a schermata Home", così si apre come un'app.</p><a class="btn" href="/">Vai alla dashboard</a></form>""")
+
 
 failed_logins = {}
+failed_regs = {}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -396,28 +447,58 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         fails = failed_logins.get(ip, [0, 0.0])
         if fails[0] >= 5 and time.time() - fails[1] < 300:
-            return self._send(429, LOGIN_HTML.replace("__ERR__", "Troppi tentativi, riprova tra 5 minuti."),
+            return self._send(429, login_page("Troppi tentativi, riprova tra 5 minuti."),
                               "text/html; charset=utf-8")
         form = urllib.parse.parse_qs(self._body().decode("utf-8", "ignore"))
         user = (form.get("u", [""])[0]).strip().lower()
         pw = form.get("p", [""])[0]
         if utenti.verify(user, pw) and user in TENANTS:
             failed_logins.pop(ip, None)
-            token = utenti.new_session(user)
-            cookie = f"f1s={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={utenti.SESSION_DAYS * 86400}"
-            if self._secure():
-                cookie += "; Secure"
-            return self._redirect("/", {"Set-Cookie": cookie})
+            return self._redirect("/", {"Set-Cookie": self._session_cookie(user)})
         failed_logins[ip] = [fails[0] + 1, time.time()]
         time.sleep(1)
-        self._send(401, LOGIN_HTML.replace("__ERR__", "Utente o password sbagliati."), "text/html; charset=utf-8")
+        self._send(401, login_page("Utente o password sbagliati."), "text/html; charset=utf-8")
+
+    def _session_cookie(self, user):
+        cookie = (f"f1s={utenti.new_session(user)}; Path=/; HttpOnly; SameSite=Lax; "
+                  f"Max-Age={utenti.SESSION_DAYS * 86400}")
+        return cookie + ("; Secure" if self._secure() else "")
+
+    # ---- registrazione con codice invito
+    def _register(self):
+        html = "text/html; charset=utf-8"
+        if MODE != "cloud":
+            return self._redirect("/")
+        ip = self._client_ip()
+        fails = failed_regs.get(ip, [0, 0.0])
+        if fails[0] >= 5 and time.time() - fails[1] < 600:
+            return self._send(429, register_page("Troppi tentativi, riprova tra 10 minuti."), html)
+        form = urllib.parse.parse_qs((self._body() or b"").decode("utf-8", "ignore"))
+        get = lambda k: form.get(k, [""])[0]
+        name = get("u").strip().lower()
+        port, err = utenti.register(name, get("p"), get("p2"), get("c"))
+        if err:
+            if "Codice" in err:
+                failed_regs[ip] = [fails[0] + 1, time.time()]
+                time.sleep(1)
+            return self._send(400, register_page(err, name), html)
+        failed_regs.pop(ip, None)
+        add_tenant(name, port)
+        self._redirect("/benvenuto", {"Set-Cookie": self._session_cookie(name)})
 
     # ---- GET
     def do_GET(self):
         path, _, query = self.path.partition("?")
         params = dict(urllib.parse.parse_qsl(query))
         if path == "/login":
-            return self._send(200, LOGIN_HTML.replace("__ERR__", ""), "text/html; charset=utf-8")
+            return self._send(200, login_page(), "text/html; charset=utf-8")
+        if path == "/registrati":
+            if MODE != "cloud":
+                return self._redirect("/")
+            if not utenti.invite_code():
+                return self._send(200, login_page("La registrazione è chiusa: chiedi a chi gestisce il server."),
+                                  "text/html; charset=utf-8")
+            return self._send(200, register_page(), "text/html; charset=utf-8")
         if path == "/logout":
             utenti.end_session(self._cookie("f1s") or "")
             return self._redirect("/login", {"Set-Cookie": "f1s=; Path=/; Max-Age=0"})
@@ -425,9 +506,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         t = self._tenant()
         if t is None:
-            if path in ("/", "/index.html", "/analisi", "/analisi.html"):
+            if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto"):
                 return self._redirect("/login")
             return self._json({"error": "login"}, 401)
+        if path == "/benvenuto":
+            return self._send(200, welcome_page(t), "text/html; charset=utf-8")
         if path in ("/", "/index.html"):
             self._static("index.html")
         elif path in ("/analisi", "/analisi.html"):
@@ -441,9 +524,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, body, "application/json")
         elif path == "/api/friends":
-            self._json(amici.list_laps(t, TENANTS, params.get("track", "")))
+            self._json(amici.list_laps(t, dict(TENANTS), params.get("track", "")))
         elif path == "/api/friend_lap":
-            lap = amici.load(t, TENANTS, params.get("id", ""))
+            lap = amici.load(t, dict(TENANTS), params.get("id", ""))
             self._json(lap or {}, 200 if lap else 404)
         elif path == "/api/ideal":
             self._json(t.ideal_of(params.get("s", "")) or {})
@@ -498,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/login":
             return self._login()
+        if self.path == "/registrati":
+            return self._register()
         t = self._tenant()
         if t is None:
             return self._json({"error": "login"}, 401)

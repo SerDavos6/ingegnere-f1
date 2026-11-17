@@ -257,7 +257,7 @@ solo al primo avvio, se manca.
 - `parlato.py`: tempi e numeri scritti per la voce
 - `risposte.py`: risposte gratuite a regole (box, rientro, meteo, gomme…)
 - `cert.pem`, `key.pem`: certificato locale per la pagina https (microfono su iPhone), solo modalità casa
-- `utenti.py`: utenti e password (modalità server su internet)
+- `utenti.py`: utenti, password e codice invito per registrarsi da soli (modalità server su internet)
 - `cloud/install.sh`, `CLOUD.md`: installazione su Oracle Cloud
 - `config.json`: chiavi AI e secondi persi al pit (creato dalle impostazioni)
 - `static/analisi.html`: pagina di analisi giri

@@ -2,7 +2,8 @@
 
 Con questa configurazione il programma resta sempre acceso su internet:
 - non serve più Termux, né lanciare comandi ogni volta;
-- tu e il tuo amico avete ciascuno il proprio utente, con password, i propri giri e le proprie impostazioni;
+- ognuno ha il proprio utente, con password, i propri giri e le proprie impostazioni;
+- gli amici si registrano da soli dalla pagina `/registrati`, con un codice invito che scegli tu (fino a 20 utenti);
 - la dashboard si apre da qualsiasi telefono con un indirizzo `https://` vero, senza l'avviso del certificato;
 - quando carichi una nuova versione su GitHub, il server si aggiorna da solo entro 5 minuti.
 
@@ -39,7 +40,7 @@ Oracle ha un firewall "esterno" da aprire a mano. Quello interno al server lo ap
 |---|---|---|---|
 | 0.0.0.0/0 | TCP | 80 | certificato https |
 | 0.0.0.0/0 | TCP | 443 | dashboard |
-| 0.0.0.0/0 | UDP | 20777-20778 | telemetria delle due PS5 |
+| 0.0.0.0/0 | UDP | 20777-20796 | telemetria delle PS5 (una porta per utente, fino a 20) |
 
 ## 4. Metti il programma su GitHub
 1. Su **github.com** → *New repository* → nome `ingegnere-f1`, **Public** → *Create*.
@@ -62,10 +63,13 @@ Una volta dentro il server, sostituisci `TUONOME` con il tuo nome utente GitHub:
 curl -fsSL https://raw.githubusercontent.com/TUONOME/ingegnere-f1/main/cloud/install.sh -o install.sh
 sudo bash install.sh https://github.com/TUONOME/ingegnere-f1.git
 ```
-Lo script chiede gli utenti, uno alla volta:
-- `marco` → porta `20777` → password
-- `luca` (il tuo amico) → porta `20778` → password
+Lo script chiede gli utenti, uno alla volta (la porta la assegna da solo: la prima libera da 20777):
+- `marco` → password
 - premi Invio a vuoto per finire.
+
+Poi chiede il **codice invito**: una parola che scegli tu (per esempio `PISTA2026`). Chi la conosce può
+crearsi da solo l'utente da `https://…sslip.io/registrati` e riceve subito la sua porta e le impostazioni per la PS5.
+Scrivi `no` per tenere chiusa la registrazione.
 
 Alla fine stampa l'indirizzo della dashboard, per esempio `https://141-145-10-20.sslip.io`.
 Se lo apri subito e non va, aspetta un minuto: Caddy sta ottenendo il certificato.
@@ -74,7 +78,7 @@ Se lo apri subito e non va, aspetta un minuto: Caddy sta ottenendo il certificat
 Impostazioni → Telemetria:
 - Telemetria UDP: **On** · Broadcast: **Off**
 - Indirizzo IP: **l'IP pubblico del server** (lo stesso per tutti e due)
-- Porta: **la propria** (20777 tu, 20778 il tuo amico)
+- Porta: **la propria** (la vedi dopo la registrazione e in Dettagli → Impostazioni)
 - Frequenza: **20 Hz** (su internet bastano e consumano meno connessione, circa 1 Mbit/s in upload)
 - Formato: **2025**
 
@@ -100,12 +104,14 @@ sudo journalctl -u ingegnere-f1 -f          # messaggi in tempo reale (Ctrl+C pe
 sudo systemctl restart ingegnere-f1         # riavvio
 cd /opt/ingegnere-f1
 sudo -u ingegnere python3 utenti.py elenco                    # utenti e porte
-sudo -u ingegnere python3 utenti.py aggiungi nome 20779       # nuovo utente (apri anche la porta su Oracle!)
+sudo -u ingegnere python3 utenti.py aggiungi nome             # nuovo utente (prende la prima porta libera)
+sudo -u ingegnere python3 utenti.py invito NUOVOCODICE        # cambia il codice invito
+sudo -u ingegnere python3 utenti.py invito --spento           # chiude la registrazione
 sudo -u ingegnere python3 utenti.py password nome             # cambia password
 sudo /usr/local/bin/ingegnere-aggiorna                        # aggiorna subito da GitHub
 ```
-Se aggiungi un utente con una porta nuova, rilancia anche `sudo bash install.sh <url>`: apre la porta nel
-firewall del server. Gli utenti già creati restano.
+Le porte da 20777 a 20796 sono già aperte: i nuovi utenti funzionano subito, senza riavviare niente.
+Dopo un utente aggiunto o rimosso da terminale serve `sudo systemctl restart ingegnere-f1`.
 
 ## Se il pallino della dashboard resta rosso
 1. Controlla nel gioco IP, porta e Broadcast Off.

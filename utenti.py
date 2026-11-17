@@ -3,11 +3,17 @@
 Se esiste almeno un utente, il server chiede il login e ogni utente ha:
 la sua porta UDP (dove la sua PS5 manda i dati), i suoi giri, i suoi riferimenti, le sue impostazioni.
 
+Gli amici possono anche registrarsi da soli dalla pagina /registrati, se conoscono il codice invito.
+Ognuno riceve in automatico la prima porta libera fra PORTA_MIN e PORTA_MAX.
+
 Uso da terminale:
   python3 utenti.py aggiungi marco 20777     (chiede la password)
   python3 utenti.py password marco           (cambia la password)
   python3 utenti.py rimuovi marco
   python3 utenti.py elenco
+  python3 utenti.py invito PISTA2026         (codice per registrarsi da soli)
+  python3 utenti.py invito                   (mostra il codice attuale)
+  python3 utenti.py invito --spento          (nessuno può più registrarsi da solo)
 """
 import getpass
 import hashlib
@@ -23,7 +29,10 @@ import time
 BASE = os.path.dirname(os.path.abspath(__file__))
 USERS_PATH = os.path.join(BASE, "utenti.json")
 SESS_PATH = os.path.join(BASE, "sessioni.json")
+INVITE_PATH = os.path.join(BASE, "invito.json")
 NAME_RE = re.compile(r"^[a-z0-9_]{2,20}$")
+RESERVED = {"locale", "admin", "root"}
+PORTA_MIN, PORTA_MAX = 20777, 20796      # 20 utenti: le stesse porte vanno aperte su Oracle
 SESSION_DAYS = 90
 _lock = threading.Lock()
 
@@ -68,6 +77,51 @@ def verify(name, password):
         _hash(password, "00" * 16)       # stesso tempo anche se l'utente non esiste
         return False
     return hmac.compare_digest(_hash(password, u["salt"]), u["hash"])
+
+
+# ---- registrazione con codice invito
+def invite_code():
+    try:
+        with open(INVITE_PATH) as f:
+            return str(json.load(f).get("codice") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def set_invite_code(code):
+    _save(INVITE_PATH, {"codice": code})
+
+
+def free_port(users=None):
+    used = {int(u.get("udp_port", 0)) for u in (users or load_users()).values()}
+    for p in range(PORTA_MIN, PORTA_MAX + 1):
+        if p not in used:
+            return p
+    return None
+
+
+def register(name, password, password2, code):
+    """Crea un utente dalla pagina /registrati. Ritorna (porta, None) oppure (None, messaggio d'errore)."""
+    expected = invite_code()
+    if not expected:
+        return None, "La registrazione è chiusa: chiedi a chi gestisce il server di crearti l'utente."
+    if not hmac.compare_digest(code.strip().encode(), expected.encode()):
+        return None, "Codice invito sbagliato."
+    if not NAME_RE.match(name) or name in RESERVED:
+        return None, "Nome non valido: da 2 a 20 caratteri tra lettere minuscole, numeri e _."
+    if len(password) < 8:
+        return None, "La password deve avere almeno 8 caratteri."
+    if password != password2:
+        return None, "Le due password non coincidono."
+    with _lock:
+        users = load_users()
+        if name in users:
+            return None, "Questo nome è già usato, scegline un altro."
+        port = free_port(users)
+        if port is None:
+            return None, "Il server è pieno: non ci sono più posti liberi."
+        set_user(name, password, port)
+    return port, None
 
 
 def _load_sessions():
@@ -116,11 +170,25 @@ def _ask_password():
 
 
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("aggiungi", "password", "rimuovi", "elenco"):
+    if len(argv) < 2 or argv[1] not in ("aggiungi", "password", "rimuovi", "elenco", "invito"):
         print(__doc__)
         return 1
     cmd = argv[1]
     users = load_users()
+    if cmd == "invito":
+        if len(argv) < 3:
+            c = invite_code()
+            print(f"Codice invito: {c}" if c else "Registrazione chiusa (nessun codice invito).")
+        elif argv[2] == "--spento":
+            set_invite_code("")
+            print("Registrazione chiusa: nessuno può più registrarsi da solo.")
+        else:
+            if len(argv[2]) < 4:
+                print("Codice troppo corto: usa almeno 4 caratteri.")
+                return 1
+            set_invite_code(argv[2])
+            print(f"Codice invito impostato: {argv[2]}. Chi lo conosce può registrarsi da /registrati.")
+        return 0
     if cmd == "elenco":
         for n, u in users.items():
             print(f"{n}: porta UDP {u.get('udp_port')}")
@@ -133,7 +201,7 @@ def main(argv):
         print("Nome non valido: usa da 2 a 20 lettere minuscole, numeri o _.")
         return 1
     if cmd == "aggiungi":
-        port = int(argv[3]) if len(argv) > 3 else 20777 + len(users)
+        port = int(argv[3]) if len(argv) > 3 else (free_port(users) or PORTA_MAX + 1)
         if any(u.get("udp_port") == port for n, u in users.items() if n != name):
             print(f"La porta {port} è già usata da un altro utente.")
             return 1
