@@ -252,6 +252,8 @@ class Answers:
         ("less", ("parla di meno", "parla meno", "meno messaggi", "meno informazioni")),
         ("unmute", ("parla di nuovo", "riprendi a parlare", "torna a parlare", "puoi parlare", "riprendi")),
         ("repeat", ("ripeti", "cosa hai detto", "puoi ripetere", "ridillo")),
+        ("report", ("segnala", "segnalazione", "era sbagliat", "hai sbagliato", "non e vero", "questo e un errore")),
+        ("check", ("mi senti", "mi sentite", "prova radio", "radio check", "check radio", "ci sei", "sei li", "prova prova")),
     ]
     LEVELS = {1: "poco", 2: "normale", 3: "tanto"}
 
@@ -270,6 +272,13 @@ class Answers:
         name = next((n for n, words in self.COMMANDS if _has(q, *words)), None)
         if name is None and q.strip() in ("parla", "parla pure", "vai"):
             name = "unmute"
+        if name == "report":
+            n = c.on_report(q)
+            return (f"Segnalato, grazie. È la segnalazione numero {n}: la trovi nelle Impostazioni." if n
+                    else "Segnalato.")
+        if name == "check":
+            import random
+            return random.choice(("Sì, forte e chiaro.", "Sì, forte e chiaro.", "Forte e chiaro, ci sono.", "Ti sento forte e chiaro."))
         if name == "mute":
             c.muted = True
             return ("Ricevuto, silenzio radio. Ti parlo solo per le cose importanti: safety car, box, bandiere e "
@@ -321,5 +330,5 @@ class Answers:
             return None
         return " ".join(getattr(self, n)() for n in found[:2])
 
-    HELP = ("Comandi: aiuto, silenzio, parla, parla di più, parla di meno, ripeti, allenamento, lavoriamo sulla frenata (o centro curva, uscita, tutto). Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
+    HELP = ("Comandi: mi senti?, segnala, aiuto, silenzio, parla, parla di più, parla di meno, ripeti, allenamento, lavoriamo sulla frenata (o centro curva, uscita, tutto). Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
             "distacchi, batteria, carburante, qual è il mio passo, qual è il mio giro più veloce, come sta il mio amico, quanti giri mancano, dove perdo tempo, consigli d'assetto.")

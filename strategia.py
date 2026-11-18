@@ -42,6 +42,13 @@ class Strategy:
         rate = (w1 - w0) / max(1, l1 - l0)
         return rate if rate > 0.2 else None
 
+    def prior_rate(self):
+        """Prima di avere 3 giri di gara: l'usura misurata nella prova lunga delle prove libere."""
+        try:
+            return self.c.practice.rate_for(self.c.status.get("compound"))
+        except Exception:
+            return None
+
     def remaining(self, me):
         total = self.c.session.get("total_laps", 0)
         return max(0, total - me["lap_num"] + 1) if total else None
@@ -88,6 +95,10 @@ class Strategy:
         lap, wear = me["lap_num"], self.r._wear() or 0.0
         comp_now = self.c.status.get("compound")
         rate = self.wear_rate()
+        practice = False
+        if rate is None and me["pit_stops"] == 0 and lap <= 5:
+            rate = self.prior_rate()             # stima dalle prove libere
+            practice = rate is not None
         must = self.must_change_compound(me)
         s = self.c.session
         ideal, latest = s.get("pit_ideal", 0), s.get("pit_latest", 0)
@@ -100,7 +111,7 @@ class Strategy:
 
         laps_left_now = max(0.0, (LIMIT - wear) / rate)
         if laps_left_now >= rem and not must:
-            return {"stop": False, "why": "arrivi in fondo", "laps_left": laps_left_now}
+            return {"stop": False, "why": "arrivi in fondo", "laps_left": laps_left_now, "practice": practice}
 
         if laps_left_now >= rem:                       # serve solo per la regola delle mescole
             # nella finestra del gioco; se è già passata, entro il penultimo giro
@@ -114,7 +125,7 @@ class Strategy:
         exclude = (comp_now,) if must else ()
         comp, ok = self.pick_compound(after, rate, comp_now, exclude)
         return {"stop": True, "lap": pit_lap, "lap_to": None, "compound": comp, "two_stops": not ok,
-                "why": "usura" if laps_left_now < rem else "regola", "after": after}
+                "why": "usura" if laps_left_now < rem else "regola", "after": after, "practice": practice}
 
     def describe(self, p=None):
         p = p or self.plan()
@@ -137,6 +148,8 @@ class Strategy:
         txt += " fino alla fine." if not p["two_stops"] else ", ma servirà probabilmente una seconda sosta."
         if p["why"] == "regola":
             txt += " Le gomme reggono, ci fermiamo per la regola delle due mescole."
+        if p.get("practice"):
+            txt += " È una stima dalle prove libere: la aggiorno dopo i primi giri."
         return txt
 
     # ------------------------------------------------------- ogni giro

@@ -488,6 +488,10 @@ class RaceEngineer:
             text = self.debrief(me)
             if text:
                 say(text, "debrief", level=2, urgent=True)
+            try:
+                self.c.on_race_end(me, text)
+            except Exception as e:
+                print("Riepilogo su Discord non inviato:", e, flush=True)
             return
         if remaining is not None and remaining <= 0:
             return                      # gara finita
@@ -602,6 +606,9 @@ class RaceEngineer:
             p = self.strategy.plan()
         except Exception:
             p = None
+        prv = c.practice.briefing_text() if not c.practice.active() else None
+        if prv:
+            parts.append(prv)
         if p:
             parts.append(self.strategy.describe(p).rstrip("."))
             self.strategy.last_plan = (p["stop"], p.get("lap"), p.get("compound"), p.get("two_stops"))
@@ -816,15 +823,36 @@ class RaceEngineer:
             out["position"] = me["position"]
             out["pit_stops"] = me["pit_stops"]
             out["cars"] = len(self.cars)
+            prev = self.gap_hist.get(me["lap_num"] - 1, {})
+            try:
+                friends = {f["idx"]: f for f in (self.c.friend_info() or [])}
+            except Exception:
+                friends = {}
             for key, off in (("ahead", -1), ("behind", 1)):
                 car = self.rel(off)
                 if car:
                     gap = self.gap_between(car, me) if off < 0 else self.gap_between(me, car)
                     t = self.tyres.get(car["idx"], {})
+                    p = prev.get(key)
+                    f = friends.get(car["idx"])
                     out[key] = {"name": self.name(car["idx"], voice=False), "gap": round(gap, 1),
-                                "mate": self.mate_name(car["idx"]),
+                                "mate": self.mate_name(car["idx"]), "pos": car["position"],
+                                "mate_word": "compagno" if self.same_team(car["idx"]) else "amico",
                                 "compound": t.get("compound"), "tyre_age": t.get("tyre_age"),
-                                "pit": car["pit_status"] > 0}
+                                "pit": car["pit_status"] > 0,
+                                # quanto si accorcia il distacco a giro (positivo = vi avvicinate)
+                                "trend": round(p[1] - gap, 2) if p and p[0] == car["idx"] else None,
+                                "wear": round(f["wear"]) if f and f.get("wear") is not None else None}
+            lp = self.strategy.last_plan
+            if lp:
+                plan = {"stop": bool(lp[0]), "lap": lp[1], "compound": lp[2], "two_stops": bool(lp[3]),
+                        "now": self.c.status.get("compound"), "lap_now": me["lap_num"]}
+                try:
+                    est = self.rejoin_estimate(self.c.pit_loss) if lp[0] else None
+                    plan["rejoin"] = est.get("pos") if est else None
+                except Exception:
+                    plan["rejoin"] = None
+                out["plan"] = plan
             out["mates"] = [{"name": n, "position": self.by_idx[i]["position"]} for n, i in self.mates()]
             # mini classifica: due auto davanti e due dietro (più il compagno, se è lontano)
             tower, mates = [], dict((i, n) for n, i in self.mates())

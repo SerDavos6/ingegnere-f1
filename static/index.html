@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg:#08090b; --panel:#121418; --panel2:#181b20; --line:#23272e; --txt:#f2f4f7; --dim:#8a919b; --faint:#5b626c;
@@ -281,7 +281,7 @@
   .dock { background:var(--bg); border-top:1px solid #16191e; }
   .btns { grid-template-columns:1fr 116px; }
   .btns button { height:56px; font-size:17px; }
-  .nav { display:grid; grid-template-columns:repeat(3,1fr); margin:8px -12px 0; padding-top:4px; border-top:1px solid var(--line); }
+  .nav { display:grid; grid-template-columns:repeat(4,1fr); margin:8px -12px 0; padding-top:4px; border-top:1px solid var(--line); }
   .nav button { display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; font-size:11px; font-weight:700; color:var(--dim); min-height:44px; }
   .nav button.on { color:var(--txt); }
   .nav button.on span { box-shadow:0 3px 0 var(--red); }
@@ -327,37 +327,109 @@
     #v-more.on, #v-box.on { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
     #v-more.on > *, #v-box.on > * { margin:0; }
   }
-  /* tablet in orizzontale (iPad, schermo largo): tre colonne, tutto senza scorrere */
-  @media (orientation:landscape) and (min-width:1080px) {
-    #v-race.on { grid-template-columns:1fr 1fr 1fr !important; }
-    #sc, #hero-race, #hero-quali { grid-column:1 / 3 !important; }
-    #minimap { grid-column:3 !important; grid-row:1 / span 3; }
-    #minimap canvas { min-height:420px; }
-    #rivals, #live { grid-column:1 !important; align-self:stretch; }
-    #rivals { display:flex; flex-direction:column; justify-content:center; }
-    #v-race .row2 { grid-column:2 !important; grid-row:2 / span 2; display:flex !important; flex-direction:column; }
-    #last { grid-column:1 / 3 !important; }
-    #v-more.on, #v-box.on { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; align-items:start; }
-    #v-more.on > *, #v-box.on > * { margin:0; }
+
+
+
+  /* ================= interfaccia v2 ================= */
+  .colL, .colR { display:contents; }
+  #sc { order:0; } #hero-race, #hero-quali { order:1; } #minimap { order:2; } #prog { order:3; } #rivals { order:4; }
+  #mach { order:5; } #strat { order:6; } #last { order:7; } #v-race .row2 { order:8; }
+  .dlbl { font-size:11px; color:var(--dim); text-align:right; margin-top:2px; }
+  .rivals2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .rivals2 .chips { grid-column:1 / 3; }
+  .gapt { display:flex; align-items:center; gap:8px; padding:10px 12px; min-width:0; }
+  .gapt .gi { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; }
+  .gapt .gn { font-size:14px; font-weight:700; display:flex; flex-wrap:wrap; align-items:center; gap:2px 5px; line-height:1.2; }
+  .gapt .gnote { font-size:11px; font-weight:700; color:var(--dim); line-height:1.25; }
+  .gapt .gnote.good { color:var(--good); } .gapt .gnote.warn { color:var(--warn); } .gapt .gnote.bad { color:var(--bad); }
+  .gapt .gv { font-family:var(--cond); font-size:34px; font-weight:800; line-height:1; flex:none; }
+  #farbtn { white-space:normal; }
+  .gapt .gv.close { color:var(--warn); } .gapt .gv.hot { color:var(--bad); }
+  .mach { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .mt { display:flex; flex-direction:column; gap:3px; padding:10px 12px; }
+  .mt .lbl { display:flex; align-items:center; gap:6px; }
+  .mt b { font-family:var(--cond); font-size:28px; font-weight:700; line-height:1; }
+  .mt small { font-size:11px; color:var(--dim); white-space:nowrap; }
+  .mt b.good { color:var(--good); } .mt b.bad { color:var(--bad); } .mt b.warn { color:var(--warn); }
+  .mbar { height:6px; border-radius:3px; background:#262a31; overflow:hidden; display:flex; margin-top:4px; }
+  .mbar i { background:var(--warn); width:0; }
+  .strat { display:flex; flex-direction:column; gap:8px; padding:10px 14px; }
+  .strat .sh { display:flex; align-items:baseline; gap:8px; }
+  .strat .sh b { font-size:15px; flex:1; } .strat .sh em { font-style:normal; font-size:12px; font-weight:800; color:var(--warn); white-space:nowrap; }
+  .strat small { font-size:12px; color:var(--dim); }
+  .stint { position:relative; display:flex; height:22px; border-radius:6px; overflow:hidden; font-size:11px; font-weight:800; }
+  .stint span { display:flex; align-items:center; padding-left:8px; white-space:nowrap; overflow:hidden; }
+  .stint .cut { flex:none; width:3px; padding:0; background:var(--bg); }
+  .stint .now { position:absolute; top:0; width:3px; height:100%; background:#fff; padding:0; }
+  .prog { display:flex; flex-direction:column; gap:8px; }
+  .psteps { display:flex; flex-direction:column; gap:7px; font-size:14px; }
+  .psteps div { display:flex; align-items:center; gap:10px; }
+  .psteps i { width:22px; height:22px; border-radius:50%; flex:none; display:grid; place-items:center; font-style:normal; font-size:11px; font-weight:800; border:2px solid #3a3f48; color:var(--dim); }
+  .psteps .done i { background:#10261a; border-color:#10261a; color:var(--good); } .psteps .cur { font-weight:800; }
+  .psteps .cur i { background:#3a2f0b; border-color:#3a2f0b; color:#fcd34d; }
+  .psteps span { flex:1; } .psteps b { font-family:var(--cond); font-size:17px; }
+  .plhead { display:flex; justify-content:space-between; align-items:baseline; }
+  .plhead b { font-family:var(--cond); font-size:28px; }
+  .plseg { display:flex; gap:4px; margin-top:6px; } .plseg i { flex:1; height:9px; border-radius:3px; background:#262a31; }
+  .plseg i.on { background:#facc15; }
+  /* settimana di gara */
+  .wsteps { display:flex; align-items:flex-start; padding:14px 6px; }
+  .wsteps > div { flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; }
+  .wsteps i { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-style:normal; font-weight:800;
+              background:#1b1f25; color:var(--dim); }
+  .wsteps .done i { background:#10261a; color:var(--good); } .wsteps .cur i { background:#3a2f0b; color:#fcd34d; }
+  .wsteps b { font-size:13px; } .wsteps small { font-size:11px; color:var(--dim); }
+  .wsteps .ln { flex:0 0 22px; height:2px; background:#3a3f48; margin-top:17px; }
+  .wsteps .ln.done { background:var(--good); }
+  .wrow { display:grid; grid-template-columns:26px 1fr auto; gap:8px 10px; align-items:center; font-size:14px; margin-top:8px; }
+  .wrow .cc { width:22px; height:22px; border-radius:50%; border:2px solid; font-size:10px; font-weight:800; display:grid; place-items:center; }
+  .grp { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; font-weight:800; margin:10px 4px -2px; grid-column:1 / -1; }
+  .grp:first-child { margin-top:0; }
+
+  /* iPad in orizzontale e PC: barra delle sezioni a sinistra, mappa grande a sinistra, numeri a destra */
+  @media (orientation:landscape) and (min-width:900px) {
+    body { padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 14px calc(104px + env(safe-area-inset-left)); }
+    .top { margin-bottom:10px; }
+    .dock { left:0; right:auto; top:0; bottom:0; width:calc(92px + env(safe-area-inset-left)); display:flex; flex-direction:column;
+            padding:14px 8px 14px calc(8px + env(safe-area-inset-left)); background:#0e0f13; border-right:1px solid var(--line); border-top:0; gap:10px; }
+    .dock .nav { order:-1; display:flex; flex-direction:column; gap:6px; border:0; background:none; padding:0; margin:0; }
+    .dock .nav button { padding:10px 0; border-radius:12px; }
+    .dock .nav button.on { background:var(--panel); }
+    .dock #mic { display:none; }
+    .dock .btns { margin-top:auto; grid-template-columns:1fr; gap:8px; }
+    .dock .btns button { height:64px; font-size:13px; flex-direction:column; gap:2px; padding:0; }
+    #v-race.on { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); grid-template-areas:"sc sc" "L R"; gap:12px; align-items:start; }
+    #sc { grid-area:sc; }
+    .colL, .colR { display:flex; flex-direction:column; gap:12px; min-width:0; }
+    .colL { grid-area:L; } .colR { grid-area:R; }
+    #minimap canvas { min-height:min(52vh,520px); }
+    .pos { font-size:96px; }
+    #v-more.on, #v-box.on, #v-weekend.on { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
+    #v-more.on > *, #v-box.on > *, #v-weekend.on > * { margin:0; }
   }
-  @media (orientation:landscape) and (min-width:700px) {
-    body { padding-bottom:10px; padding-right:calc(212px + env(safe-area-inset-right)); padding-top:max(8px,env(safe-area-inset-top)); }
-    .top { margin-bottom:6px; } .tabs { margin-bottom:8px; } .tabs button { padding:6px; }
-    .card { padding:10px 12px; }
-    #v-race.on { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start; grid-auto-flow:row dense; }
-    #sc, #hero-race, #hero-quali { grid-column:1 / 3; }
-    #rivals, #last, #live { grid-column:1; }
-    #minimap { grid-column:2; }
-    .live { padding:8px 12px; } .pedal { min-height:72px; } .core .gr { font-size:44px; }
-    #v-race .row2 { grid-column:2; gap:8px; }
-    .pos { font-size:46px; } .bigdelta { font-size:42px; } .delta { font-size:24px; }
-    .rv { padding:6px 0; } .rv .gap { font-size:22px; } .rv .nm { font-size:15px; }
-    .ty b { font-size:15px; } .tyres { margin-top:8px; }
-    .fact b { font-size:14px; } .radio p { font-size:15px; }
-    .dock { left:auto; top:0; width:200px; right:0; display:flex; flex-direction:column; justify-content:flex-end;
-            padding:10px 12px max(10px,env(safe-area-inset-bottom)) 0; background:none; }
-    .btns { grid-template-columns:1fr; } .btns button { height:96px; font-size:20px; }
-    #mic { white-space:normal; }
+  @media (orientation:landscape) and (min-width:1300px) {
+    #v-more.on, #v-box.on, #v-weekend.on { grid-template-columns:1fr 1fr 1fr; }
+    #v-race.on { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
+  }
+
+  /* ---------- come l'anteprima ---------- */
+  html, body { font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #hero-race, #hero-quali { background:var(--panel); }
+  #hero-race::after, #hero-quali::after { display:none; }
+  #hero-race > div:first-child > .lbl, #dbar1 { display:none; }
+  .earchip { display:flex; align-items:center; gap:6px; height:30px; padding:0 10px; border-radius:15px; background:#1b1d33;
+             color:#a5b4fc; font-size:12px; font-weight:600; flex:none; }
+  #mutebtn, #recq { display:none; }
+  body.ears #voice { display:none; }
+  #earline { display:none; align-items:center; justify-content:center; gap:8px; font-size:12px; color:var(--dim); padding:4px 0 2px; }
+  body.ears #earline { display:flex; }
+  body.ears .dock .btns, body.ears #mic { display:none; }
+  body.ears { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+  .row2.intab { margin-top:10px; }
+  .row2.intab .card { background:#0e0f13; }
+  @media (orientation:landscape) and (min-width:900px) {
+    body.ears { padding-bottom:14px; }
+    body.ears #earline { margin-top:auto; flex-direction:column; text-align:center; font-size:11px; }
   }
 </style>
 </head>
@@ -369,6 +441,7 @@
     <small><span class="dot" id="dot"></span><span id="sess">in attesa della PS5…</span></small>
   </div></div>
   <a class="pschip" id="pschip" href="/collegamento"><span class="dot" id="psdot"></span>PS5</a>
+  <span class="earchip" id="earchip" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/></svg>Cuffie</span>
   <button class="icon" id="mutebtn" title="Silenzio radio" aria-label="Silenzio radio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg></button>
   <button class="icon" id="voice" title="Voce">🔇</button>
   <button class="icon" id="recq" title="Registra la sessione" aria-label="Registra la sessione"><i class="recdot"></i></button>
@@ -391,7 +464,7 @@
 <!-- =============== IN PISTA =============== -->
 <div class="view on" id="v-race">
   <div id="sc" class="wide">SAFETY CAR</div>
-
+  <div class="colR">
   <div class="card hero wide" id="hero-race">
     <div>
       <div class="lbl">Posizione</div>
@@ -402,11 +475,11 @@
       <div>
         <div class="invalid" id="inv1">GIRO NON VALIDO</div>
         <div class="delta num" id="delta1">–</div>
+        <div class="dlbl" id="dlbl1"></div>
       </div>
       <div class="dbar" id="dbar1"><i></i></div>
     </div>
   </div>
-
   <div class="card hero wide" id="hero-quali" style="display:none">
     <div>
       <div class="lbl" id="deltalbl">Delta sul migliore</div>
@@ -423,7 +496,23 @@
       <div id="qclock" style="display:none">Tempo <b id="qtime">–</b></div>
     </div>
   </div>
-
+  <div class="rivals2" id="rivals" style="display:none">
+    <div class="card gapt"><div class="gi"><span class="lbl" id="ahl">Davanti</span><span class="gn" id="ahn">–</span><span class="gnote" id="aht"></span></div><b class="gv num" id="ahg">–</b></div>
+    <div class="card gapt"><div class="gi"><span class="lbl" id="bhl">Dietro</span><span class="gn" id="bhn">–</span><span class="gnote" id="bht"></span></div><b class="gv num" id="bhg">–</b></div>
+    <div class="chips" id="mates" style="display:none"></div>
+  </div>
+  <div class="mach" id="mach">
+    <div class="card mt"><span class="lbl">Gomme <span id="mcomp"></span></span><b class="num" id="mwear">–</b><small id="mage">–</small></div>
+    <div class="card mt"><span class="lbl">Batteria</span><b class="num" id="mers">–</b><span class="mbar"><i id="mersbar"></i></span></div>
+    <div class="card mt"><span class="lbl">Benzina</span><b class="num" id="mfuel">–</b><small>giri di margine</small></div>
+  </div>
+  <div class="card strat" id="strat" style="display:none">
+    <div class="sh"><span class="lbl">Strategia</span><b id="stxt">–</b><em id="swhen"></em></div>
+    <div class="stint" id="sbar"></div>
+    <small id="snote"></small>
+  </div>
+  </div>
+  <div class="colL">
   <div class="card prox" id="minimap">
     <div class="ptabs" id="ptabs" role="tablist"><button data-p="map" class="on" role="tab">Mappa</button><button data-p="tower" role="tab">Classifica</button><button data-p="tel" role="tab">Telemetria</button></div>
     <div id="pmap">
@@ -443,16 +532,8 @@
     </div>
     <div class="pedal thr"><i id="pthr"></i><small>GAS</small></div>
     </div>
-
-  </div>
-
-  <div class="card radio" id="last">
-    <div class="rhead"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2"/></svg></span><b id="lastwho">INGEGNERE</b><small id="lastts"></small>
-      <span class="rnav"><button id="rprev" aria-label="Messaggio precedente">‹</button><button id="rnext" aria-label="Messaggio successivo">›</button></span></div>
-    <p id="lastmsg">Ciao! Quando sei in pista ti parlo qui.</p>
-  </div>
-
-  <div class="row2">
+    <div id="pcar" style="display:none">
+  <div class="row2 intab">
     <div class="card">
       <div class="tyhead"><span class="lbl">Gomme</span><span id="comp"></span></div>
       <div class="car">
@@ -478,14 +559,32 @@
       <div class="rain" id="rain"></div>
     </div>
   </div>
+    </div>
 
-  <div class="card rivals" id="rivals" style="display:none">
-    <div class="rv"><span class="who">DAVANTI</span><span class="nm" id="ahn">–</span><span class="gap num" id="ahg">–</span></div>
-    <div class="rv"><span class="who">DIETRO</span><span class="nm" id="bhn">–</span><span class="gap num" id="bhg">–</span></div>
-    <div class="chips" id="mates" style="display:none"></div>
   </div>
+  <div class="card prog" id="prog" style="display:none">
+    <div class="lbl">Programma delle prove</div>
+    <div class="psteps" id="psteps"></div>
+    <div id="plong" style="display:none">
+      <div class="plhead"><span class="lbl" id="plcomp">Prova lunga</span><b class="num" id="plcount">0/8</b></div>
+      <div class="plseg" id="plseg"></div>
+    </div>
+  </div>
+  <div class="card radio" id="last">
+    <div class="rhead"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2"/></svg></span><b id="lastwho">INGEGNERE</b><small id="lastts"></small>
+      <span class="rnav"><button id="rprev" aria-label="Messaggio precedente">‹</button><button id="rnext" aria-label="Messaggio successivo">›</button></span></div>
+    <p id="lastmsg">Ciao! Quando sei in pista ti parlo qui.</p>
+  </div>
+  </div>
+</div>
 
-
+<!-- =============== WEEKEND: prove, qualifica, gara =============== -->
+<div class="view" id="v-weekend">
+  <div class="card"><div class="lbl" id="wktitle">Weekend</div><div class="wsteps" id="wksteps"></div></div>
+  <div class="card" id="wkprac"><div class="lbl">Dalle prove</div><div id="wkpracb"></div></div>
+  <div class="card" id="wkquali"><div class="lbl">Qualifica</div><div id="wkqualib"></div></div>
+  <div class="card" id="wkrace" style="border-top:3px solid var(--red)"><div class="lbl">Piano gara</div><div id="wkraceb"></div></div>
+  <div class="ask"><button class="btn red" id="wkbrief" style="flex:1">🔊 Ascolta il briefing</button></div>
 </div>
 
 <!-- =============== BOX: quello che guardi dopo ============== -->
@@ -502,6 +601,7 @@
     <a class="tile" href="/assetti"><span style="color:#6ee7a0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></span><span><b>Assetti</b><small id="tass">tuoi e degli amici</small></span></a>
     <a class="tile" href="/classifica"><span style="color:#c4b5fd"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg></span><span><b>Classifica giri</b><small id="tclas">pista per pista</small></span></a>
     <a class="tile" href="/analisi"><span style="color:#ff8a8a"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg></span><span><b>Analisi giri</b><small id="tana">mappa, grafici, staccate</small></span></a>
+    <a class="tile" href="/profilo"><span style="color:#fda4af"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span><b>Profilo pilota</b><small>punti forti e deboli</small></span></a>
   </div>
   <div class="card">
     <div class="lbl">Tempi</div>
@@ -541,7 +641,6 @@
     <div id="log"></div>
   </div>
 
-  <a class="card linkbtn" href="/collegamento"><span>🔌 Controllo del collegamento con la PS5</span><span>›</span></a>
 
   <div class="card" id="backupcard">
     <div class="lbl">💾 Backup dei dati</div>
@@ -551,6 +650,7 @@
     <div class="ask"><a class="btn red" id="bkdown" href="/api/backup" download style="flex:1;text-align:center;text-decoration:none">⬇ Scarica il backup</a>
       <label class="btn" style="flex:1;text-align:center">⬆ Ripristina<input type="file" id="bkfile" accept=".zip,application/zip" hidden></label></div>
     <div class="hint" id="bkinfo"></div>
+    <div class="hint" id="bkauto" style="margin-top:6px"></div>
   </div>
 
   <div class="card" id="reccard">
@@ -567,47 +667,7 @@
 
 <!-- =============== IMPOSTAZIONI =============== -->
 <div class="view" id="v-more">
-  <div class="card">
-    <div class="lbl">Quanto parla l'ingegnere</div>
-    <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
-    <div class="hint">Poco: solo cose importanti. Normale: anche i distacchi a ogni giro. Tanto: anche consigli di guida in gara.</div>
-    <label class="chk" style="margin-top:10px;font-size:14px"><input type="checkbox" id="quiet">
-      <span>Non parlare in curva: aspetta il rettilineo (i messaggi compaiono subito scritti)</span></label>
-    <label class="chk" style="margin-top:8px;font-size:14px"><input type="checkbox" id="mutechk">
-      <span>Silenzio radio: solo le cose urgenti (safety car, box, bandiere, penalità)</span></label>
-    <div class="hint">A voce, con 📻 Radio: «Radio, silenzio» · «Radio, parla» · «Radio, parla di più» ·
-      «Radio, parla di meno» · «Radio, ripeti».</div>
-  </div>
-
-  <div class="card" id="dispcard">
-    <div class="lbl">📱 Schermo</div>
-    <div class="ask"><button class="btn" id="farbtn" style="flex:1">🔭 Vista da lontano (telefono vicino alla TV)</button></div>
-  </div>
-
-  <div class="card" id="goalcard">
-    <div class="lbl">🎯 Tempo obiettivo</div>
-    <div class="hint" id="goalhint">Entra in pista: l'obiettivo vale per la pista e la categoria di macchina che stai guidando.</div>
-    <div class="goalrow"><input class="inp" id="goal" placeholder="es. 1:20.500" inputmode="decimal" autocomplete="off">
-      <button class="btn red" id="goalsave">Salva</button><button class="btn" id="goalclear">Togli</button></div>
-    <div class="hint">Con un obiettivo il delta e la barra sono calcolati su quel tempo, e a fine giro l'ingegnere ti dice
-      quanto ti manca. Quando lo raggiungi te lo dice.</div>
-  </div>
-
-  <div class="card" id="traincard">
-    <div class="lbl">🧠 Allenamento mirato (prova libera e time trial)</div>
-    <label class="chk" style="margin-top:6px;font-size:14px"><input type="checkbox" id="trainchk">
-      <span>Lavora su una staccata alla volta</span></label>
-    <div class="hint" id="trainhint">Dopo un paio di giri l'ingegnere sceglie la staccata dove perdi di più e ti parla solo di
-      quella, finché non la sistemi. Poi passa alla prossima. A voce: «Radio, allenamento».</div>
-  </div>
-
-  <div class="card" id="workcard">
-    <div class="lbl">🎯 Su cosa lavorare</div>
-    <div class="seg" id="worksel" style="grid-template-columns:repeat(4,1fr)"><button data-w="tutto" class="on">Tutto</button><button data-w="frenata">Frenata</button><button data-w="centro">Centro curva</button><button data-w="uscita">Uscita</button></div>
-    <div class="hint">L'ingegnere ti dà a voce solo quel tipo di consiglio, e prima della curva ti ricorda cosa fare
-      sulle 1-2 curve dove perdi di più («Curva 14, puoi frenare 15 metri dopo»). Gli altri consigli restano scritti.
-      A voce: «Radio, lavoriamo sulla frenata».</div>
-  </div>
+  <div class="grp">Voce e Discord</div>
 
   <div class="card" id="voicecard">
     <div class="lbl">🔊 Voce dell'ingegnere</div>
@@ -645,9 +705,61 @@
       <label>Token del bot <input id="dtoken" placeholder="incolla il token" autocomplete="off"></label>
       <label>Canale vocale <input id="dchan" placeholder="es. Box radio" autocomplete="off"></label>
       <label>Il tuo nome utente Discord <input id="duser" placeholder="es. serdavos" autocomplete="off"></label>
+      <label>Canale di testo per il riepilogo delle gare (facoltativo) <input id="dtext" placeholder="es. gare" autocomplete="off"></label>
       <div class="ask"><button class="btn main" id="dsave" style="flex:1">Salva e collega</button></div>
     </div>
     <div class="hint" id="dstat"></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">Quanto parla l'ingegnere</div>
+    <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
+    <div class="hint">Poco: solo cose importanti. Normale: anche i distacchi a ogni giro. Tanto: anche consigli di guida in gara.</div>
+    <label class="chk" style="margin-top:10px;font-size:14px"><input type="checkbox" id="quiet">
+      <span>Non parlare in curva: aspetta il rettilineo (i messaggi compaiono subito scritti)</span></label>
+    <label class="chk" style="margin-top:8px;font-size:14px"><input type="checkbox" id="mutechk">
+      <span>Silenzio radio: solo le cose urgenti (safety car, box, bandiere, penalità)</span></label>
+    <div class="hint">A voce, con 📻 Radio: «Radio, silenzio» · «Radio, parla» · «Radio, parla di più» ·
+      «Radio, parla di meno» · «Radio, ripeti».</div>
+  </div>
+
+  <div class="grp">Come ti allena l'ingegnere</div>
+
+  <div class="card" id="workcard">
+    <div class="lbl">🎯 Su cosa lavorare</div>
+    <div class="seg" id="worksel" style="grid-template-columns:repeat(4,1fr)"><button data-w="tutto" class="on">Tutto</button><button data-w="frenata">Frenata</button><button data-w="centro">Centro curva</button><button data-w="uscita">Uscita</button></div>
+    <div class="hint">L'ingegnere ti dà a voce solo quel tipo di consiglio, e prima della curva ti ricorda cosa fare
+      sulle 1-2 curve dove perdi di più («Curva 14, puoi frenare 15 metri dopo»). Gli altri consigli restano scritti.
+      A voce: «Radio, lavoriamo sulla frenata».</div>
+  </div>
+
+  <div class="card" id="traincard">
+    <div class="lbl">🧠 Allenamento mirato (prova libera e time trial)</div>
+    <label class="chk" style="margin-top:6px;font-size:14px"><input type="checkbox" id="trainchk">
+      <span>Lavora su una staccata alla volta</span></label>
+    <div class="hint" id="trainhint">Dopo un paio di giri l'ingegnere sceglie la staccata dove perdi di più e ti parla solo di
+      quella, finché non la sistemi. Poi passa alla prossima. A voce: «Radio, allenamento».</div>
+  </div>
+
+  <div class="card" id="goalcard">
+    <div class="lbl">🎯 Tempo obiettivo</div>
+    <div class="hint" id="goalhint">Entra in pista: l'obiettivo vale per la pista e la categoria di macchina che stai guidando.</div>
+    <div class="goalrow"><input class="inp" id="goal" placeholder="es. 1:20.500" inputmode="decimal" autocomplete="off">
+      <button class="btn red" id="goalsave">Salva</button><button class="btn" id="goalclear">Togli</button></div>
+    <div class="hint">Con un obiettivo il delta e la barra sono calcolati su quel tempo, e a fine giro l'ingegnere ti dice
+      quanto ti manca. Quando lo raggiungi te lo dice.</div>
+  </div>
+
+  <div class="grp">Dati e collegamenti</div>
+
+  <a class="card linkbtn" href="/collegamento"><span>🔌 Controllo del collegamento con la PS5</span><span>›</span></a>
+
+  <div class="card" id="repcard">
+    <div class="lbl">📝 Segnalazioni</div>
+    <div class="hint">Quando l'ingegnere dice una cosa sbagliata, di' «Radio, segnala» (o «hai sbagliato»): salvo il momento,
+      la pista, il giro e gli ultimi messaggi. Poi scarica il file e mandalo a chi sistema l'app.</div>
+    <div class="hint" id="replist"></div>
+    <div class="ask"><a class="btn" id="repdl" href="/api/segnalazioni?scarica=1" style="flex:1;text-align:center;text-decoration:none">⬇ Scarica le segnalazioni</a></div>
   </div>
 
   <details class="card" id="settings">
@@ -688,10 +800,16 @@
       <a href="/logout" class="btn" style="text-align:center;text-decoration:none;display:block">Esci</a>
     </div>
   </details>
+
+  <div class="card" id="dispcard">
+    <div class="lbl">📱 Schermo</div>
+    <div class="ask"><button class="btn" id="farbtn" style="flex:1">🔭 Vista da lontano (telefono vicino alla TV)</button></div>
+  </div>
 </div>
 
 <!-- =============== PULSANTI =============== -->
 <div class="dock">
+  <div id="earline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/></svg>Ti sento dalle cuffie: comincia con «Radio…»</div>
   <div id="mic"></div>
   <div class="btns">
     <button id="ptt">🎙️ Parla</button>
@@ -699,6 +817,7 @@
   </div>
   <nav class="nav" id="nav" aria-label="Sezioni">
     <button data-v="race" class="on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h13l-2 4 2 4H4"/></svg><span>Pista</span></button>
+    <button data-v="weekend"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Weekend</span></button>
     <button data-v="box"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span>Box</span></button>
     <button data-v="more"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Impostazioni</span></button>
   </nav>
@@ -714,11 +833,12 @@ const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return
 // ---------- schede ----------
 // tre sezioni: Pista (mentre guidi), Box (quello che guardi dopo), Impostazioni
 function showView(v) {
-  if (!["race", "box", "more"].includes(v)) v = "race";
+  if (!["race", "weekend", "box", "more"].includes(v)) v = "race";
   for (const b of $("nav").children) b.classList.toggle("on", b.dataset.v === v);
-  for (const id of ["race", "box", "more"]) $("v-" + id).classList.toggle("on", id === v);
+  for (const id of ["race", "weekend", "box", "more"]) $("v-" + id).classList.toggle("on", id === v);
   store.set("vista", v);
   if (v === "box" && typeof loadBox === "function") loadBox();
+  if (v === "weekend" && typeof loadWeekend === "function") loadWeekend();
   window.scrollTo(0, 0);
 }
 $("nav").onclick = e => { const b = e.target.closest("button"); if (b) showView(b.dataset.v); };
@@ -1244,6 +1364,8 @@ function render(s) {
     (s.rec ? ' · <b style="color:var(--bad)">● REC</b>' : "") +
     (s.muted ? ' · <b style="color:var(--warn)">🔇 silenzio radio</b>' : "");
   $("pschip").classList.toggle("on", !!s.online); $("psdot").classList.toggle("on", !!s.online);
+  document.body.classList.toggle("ears", !!s.ears);
+  $("earchip").style.display = s.ears ? "" : "none";
   $("mutebtn").classList.toggle("on", !!s.muted);
   $("recq").classList.toggle("on", !!s.rec);
   applyPtab(race);
@@ -1314,8 +1436,44 @@ function render(s) {
   fl.textContent = s.fuel_laps == null ? "–" : signed(s.fuel_laps, 1) + " giri";
   fl.className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
   $("ers").textContent = s.ers == null ? "–" : s.ers + "%";
+  renderMach(s, race);
+  renderProg(s);
   renderRace(s.race, s);
   if (farOn) renderFar(s);
+}
+
+// ---------- interfaccia v2: gomme/batteria/benzina, programma delle prove ----------
+function renderMach(s, race) {
+  const w = (s.tyre_wear || []).filter(x => x != null), mw = w.length ? Math.round(Math.max(...w)) : null;
+  $("mcomp").innerHTML = s.compound ? compChip(s.compound) : "";
+  $("mwear").textContent = mw == null ? "–" : mw + "%";
+  $("mwear").className = "num " + (mw >= 70 ? "bad" : mw >= 50 ? "warn" : "");
+  $("mage").textContent = s.tyre_age == null ? "usura massima" : (s.tyre_age === 1 ? "1 giro" : s.tyre_age + " giri");
+  $("mers").textContent = s.ers == null ? "–" : s.ers + "%";
+  $("mersbar").style.width = (s.ers || 0) + "%";
+  $("mfuel").textContent = s.fuel_laps == null ? "–" : signed(s.fuel_laps, 1);
+  $("mfuel").className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
+  $("dlbl1").textContent = !race ? "" : s.pace_ms ? "sul passo gara " + fmt(s.pace_ms) : s.target_ms ? "sull'obiettivo " + fmt(s.target_ms) : "sul migliore";
+}
+function renderProg(s) {
+  const p = s.practice || {};
+  $("prog").style.display = p.active ? "" : "none";
+  if (!p.active) return;
+  const saved = p.saved || {}, comps = Object.keys(saved), n = p.stint || 0;
+  const cur = n > 0 && n < p.goal;
+  const longDone = (p.compound && saved[p.compound]) || (!cur && comps.length > 0);
+  const step = (state, i, txt, right) => `<div class="${state}"><i>${state === "done" ? "✓" : i}</i><span>${txt}</span>${right ? `<b>${right}</b>` : ""}</div>`;
+  $("psteps").innerHTML =
+    step(s.best_ms ? "done" : "cur", 1, s.best_ms ? "Giri veloci · riferimento fatto" : "Tre o quattro giri veloci", s.best_ms ? fmt(s.best_ms) : "") +
+    step(longDone && !cur ? "done" : (s.best_ms ? "cur" : ""), 2, cur ? `Prova lunga con le ${esc(p.compound || "")}` : "Prova lunga: 8 giri a ritmo gara",
+         cur ? "in corso" : longDone ? comps.map(c => c).join(", ") : "") +
+    step(comps.length >= 2 ? "done" : "", 3, "Un'altra mescola (facoltativo)", comps.length >= 2 ? comps.length + " mescole" : "");
+  $("plong").style.display = n > 0 ? "" : "none";
+  if (n > 0) {
+    $("plcomp").textContent = "Prova lunga · " + (p.compound || "");
+    $("plcount").innerHTML = `${Math.min(n, p.goal)}<span style="color:var(--dim);font-size:18px">/${p.goal} giri</span>`;
+    $("plseg").innerHTML = Array.from({ length: p.goal }, (_, i) => `<i class="${i < n ? "on" : ""}"></i>`).join("");
+  }
 }
 
 // ---------- vista da lontano ----------
@@ -1424,6 +1582,7 @@ function applyPtab(race) {
   $("pmap").style.display = p === "map" ? "" : "none";
   $("ptower").style.display = p === "tower" ? "" : "none";
   $("live").style.display = p === "tel" ? "" : "none";
+  $("pcar").style.display = p === "tel" ? "" : "none";
 }
 $("ptabs").onclick = e => { const b = e.target.closest("button"); if (b) showPtab(b.dataset.p); };
 const TEAMC = { 0: "#27F4D2", 1: "#E8002D", 2: "#3671C6", 3: "#64C4FF", 4: "#229971", 5: "#FF87BC", 6: "#6692FF", 7: "#B6BABD", 8: "#FF8000", 9: "#52E252",
@@ -1482,10 +1641,47 @@ function drawMini(s) {
 }
 
 function rival(nameId, gapId, r, behind) {
-  if (!r) { $(nameId).textContent = "–"; $(gapId).textContent = "–"; $(gapId).className = "gap num"; return; }
-  $(nameId).innerHTML = `<span>${r.mate ? "🤝 " + esc(r.mate) : esc(r.name)}</span>${r.compound ? compChip(r.compound) : ""}${r.pit ? '<em class="pill">BOX</em>' : ""}`;
-  $(gapId).textContent = (behind ? "−" : "+") + r.gap.toFixed(1);
-  $(gapId).className = "gap num " + (r.gap < 1 ? (behind ? "hot" : "close") : "");
+  const pre = nameId[0] + "h", note = $(pre + "t");
+  $(pre + "l").textContent = (behind ? "Dietro" : "Davanti") + (r && r.pos ? " · P" + r.pos : "");
+  if (!r) { $(nameId).textContent = "–"; $(gapId).textContent = "–"; $(gapId).className = "gv num"; note.textContent = ""; return; }
+  $(nameId).innerHTML = `${esc(r.mate || r.name)}${r.mate ? ` <small style="color:#7dd3fc;font-weight:600">${esc(r.mate_word || "amico")}</small>` : ""}${r.compound ? compChip(r.compound) : ""}${r.pit ? '<em class="pill">BOX</em>' : ""}`;
+  $(gapId).textContent = r.gap.toFixed(1);
+  $(gapId).className = "gv num " + (r.gap < 1 ? (behind ? "hot" : "close") : "");
+  let t = "", cls = "";
+  if (r.wear != null && r.wear >= 50) { t = `gomme al ${r.wear}% · si ferma presto`; cls = "warn"; }
+  else if (r.trend != null && Math.abs(r.trend) >= 0.05) {
+    const closing = r.trend > 0;
+    t = (closing ? "▼ " : "▲ ") + Math.abs(r.trend).toFixed(1) + " a giro · " + (behind ? (closing ? "si avvicina" : "si allontana") : (closing ? "lo prendi" : "scappa"));
+    cls = behind ? (closing ? "bad" : "good") : (closing ? "good" : "bad");
+  } else if (r.compound && r.tyre_age != null) t = `${r.compound} di ${r.tyre_age} giri`;
+  note.textContent = t; note.className = "gnote " + cls;
+}
+const STINT_C = { soft: ["#3a1115", "#ff8a8a"], medie: ["#3a2f0b", "#fcd34d"], dure: ["#262a31", "#e8ecf1"], supersoft: ["#2a1438", "#d8a6ff"],
+                  intermedie: ["#0f2b1b", "#6ee7a0"], "da bagnato": ["#0d2240", "#8ec5ff"] };
+function renderStrat(r) {
+  const p = r.plan, T = r.total_laps;
+  $("strat").style.display = r.is_race ? "" : "none";
+  if (!r.is_race) return;
+  if (!p) { $("stxt").textContent = "Il piano arriva dopo i primi giri"; $("swhen").textContent = ""; $("sbar").style.display = "none";
+            $("snote").textContent = r.pit_ideal ? `Finestra box del gioco: giri ${r.pit_ideal}–${r.pit_latest}` : ""; return; }
+  const now = p.lap_now || 1;
+  if (!p.stop) {
+    $("stxt").textContent = "Nessun'altra sosta: arrivi in fondo"; $("swhen").textContent = "";
+  } else {
+    $("stxt").textContent = `Box giro ${p.lap}` + (p.compound ? ` → ${p.compound}` : "");
+    const k = p.lap - now;
+    $("swhen").textContent = k <= 0 ? "questo giro" : k === 1 ? "tra 1 giro" : `tra ${k} giri`;
+  }
+  const seg = (comp, a, b) => { const c = STINT_C[comp] || ["#262a31", "#e8ecf1"];
+    return `<span style="flex:${Math.max(1, b - a + 1)};background:${c[0]};color:${c[1]}">${esc((comp || "nuove").toUpperCase())} · ${a}–${b}</span>`; };
+  let h = "";
+  if (T) {
+    if (p.stop && p.lap) h = seg(p.now, 1, p.lap) + '<span class="cut"></span>' + seg(p.compound, p.lap + 1, T);
+    else h = seg(p.now, 1, T);
+    h += `<span class="now" style="left:${Math.min(99, (now - 0.5) / T * 100)}%"></span>`;
+  }
+  $("sbar").innerHTML = h; $("sbar").style.display = T ? "" : "none";
+  $("snote").textContent = (p.rejoin ? `Rientri circa P${p.rejoin}` : "") + (p.two_stops ? (p.rejoin ? " · " : "") + "probabile seconda sosta" : "");
 }
 function renderRace(r, s) {
   if (!r) return;
@@ -1499,6 +1695,7 @@ function renderRace(r, s) {
   renderTower(r);
   rival("ahn", "ahg", r.ahead, false);
   rival("bhn", "bhg", r.behind, true);
+  renderStrat(r);
   $("mates").innerHTML = (r.mates || []).map(m => `<span class="chip on">🤝 ${esc(m.name)} P${m.position}</span>`).join("");
   $("mates").style.display = (r.mates || []).length ? "" : "none";
   $("pitw").textContent = r.pit_ideal ? `giri ${r.pit_ideal}–${r.pit_latest}` : (r.pit_stops ? r.pit_stops + " soste" : "–");
@@ -1606,6 +1803,34 @@ $("mutebtn").onclick = async () => {
   await postSettings({ muted: on });
 };
 // ---------- Box: ultima gara e riquadri ----------
+// ---------- weekend ----------
+async function loadWeekend() {
+  try {
+    const j = await fetch("/api/weekend").then(r => r.json());
+    $("wktitle").textContent = j.track && j.track !== "-" ? `Weekend a ${j.track}` + (j.category_name ? " · " + j.category_name : "") : "Weekend";
+    const pr = j.practice || {}, comps = Object.keys(pr), q = j.quali, inRace = j.in_race;
+    const st = (cls, i, name, sub) => `<div class="${cls}"><i>${cls === "done" ? "✓" : i}</i><b>${name}</b><small>${sub}</small></div>`;
+    $("wksteps").innerHTML = st(comps.length ? "done" : "cur", 1, "Prove", comps.length ? comps.length + (comps.length === 1 ? " mescola" : " mescole") : "da fare") +
+      `<span class="ln ${comps.length ? "done" : ""}"></span>` +
+      st(q ? "done" : comps.length ? "cur" : "", 2, "Qualifica", q && q.position ? "P" + q.position : q ? "fatta" : "da fare") +
+      `<span class="ln ${q ? "done" : ""}"></span>` + st(inRace ? "cur" : "", 3, "Gara", inRace ? "in corso" : "dopo");
+    const cc = { soft: ["S", "var(--soft)"], medie: ["M", "var(--medium)"], dure: ["H", "var(--hard)"], supersoft: ["SS", "#c04cff"] };
+    $("wkpracb").innerHTML = comps.length ? '<div class="wrow">' + comps.sort((a, b) => (pr[a].ms || 0) - (pr[b].ms || 0)).map(c => {
+        const x = pr[c], k = cc[c] || ["?", "var(--dim)"];
+        return `<span class="cc" style="border-color:${k[1]};color:${k[1]}">${k[0]}</span><span>${esc(c)} · passo ${fmt(x.ms)}${x.deg >= 40 ? ` · ${(x.deg / 1000).toFixed(1)} s a giro` : ""}</span><b>${x.wear ? "~" + Math.round(70 / x.wear) + " giri" : "–"}</b>`;
+      }).join("") + "</div>"
+      : '<div class="hint">Fai una prova lunga di 8 giri in prova libera: qui vedi quanto durano le gomme e la gara parte con un piano.</div>';
+    $("wkqualib").innerHTML = q ? `<div style="display:flex;align-items:center;gap:14px;margin-top:6px"><b style="font-family:var(--cond);font-size:52px;line-height:.85">${q.position ? "P" + q.position : "–"}</b>
+      <span style="font-size:15px;font-weight:600">${fmt(q.best_ms)}<br><small style="color:var(--dim);font-weight:500">${q.date ? new Date(q.date * 1000).toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : ""}</small></span></div>`
+      : '<div class="hint">Nessuna qualifica su questa pista negli ultimi giorni.</div>';
+    const rc = j.race;
+    $("wkraceb").innerHTML = rc && rc.text ? `<div style="font-size:17px;font-weight:700;margin-top:6px">${esc(rc.text)}</div>`
+      : `<div class="hint">${comps.length ? "Il piano lo preparo quando entri in gara, partendo dalle prove." : "Senza prove il piano arriva dopo i primi giri di gara."}</div>`;
+    $("wkbrief").style.display = inRace || comps.length ? "" : "none";
+  } catch (e) {}
+}
+$("wkbrief").onclick = () => fetch("/api/briefing", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+
 async function loadBox() {
   try {
     const j = await fetch("/api/gare").then(r => r.json());
@@ -1640,6 +1865,24 @@ function showDiscord(d) {
   if (d.heard && d.heard.length) t += `<br>Ultima frase sentita: «${esc(d.heard[d.heard.length - 1].text)}»`;
   $("dstat").innerHTML = t;
 }
+async function loadAutoBackups() {
+  try {
+    const j = await fetch("/api/backup_auto").then(r => r.json());
+    const day = t => new Date(t * 1000).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+    $("bkauto").innerHTML = j.list && j.list.length
+      ? `🔁 Backup automatici sul server (ogni ${j.days} giorni, gli ultimi ${j.keep}): ` +
+        j.list.map(x => `<a href="/api/backup_auto?f=${encodeURIComponent(x.name)}" style="color:var(--accent)">${day(x.date)}</a>`).join(" · ")
+      : `🔁 Ogni ${j.days || 7} giorni il server fa da solo una copia dei tuoi dati (ne tiene ${j.keep || 4}).`;
+  } catch (e) {}
+}
+async function loadReports() {
+  try {
+    const r = await fetch("/api/segnalazioni").then(r => r.json());
+    $("repdl").style.display = r.n ? "" : "none";
+    $("replist").innerHTML = r.n ? `${r.n} ${r.n === 1 ? "segnalazione" : "segnalazioni"}. Ultime: ` +
+      r.ultime.map(x => `${esc(x.quando)} · ${esc(x.pista || "")}${x.giro ? " giro " + x.giro : ""}`).join("; ") : "Nessuna segnalazione per ora.";
+  } catch (e) {}
+}
 let dpoll = 0;
 async function pollDiscord() {
   clearTimeout(dpoll);
@@ -1650,7 +1893,7 @@ async function pollDiscord() {
   } catch (e) {}
 }
 $("dsave").onclick = async () => {
-  const body = { discord_channel: $("dchan").value.trim(), discord_user: $("duser").value.trim() };
+  const body = { discord_channel: $("dchan").value.trim(), discord_user: $("duser").value.trim(), discord_text: $("dtext").value.trim() };
   if ($("dtoken").value.trim()) body.discord_token = $("dtoken").value.trim();
   if (!document.querySelector("#aout button.on") || document.querySelector("#aout button.on").dataset.o === "telefono") { body.audio_out = "discord"; setAout("discord"); }
   await postSettings(body); $("dtoken").value = ""; setTimeout(pollDiscord, 800);
@@ -1749,8 +1992,9 @@ async function loadSettings() {
     setWork(s.work_on || "tutto");
     setAout(s.audio_out || "telefono");
     $("dtoken").placeholder = s.discord_token ? "salvato: " + s.discord_token : "incolla il token";
-    $("dchan").value = s.discord_channel || ""; $("duser").value = s.discord_user || "";
+    $("dchan").value = s.discord_channel || ""; $("duser").value = s.discord_user || ""; $("dtext").value = s.discord_text || "";
     showDiscord(s.discord);
+    loadReports(); loadAutoBackups();
     $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
     if (s.user) {
       $("userline").style.display = "block"; $("uname").textContent = s.user;

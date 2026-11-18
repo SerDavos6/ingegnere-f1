@@ -16,6 +16,7 @@ import json
 import os
 import platform
 import queue
+import random
 import re
 import shutil
 import struct
@@ -248,6 +249,7 @@ class DiscordLink:
         self.bot_name = self.channel = self.guild = self.bot_id = None
         self.voice_in = None          # None = non so ancora, True/False
         self.heard = []               # ultime frasi sentite (per la pagina di diagnosi)
+        self.listen_until = 0         # dopo un "Radio" da solo, la frase seguente è la domanda
         self.out_q = queue.Queue(maxsize=20)
         self.lock = threading.Lock()
         runtime.on_whisper.append(lambda: self.configure(self.t.load_cfg()))
@@ -260,7 +262,8 @@ class DiscordLink:
         channel = (cfg.get("discord_channel") or "").strip()
         mode = cfg.get("audio_out") if cfg.get("audio_out") in MODES else "telefono"
         want = bool(token and channel) and mode != "telefono"
-        key = (token, channel, (cfg.get("discord_user") or "").strip(), bool(self.rt.whisper)) if want else None
+        key = (token, channel, (cfg.get("discord_user") or "").strip(), bool(self.rt.whisper),
+               (cfg.get("discord_text") or "").strip()) if want else None
         if key == self.cfg_key and (not want or self.proc and self.proc.poll() is None):
             return
         self.stop()
@@ -281,10 +284,11 @@ class DiscordLink:
         if self.cfg_key != key:
             return
         # Whisper si installa dopo Node: se arriva mentre il bot gira, il bot ripartirà con la voce in ingresso
-        token, channel, user, _ = key
+        token, channel, user, _, _ = key
         for f in ("bot.mjs", "stt-worker.mjs"):
             shutil.copy(os.path.join(HERE, "discord", f), os.path.join(self.rt.root, f))
-        bot_cfg = {"token": token, "channel": channel, "user": user, "whisper": self.rt.whisper}
+        bot_cfg = {"token": token, "channel": channel, "user": user, "whisper": self.rt.whisper,
+                   "text_channel": (self.t.load_cfg().get("discord_text") or "").strip()}
         env = dict(os.environ, BOT_CFG=json.dumps(bot_cfg), HOME=self.rt.root)
         lp = self.rt.lib_path()
         if lp:
@@ -356,12 +360,18 @@ class DiscordLink:
         """Il pilota ha parlato su Discord: rispondo solo se la frase comincia con "Radio"."""
         self.heard = (self.heard + [{"t": time.time(), "text": text, "ms": ms}])[-8:]
         m = WAKE.match(_norm(text))
-        if not m:
+        if m:
+            q = _norm(text)[m.end():].strip(" ,.!?")
+        elif time.time() < self.listen_until:
+            q = _norm(text).strip(" ,.!?")          # hai detto solo "Radio": questa è la domanda
+        else:
             return                                  # sta parlando con l'amico, non con me
-        q = _norm(text)[m.end():].strip(" ,.!?")
+        self.listen_until = 0
         self.t.emit("pilota", f"🎙️ {text.strip()}", False, 1)
         if not q:
-            self.t.emit("ingegnere", "Dimmi.", True, 2)
+            # solo "Radio": rispondo subito e per qualche secondo ascolto la domanda anche senza "Radio"
+            self.listen_until = time.time() + 8
+            self.t.emit("ingegnere", random.choice(("Dimmi.", "Ti ascolto.", "Vai, ti sento.")), True, 2)
             return
         threading.Thread(target=self.t.ask, args=(q,), daemon=True).start()
 
@@ -399,6 +409,16 @@ class DiscordLink:
             except Exception as e:
                 print(f"[{self.t.name}] discord: audio non inviato ({e})", flush=True)
 
+    def post(self, text):
+        """Un messaggio scritto nel canale di testo del server (riepilogo della gara)."""
+        p = self.proc
+        if p and p.poll() is None:
+            try:
+                p.stdin.write(json.dumps({"op": "post", "text": text[:1900]}) + "\n")
+                p.stdin.flush()
+            except Exception as e:
+                print(f"[{self.t.name}] discord: messaggio non inviato ({e})", flush=True)
+
     def status(self):
         txt = {"spento": "spento", "avvio": self.detail or "avvio…", "connesso": f"bot {self.bot_name} collegato, {self.detail}",
                "nel_canale": f"nel canale «{self.channel}» di {self.guild}", "errore": self.detail}
@@ -406,5 +426,5 @@ class DiscordLink:
                 "channel": self.channel, "guild": self.guild, "voice_in": self.voice_in,
                 "runtime": self.rt.status(), "heard": self.heard[-5:],
                 # link per invitare il bot nel tuo server: vedere i canali, entrare, parlare, attività vocale
-                "invite": f"https://discord.com/oauth2/authorize?client_id={self.bot_id}&scope=bot&permissions=36701184"
+                "invite": f"https://discord.com/oauth2/authorize?client_id={self.bot_id}&scope=bot&permissions=36703232"
                 if self.bot_id else None}

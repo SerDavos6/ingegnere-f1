@@ -15,8 +15,8 @@ import zipfile
 
 import recorder
 
-BACKUP_DIRS = ("dati", "riferimenti", "amici", "assetti")
-BACKUP_FILES = ("config.json",)
+BACKUP_DIRS = ("dati", "riferimenti", "amici", "assetti", "prove")
+BACKUP_FILES = ("config.json", "segnalazioni.json")
 
 
 # --------------------------------------------------------------------------- storico gare
@@ -130,6 +130,37 @@ def make_backup(root):
             if os.path.exists(os.path.join(root, f)):
                 z.write(os.path.join(root, f), f)
     return path
+
+
+AUTO_DAYS, AUTO_KEEP = 7, 4
+
+
+def auto_backups(root):
+    d = os.path.join(root, "backup_auto")
+    try:
+        names = sorted(f for f in os.listdir(d) if f.startswith("backup-") and f.endswith(".zip"))
+    except OSError:
+        return []
+    return [{"name": f, "size": os.path.getsize(os.path.join(d, f)),
+             "date": os.path.getmtime(os.path.join(d, f))} for f in reversed(names)]
+
+
+def auto_backup(root, force=False):
+    """Una copia dei dati ogni settimana sul server (le ultime 4): se cancelli qualcosa per sbaglio
+    o un aggiornamento va storto, ritrovi i giri di qualche giorno prima."""
+    have = auto_backups(root)
+    if not force and have and time.time() - have[0]["date"] < AUTO_DAYS * 86400:
+        return None
+    if not os.path.isdir(os.path.join(root, "dati")):
+        return None                         # utente che non ha ancora mai corso
+    d = os.path.join(root, "backup_auto")
+    os.makedirs(d, exist_ok=True)
+    tmp = make_backup(root)
+    dest = os.path.join(d, time.strftime("backup-%Y%m%d-%H%M.zip"))
+    shutil.move(tmp, dest)
+    for old in auto_backups(root)[AUTO_KEEP:]:
+        os.remove(os.path.join(d, old["name"]))
+    return dest
 
 
 def restore_backup(root, zip_path):

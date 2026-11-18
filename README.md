@@ -194,6 +194,13 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **«Radio, segnala»**: salva il momento (pista, giro, ultimi messaggi) quando l'ingegnere sbaglia; si scaricano
+  dalle Impostazioni. **«Radio, mi senti?»** → "Sì, forte e chiaro". «Radio» da solo → "Dimmi" e ascolta la domanda.
+- **Prove libere con un programma**: giri veloci, poi prova lunga di 8 giri; misura passo, calo e usura per mescola
+  (cartella prove/). Il **briefing della gara** e la strategia dei primi giri usano questi dati.
+- **Riepilogo della gara su Discord** in un canale di testo, con il link all'analisi.
+- **Backup automatico** ogni 7 giorni sul server (ultimi 4), scaricabili dal Box.
+- **Profilo pilota** (/profilo): risultati, dove lasci il tempo su tutte le piste, curve peggiori per pista, tendenza.
 - **Voce nelle cuffie della PS5 con Discord** (guida in app: /discord): un bot Discord tuo entra in un canale vocale
   e dice i messaggi dell'ingegnere; la PS5 entra nello stesso canale. Ascolta solo il suo pilota: «Radio, …» nel
   microfono delle cuffie e risponde. Il server installa da solo Node.js, le librerie Discord e Whisper

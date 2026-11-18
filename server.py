@@ -33,6 +33,8 @@ import utenti
 import voce_ai
 import voce_piper
 import discord_bridge
+import pronuncia
+import profilo
 import storico
 import voci
 from coach import Coach
@@ -84,6 +86,9 @@ class Tenant:
         self.coach.targets = dict(cfg.get("targets") or {})
         self.coach.work_on = cfg.get("work_on") if cfg.get("work_on") in WORK_ON else "tutto"
         self.coach.prewarm = self.prewarm
+        self.coach.on_report = self.save_report
+        self.coach.on_race_end = self.race_summary
+        self.public_base = None
         self._warmed = set()
         self.audio_out = cfg.get("audio_out") if cfg.get("audio_out") in discord_bridge.MODES else "telefono"
         self.discord = discord_bridge.DiscordLink(self, DISCORD)
@@ -206,6 +211,9 @@ class Tenant:
             snap = self.coach.snapshot()
         snap["online"] = time.time() - self.stats["last_packet"] < 2
         snap["rec"] = self.rec.active
+        # voce in cuffia: con Discord collegato il telefono non deve avere i pulsanti Parla/Radio
+        snap["ears"] = self.audio_out != "telefono" and self.discord.active()
+        snap["audio_out"] = self.audio_out
         snap["packets"] = self.stats["packets"]
         return snap
 
@@ -301,6 +309,97 @@ class Tenant:
         return sorted(out, key=lambda x: x["started"] or 0)
 
     # ---- voce AI
+    # ---- «Radio, segnala»: il momento in cui l'ingegnere ha detto una cosa sbagliata
+    def report_path(self):
+        return os.path.join(self.root, "segnalazioni.json")
+
+    def reports(self):
+        try:
+            with open(self.report_path()) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return []
+
+    def save_report(self, text):
+        c = self.coach
+        ld = c.last_lapdata or {}
+        rep = {"t": time.time(), "quando": time.strftime("%d/%m/%Y %H:%M:%S"), "detto": text.strip(),
+               "pista": c.track_name, "categoria": c.session.get("category_name"),
+               "sessione": c.session.get("session_type"), "gara": c.in_race, "giro": ld.get("lap_num"),
+               "metri": round(ld.get("lap_distance") or 0), "posizione": ld.get("position"),
+               "registrazione": self.rec.active,
+               # gli ultimi messaggi dell'ingegnere: di solito l'errore è lì
+               "messaggi": [{"tipo": m["kind"], "testo": m["text"], "voce": m["speak"],
+                             "secondi_fa": round(time.time() - m["ts"])} for m in self.recent[-12:]]}
+        try:
+            snap = c.snapshot()          # (siamo già dentro ask(), che tiene il lock)
+            rep["stato"] = {k: snap.get(k) for k in ("lap", "position", "delta", "last_ms", "best_ms", "pace_ms",
+                                                    "tyres", "wear", "compound", "ers_pct", "fuel_laps")}
+        except Exception:
+            pass
+        reps = (self.reports() + [rep])[-100:]
+        tmp = self.report_path() + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(reps, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self.report_path())
+        print(f"[{self.name}] segnalazione {len(reps)}: {rep['pista']} giro {rep['giro']}", flush=True)
+        return len(reps)
+
+    def weekend(self):
+        """Prove → qualifica → gara sulla pista di adesso (o dell'ultima sessione)."""
+        c = self.coach
+        track_id, cat, track = c.track_id, c.category, c.track_name
+        sess = recorder.list_sessions(self.data_dir)
+        if track_id is None and sess:
+            last = max(sess, key=lambda m: m.get("started") or 0)
+            track_id, cat, track = last.get("track_id"), last.get("category"), last.get("track")
+        out = {"track": track, "category_name": c.session.get("category_name"), "practice": {}, "quali": None,
+               "race": None, "session_type": c.session.get("session_type"), "in_race": c.in_race}
+        if track_id is None:
+            return out
+        out["practice"] = c.practice.load(track_id, cat)
+        # qualifica più recente su questa pista, negli ultimi 3 giorni
+        qs = [m for m in sess if m.get("track_id") == track_id and (m.get("category") or None) == (cat or None)
+              and "qualific" in str(m.get("session", "")).lower() and time.time() - (m.get("started") or 0) < 3 * 86400]
+        if qs:
+            q = max(qs, key=lambda m: m.get("started") or 0)
+            ok = [l for l in q.get("laps", []) if l.get("valid") and l.get("ms")]
+            pos = [l.get("position") for l in q.get("laps", []) if l.get("position")]
+            out["quali"] = {"best_ms": min((l["ms"] for l in ok), default=None), "position": pos[-1] if pos else None,
+                            "date": q.get("started"), "id": q.get("id")}
+        if c.in_race:
+            with self.lock:
+                r = c.race
+                try:
+                    p = r.strategy.plan()
+                    out["race"] = {"total_laps": c.session.get("total_laps"), "plan": p,
+                                   "text": r.strategy.describe(p), "compound": c.status.get("compound")}
+                except Exception as e:
+                    out["race"] = {"error": str(e)}
+        return out
+
+    def race_summary(self, me, debrief):
+        """A fine gara il bot scrive il riepilogo in un canale di testo del server Discord."""
+        if not self.discord.active():
+            return
+        c, r = self.coach, self.coach.race
+        grid, pos = r.start_grid, me.get("position")
+        res = me.get("result_status")
+        head = f"🏁 **{c.track_name}** — " + ("**ritirato**" if res in (4, 5, 6, 7) else f"**P{pos}**")
+        if grid and pos and res not in (4, 5, 6, 7):
+            d = grid - pos
+            head += f" (partito P{grid}" + (f", {'+' if d > 0 else ''}{d}" if d else "") + ")"
+        lines = [head]
+        cat = c.session.get("category_name")
+        if cat:
+            lines[0] += f" · {cat}"
+        if debrief:
+            lines.append(debrief)
+        sid = os.path.basename(c.recorder.session_dir or "")
+        if self.public_base and sid:
+            lines.append(f"📊 Analisi dei giri: {self.public_base}/analisi?s={urllib.parse.quote(sid)}")
+        self.discord.post("\n".join(lines))
+
     def prewarm(self, text, kind):
         """Prepara l'audio di un avviso che servirà tra poco (avvisi prima della curva):
         la voce del telefono poi lo trova già pronto in cache."""
@@ -337,7 +436,7 @@ class Tenant:
         # (fallback false: la dashboard vuole una sola voce, quindi niente cambio da voce AI a voce del server)
         if (engine == "piper" or (engine == "ai" and body.get("fallback") is not False)) and PIPER.ready():
             try:
-                return PIPER.synth(text, cid, style), why, "piper"
+                return PIPER.synth(pronuncia.fix(text), cid, style), why, "piper"
             except Exception as e:
                 print(f"[{self.name}] voce del server non disponibile: {e}", flush=True)
                 why = why or "voce del server non disponibile"
@@ -383,6 +482,7 @@ class Tenant:
                 "work_on": self.coach.work_on,
                 "audio_out": self.audio_out, "discord_token": mask(cfg.get("discord_token", "")),
                 "discord_channel": cfg.get("discord_channel", ""), "discord_user": cfg.get("discord_user", ""),
+                "discord_text": cfg.get("discord_text", ""),
                 "discord": self.discord.status(),
                 "target_ms": self.coach.target_ms(), "target_track": self.coach.track_name
                 if self.coach.track_id is not None else None,
@@ -414,7 +514,7 @@ class Tenant:
         if "muted" in body:
             self.coach.muted = cfg["muted"] = bool(body["muted"])
         dsc = False
-        for k in ("discord_token", "discord_channel", "discord_user"):
+        for k in ("discord_token", "discord_channel", "discord_user", "discord_text"):
             if k in body:
                 v = str(body[k] or "").strip()
                 if k == "discord_token" and "…" in v:
@@ -672,6 +772,20 @@ def admin_action(me, body):
     return {"error": "Richiesta non valida."}
 
 
+def backup_loop():
+    """Backup automatici settimanali di ogni utente (controllo ogni ora)."""
+    time.sleep(120)
+    while True:
+        for t in list(TENANTS.values()):
+            try:
+                p = storico.auto_backup(t.root)
+                if p:
+                    print(f"[{t.name}] backup automatico: {os.path.basename(p)}", flush=True)
+            except Exception as e:
+                print(f"[{t.name}] backup automatico non riuscito: {e}", flush=True)
+        time.sleep(3600)
+
+
 def state_loop():
     while True:
         time.sleep(0.1)
@@ -779,6 +893,7 @@ PUBLIC_FILES = {
     "/icon-maskable.png": ("icon-maskable.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/favicon.ico": ("icon-192.png", "image/png"),
+    "/stile.css": ("stile.css", "text/css; charset=utf-8"),
 }
 
 
@@ -855,7 +970,11 @@ class Handler(BaseHTTPRequestHandler):
         if MODE == "locale":
             return TENANTS["locale"]
         name = utenti.user_for(self._cookie("f1s"))
-        return TENANTS.get(name) if name else None
+        t = TENANTS.get(name) if name else None
+        host = self.headers.get("Host")
+        if t and host and MODE == "cloud":
+            t.public_base = "https://" + host          # per i link nei messaggi su Discord
+        return t
 
     def _static(self, name):
         with open(os.path.join(STATIC, name), "rb") as f:
@@ -970,7 +1089,7 @@ class Handler(BaseHTTPRequestHandler):
         t = self._tenant()
         if t is None:
             if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto", "/classifica", "/admin",
-                        "/gare", "/collegamento", "/campionato", "/assetti", "/discord"):
+                        "/gare", "/collegamento", "/campionato", "/assetti", "/discord", "/profilo"):
                 return self._redirect("/login")
             return self._json({"error": "login"}, 401)
         if path == "/benvenuto":
@@ -991,16 +1110,37 @@ class Handler(BaseHTTPRequestHandler):
             self._static("assetti.html")
         elif path in ("/discord", "/discord.html"):
             self._static("discord.html")
+        elif path in ("/profilo", "/profilo.html"):
+            self._static("profilo.html")
+        elif path == "/api/profilo":
+            self._json(profilo.build(t.data_dir))
         elif path == "/api/campionato":
             self._json(championship(t))
         elif path == "/api/assetti":
             self._json({"setups": setups_view(t), "current": t.coach.track_name if t.coach.track_id is not None else None})
         elif path == "/api/gare":
             self._json(storico.gare(t.data_dir))
+        elif path == "/api/segnalazioni":
+            reps = t.reports()
+            if "scarica" in params:
+                return self._send(200, json.dumps(reps, ensure_ascii=False, indent=1).encode(), "application/json",
+                                  {"Content-Disposition": 'attachment; filename="segnalazioni.json"'})
+            self._json({"n": len(reps), "ultime": reps[-5:][::-1]})
+        elif path == "/api/weekend":
+            self._json(t.weekend())
         elif path == "/api/discord":
             self._json(t.discord.status())
         elif path == "/api/collegamento":
             self._json(t.link_status())
+        elif path == "/api/backup_auto":
+            have = storico.auto_backups(t.root)
+            f = params.get("f")
+            if f:
+                if f not in {x["name"] for x in have}:
+                    return self._json({"error": "non trovato"}, 404)
+                return self._send_file(os.path.join(t.root, "backup_auto", f),
+                                       f"ingegnere-f1-{t.name}-{f}", "application/zip")
+            self._json({"list": have, "days": storico.AUTO_DAYS, "keep": storico.AUTO_KEEP})
         elif path == "/api/backup":
             zp = storico.make_backup(t.root)
             try:
@@ -1169,6 +1309,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/use_ref":
             out = t.use_reference(body)
             return self._json(out, 400 if "error" in out else 200)
+        if self.path == "/api/briefing":
+            with t.lock:
+                txt = t.coach.race.briefing() if t.coach.in_race else t.coach.practice.briefing_text()
+            if txt:
+                t.emit("gara", txt, True, 2)
+            return self._json({"text": txt})
         if self.path == "/ask":
             question = str(body.get("question", "")).strip()[:500]
             question = question or "Fammi il debrief degli ultimi giri: dove perdo tempo e cosa cambio?"
@@ -1244,6 +1390,7 @@ def main():
         threading.Thread(target=t.udp_loop, daemon=True).start()
         threading.Thread(target=t.discord.configure, args=(t.load_cfg(),), daemon=True).start()
     threading.Thread(target=state_loop, daemon=True).start()
+    threading.Thread(target=backup_loop, daemon=True).start()
     print("=" * 60)
     if MODE == "cloud":
         print(f" Modalità SERVER SU INTERNET, utenti: {', '.join(f'{n} (UDP {t.udp_port})' for n, t in TENANTS.items())}")

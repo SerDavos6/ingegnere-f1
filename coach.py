@@ -23,6 +23,7 @@ from parlato import fmt_lap, fmt_lap_voice, num, tenths
 from race import RaceEngineer
 from recorder import Recorder
 from avvisi_curva import CornerCues, GROUP as CUE_GROUP
+from prove import Practice
 import storico
 
 GRID_STEP = 5.0           # metri tra un punto e l'altro del giro di riferimento
@@ -160,6 +161,8 @@ class Coach:
         self.verbosity = 2
         self.pit_loss = 22.0        # secondi persi con un pit stop (stima, modificabile in config.json)
         self.recorder = Recorder(data_dir) if data_dir else Recorder()
+        self.practice = Practice(self)   # prima della gara: serve al briefing e alla strategia
+        self.practice.dir = os.path.join(os.path.dirname(os.path.abspath(self.recorder.data_dir)), "prove")
         self.race = RaceEngineer(self)
         self.setup = SetupAdvisor()
         self.energy = Energy(self)
@@ -171,6 +174,8 @@ class Coach:
         self.cues = CornerCues(self)
         self.work_on = "tutto"         # Impostazioni → Su cosa lavorare: tutto, frenata, centro, uscita
         self.prewarm = lambda text, kind: None   # il server prepara l'audio in anticipo
+        self.on_report = lambda text: None
+        self.on_race_end = lambda me, debrief: None   # riepilogo su Discord   # «Radio, segnala»: il server salva il momento
         self.friend_info = lambda: []  # dati delle macchine degli amici (gomme, batteria, piano)
         self.teammates = lambda: []  # amici del server nella stessa gara: [(nome, indice auto)]
         self.setups_dir = None      # assetti salvati (uno per pista e categoria, quello del giro migliore)
@@ -219,6 +224,7 @@ class Coach:
         self.energy.reset()
         self.training.reset()
         self.cues.reset()
+        self.practice.reset()
 
     def say(self, text, kind="info", level=2, urgent=False):
         """Mostra sempre il messaggio; lo legge a voce solo se il livello scelto lo prevede.
@@ -340,6 +346,7 @@ class Coach:
                 self.say(self.race.briefing(), "gara", level=1, urgent=True)
         if self.lap_num is None:
             self.lap_num = ld["lap_num"]
+            self.practice.on_session()
         # tornato nel garage (anche dal menu) a metà giro: salvo quello che c'è come giro parziale
         if prev and ld.get("driver_status") == 0 and prev.get("driver_status") != 0:
             self._save_partial("garage")
@@ -798,6 +805,7 @@ class Coach:
                 lap_level, self.pace_said = 2, lapn
         if valid and complete:
             self._save_setup(lap_ms)
+        self.practice.on_lap(lap_ms, valid, complete, pit_lap)
         new_best = valid and complete and (best_before is None or lap_ms < best_before)
         if new_best and self.in_race:
             # in gara il giro più veloce non lo annuncio: aggiorno il riferimento in silenzio
@@ -987,7 +995,7 @@ class Coach:
             "fuel_laps": st.get("fuel_laps"), "compound": st.get("compound"),
             "tyre_age": st.get("tyre_age"),
             "ers": self.energy.now_pct, "ers_mode": self.energy.snapshot()["mode"],
-            "is_quali": self.is_quali, "muted": self.muted, "target_ms": target, "record_ms": self.record_ms, "pace_ms": pace, "work_on": self.work_on,
+            "is_quali": self.is_quali, "muted": self.muted, "target_ms": target, "record_ms": self.record_ms, "pace_ms": pace, "work_on": self.work_on, "practice": self.practice.snapshot(),
             "training": self.training.snapshot(), "session_name": self.session.get("session_name"),
             "time_left": self.session.get("time_left"),
             "verbosity": self.verbosity,
