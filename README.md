@@ -194,6 +194,10 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **Voce nelle cuffie della PS5 con Discord** (guida in app: /discord): un bot Discord tuo entra in un canale vocale
+  e dice i messaggi dell'ingegnere; la PS5 entra nello stesso canale. Ascolta solo il suo pilota: «Radio, …» nel
+  microfono delle cuffie e risponde. Il server installa da solo Node.js, le librerie Discord e Whisper
+  (cartella discord_runtime/). Con l'amico nello stesso canale: ognuno abbassa a zero il bot dell'altro dalla PS5.
 - **Avvisi prima della curva** (come AiMotor): sulle 1-2 curve dove perdi di più, 4 secondi prima della frenata
   ("Curva 14, puoi frenare 15 metri dopo"). Prova e time trial a voce, gara solo con "Tanto", mai nel giro lanciato.
 - **Su cosa lavorare** (Impostazioni o «Radio, lavoriamo sulla frenata»): frenata, centro curva, uscita o tutto.

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="icon" href="/icon-192.png">
+<title>Ingegnere su Discord</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600; --good:#4cc38a; --warn:#ffb020; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 30px; display:flex; flex-direction:column; gap:10px; max-width:760px; margin:0 auto; }
+  header { display:flex; gap:10px; align-items:center; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; } header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; line-height:1.55; font-size:15px; }
+  .card h2 { font-size:16px; margin-bottom:6px; display:flex; gap:8px; align-items:center; }
+  .n { background:var(--accent); color:#fff; border-radius:50%; width:24px; height:24px; display:inline-grid; place-items:center; font-size:13px; flex:none; }
+  ol { padding-left:20px; } li { margin:3px 0; }
+  b.k { background:#1b2128; border:1px solid var(--line); border-radius:6px; padding:0 6px; font-weight:600; white-space:nowrap; }
+  .tip { color:var(--dim); font-size:13px; margin-top:6px; }
+  .warn { color:var(--warn); }
+  a { color:var(--accent); }
+  #st { font-size:14px; }
+</style>
+</head>
+<body>
+<header><a class="back" href="/">‹ Indietro</a><h1>Ingegnere <b>su Discord</b></h1></header>
+
+<div class="card" id="st">Stato: carico…</div>
+
+<div class="card">
+  <h2><span class="n">1</span>Il server Discord e il canale</h2>
+  <ol>
+    <li>Nell'app Discord (telefono o PC) tocca <b class="k">+</b> → <b class="k">Crea il mio</b> → <b class="k">Per me e i miei amici</b>, chiamalo per esempio "Box F1".</li>
+    <li>Crea un <b>canale vocale</b>, per esempio <b>Box radio</b>.</li>
+    <li>Invita il tuo amico nel server, se correte insieme.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2><span class="n">2</span>Il tuo bot (gratis, 3 minuti)</h2>
+  <ol>
+    <li>Apri <a href="https://discord.com/developers/applications" target="_blank">discord.com/developers/applications</a> ed entra con il tuo account Discord.</li>
+    <li><b class="k">New Application</b> → nome per esempio "Ingegnere Davide" → accetta e crea.</li>
+    <li>Nel menu a sinistra <b class="k">Bot</b> → <b class="k">Reset Token</b> → <b class="k">Copy</b>. Questo è il <b>token</b>: è come una password, non darlo a nessuno.</li>
+  </ol>
+  <div class="tip">Non serve attivare nessuna delle opzioni "Privileged Gateway Intents".</div>
+</div>
+
+<div class="card">
+  <h2><span class="n">3</span>Collega il bot all'ingegnere</h2>
+  <ol>
+    <li>Nell'app dell'ingegnere: <b class="k">Impostazioni</b> → scheda <b>🎧 Voce nelle cuffie della PS5</b>.</li>
+    <li>Incolla il <b>token</b>, scrivi il nome del <b>canale vocale</b> (Box radio) e il tuo <b>nome utente</b> Discord
+      (quello del profilo, senza @: non il nome visualizzato), poi <b class="k">Salva e collega</b>.</li>
+    <li>La prima volta il server installa quello che serve: qualche minuto. Poi sotto compare
+      <b>➕ Invita il bot nel tuo server Discord</b>: aprilo, scegli il server "Box F1" e conferma.</li>
+    <li>Quando lo stato diventa 🟢 <b>nel canale</b>, il bot è entrato in Box radio.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2><span class="n">4</span>Sulla PS5</h2>
+  <ol>
+    <li>La prima volta collega Discord: <b class="k">Impostazioni</b> → <b class="k">Utenti e account</b> → <b class="k">Servizi collegati</b> → <b class="k">Discord</b>.</li>
+    <li>Tasto <b class="k">PS</b> → <b class="k">Base di gioco</b> → scheda <b class="k">Discord</b> → server "Box F1" → <b>Box radio</b> → entra.</li>
+    <li>Prova: dalla schermata Voce dell'app tocca ▶ Prova la voce, oppure di' nel microfono <b>«Radio, come stanno le gomme?»</b>.</li>
+  </ol>
+  <div class="tip">Volume gioco/voci: tasto PS → Suono → bilanciamento tra audio della chat e del gioco.</div>
+</div>
+
+<div class="card">
+  <h2><span class="n">5</span>Con il tuo amico nello stesso canale</h2>
+  <p>Entrate tutti e due in <b>Box radio</b> e vi parlate normalmente. Ognuno ha il suo bot (il tuo amico rifà i passi 2 e 3
+    con il suo account). Così però sentireste anche l'ingegnere dell'altro: sulla PS5 aprite la scheda della chat
+    Discord (tasto PS → Chat vocale), toccate il bot dell'altro e abbassate il suo volume a zero. La PS5 se lo ricorda.</p>
+  <p class="tip">Il tuo ingegnere ascolta solo te: le frasi che dici al tuo amico le ignora. Risponde solo quando cominci con «Radio».</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">6</span>Telefono, Discord o tutti e due</h2>
+  <p>Nella scheda 🎧 scegli dove esce la voce: <b>Discord</b> (il telefono resta muto e mostra solo i messaggi),
+    <b>Entrambi</b>, o <b>Telefono</b> (il bot esce dal canale).</p>
+  <p class="tip">Su Discord la voce arriva circa mezzo secondo dopo: per questo gli avvisi prima della curva partono 4 secondi prima.
+    La voce in ingresso la capisce il server con Whisper: dalla domanda alla risposta passano 2-4 secondi.</p>
+</div>
+
+<script>
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+async function load() {
+  try {
+    const d = await fetch("/api/discord").then(r => r.json());
+    const icon = { nel_canale: "🟢", connesso: "🟡", avvio: "⏳", errore: "🔴", spento: "⚪" }[d.state] || "";
+    let h = `<b>Stato:</b> ${icon} ${esc(d.text)}`;
+    if (d.state === "spento") h += " — compila la scheda 🎧 nelle Impostazioni dell'app.";
+    if (d.invite && d.state !== "nel_canale") h += `<br><a href="${d.invite}" target="_blank">➕ Invita il bot nel tuo server Discord</a>`;
+    if (d.state === "nel_canale") h += d.voice_in ? "<br>Ti sento quando dici «Radio, …»." : "<br>Per ora solo voce in uscita: il riconoscimento vocale si sta installando.";
+    if (d.heard && d.heard.length) h += "<br>Ultime frasi sentite: " + d.heard.map(x => "«" + esc(x.text) + "»").join(", ");
+    document.getElementById("st").innerHTML = h;
+    if (["avvio", "connesso"].includes(d.state)) setTimeout(load, 3000);
+  } catch (e) { document.getElementById("st").textContent = "Stato non disponibile."; }
+}
+load();
+</script>
+</body>
+</html>

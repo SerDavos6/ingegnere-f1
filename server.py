@@ -32,6 +32,7 @@ import registra
 import utenti
 import voce_ai
 import voce_piper
+import discord_bridge
 import storico
 import voci
 from coach import Coach
@@ -41,6 +42,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(BASE, "static")
 ARGS = None
 PIPER = voce_piper.Piper(os.path.join(BASE, "piper"))   # voce del server, condivisa fra gli utenti
+DISCORD = discord_bridge.Runtime(os.path.join(BASE, "discord_runtime"))   # Node.js + bot Discord, condivisi
 ENGINES = ("dev", "piper", "ai")
 
 
@@ -83,6 +85,8 @@ class Tenant:
         self.coach.work_on = cfg.get("work_on") if cfg.get("work_on") in WORK_ON else "tutto"
         self.coach.prewarm = self.prewarm
         self._warmed = set()
+        self.audio_out = cfg.get("audio_out") if cfg.get("audio_out") in discord_bridge.MODES else "telefono"
+        self.discord = discord_bridge.DiscordLink(self, DISCORD)
         self.coach.setups_dir = os.path.join(root, "assetti")
         self.coach.teammates = lambda: find_teammates(self)
         self.coach.friend_info = lambda: friend_info(self)
@@ -97,8 +101,16 @@ class Tenant:
                 except queue.Full:
                     pass
 
+    def load_cfg(self):
+        return engineer_ai.load_config(self.config_path)
+
     def emit(self, kind, text, speak, priority):
         msg = {"kind": kind, "text": text, "speak": speak, "priority": priority, "ts": time.time()}
+        # voce su Discord (nelle cuffie della PS5): con "solo Discord" il telefono resta muto
+        if speak and self.audio_out != "telefono" and self.discord.active():
+            self.discord.say(text, kind, priority)
+            if self.audio_out == "discord":
+                msg["phone_mute"] = True
         if kind not in ("zona", "fine_giro"):
             self.recent.append(msg)
             del self.recent[:-30]
@@ -369,6 +381,9 @@ class Tenant:
                 "piper": PIPER.status(),
                 "muted": self.coach.muted, "training_on": self.coach.training.enabled,
                 "work_on": self.coach.work_on,
+                "audio_out": self.audio_out, "discord_token": mask(cfg.get("discord_token", "")),
+                "discord_channel": cfg.get("discord_channel", ""), "discord_user": cfg.get("discord_user", ""),
+                "discord": self.discord.status(),
                 "target_ms": self.coach.target_ms(), "target_track": self.coach.track_name
                 if self.coach.track_id is not None else None,
                 "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
@@ -398,6 +413,18 @@ class Tenant:
             cfg["team_color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
         if "muted" in body:
             self.coach.muted = cfg["muted"] = bool(body["muted"])
+        dsc = False
+        for k in ("discord_token", "discord_channel", "discord_user"):
+            if k in body:
+                v = str(body[k] or "").strip()
+                if k == "discord_token" and "…" in v:
+                    continue                      # il campo mostra la chiave mascherata: non la sovrascrivo
+                cfg[k], dsc = v[:200], True
+        if body.get("audio_out") in discord_bridge.MODES:
+            self.audio_out = cfg["audio_out"] = body["audio_out"]
+            dsc = True
+        if dsc:
+            threading.Thread(target=self.discord.configure, args=(dict(cfg),), daemon=True).start()
         if body.get("work_on") in WORK_ON:
             self.coach.work_on = cfg["work_on"] = body["work_on"]
         if "training_on" in body:
@@ -943,7 +970,7 @@ class Handler(BaseHTTPRequestHandler):
         t = self._tenant()
         if t is None:
             if path in ("/", "/index.html", "/analisi", "/analisi.html", "/benvenuto", "/classifica", "/admin",
-                        "/gare", "/collegamento", "/campionato", "/assetti"):
+                        "/gare", "/collegamento", "/campionato", "/assetti", "/discord"):
                 return self._redirect("/login")
             return self._json({"error": "login"}, 401)
         if path == "/benvenuto":
@@ -962,12 +989,16 @@ class Handler(BaseHTTPRequestHandler):
             self._static("campionato.html")
         elif path in ("/assetti", "/assetti.html"):
             self._static("assetti.html")
+        elif path in ("/discord", "/discord.html"):
+            self._static("discord.html")
         elif path == "/api/campionato":
             self._json(championship(t))
         elif path == "/api/assetti":
             self._json({"setups": setups_view(t), "current": t.coach.track_name if t.coach.track_id is not None else None})
         elif path == "/api/gare":
             self._json(storico.gare(t.data_dir))
+        elif path == "/api/discord":
+            self._json(t.discord.status())
         elif path == "/api/collegamento":
             self._json(t.link_status())
         elif path == "/api/backup":
@@ -1211,6 +1242,7 @@ def main():
     setup_tenants(a.udp_port)
     for t in TENANTS.values():
         threading.Thread(target=t.udp_loop, daemon=True).start()
+        threading.Thread(target=t.discord.configure, args=(t.load_cfg(),), daemon=True).start()
     threading.Thread(target=state_loop, daemon=True).start()
     print("=" * 60)
     if MODE == "cloud":

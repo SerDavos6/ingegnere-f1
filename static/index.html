@@ -634,6 +634,22 @@
     <div class="hint" id="vnote" style="color:var(--warn)"></div>
   </div>
 
+  <div class="card" id="dsccard">
+    <div class="lbl">🎧 Voce nelle cuffie della PS5 (Discord)</div>
+    <div class="seg" id="aout"><button data-o="telefono" class="on">Telefono</button><button data-o="discord">Discord</button><button data-o="entrambi">Entrambi</button></div>
+    <div class="hint">Un bot Discord tuo entra in un canale vocale e parla con la voce del server. Dalla PS5 entri nello
+      stesso canale (tasto PS → Base di gioco → Discord) e senti l'ingegnere nelle cuffie, insieme al gioco.
+      Se dici «Radio, …» nel microfono delle cuffie, ti risponde: sente solo te, non il tuo amico.
+      <a href="/discord" style="color:var(--accent)">Guida passo passo</a></div>
+    <div class="set" id="dscset">
+      <label>Token del bot <input id="dtoken" placeholder="incolla il token" autocomplete="off"></label>
+      <label>Canale vocale <input id="dchan" placeholder="es. Box radio" autocomplete="off"></label>
+      <label>Il tuo nome utente Discord <input id="duser" placeholder="es. serdavos" autocomplete="off"></label>
+      <div class="ask"><button class="btn main" id="dsave" style="flex:1">Salva e collega</button></div>
+    </div>
+    <div class="hint" id="dstat"></div>
+  </div>
+
   <details class="card" id="settings">
     <summary class="linkbtn"><span>⚙️ Impostazioni</span><span>›</span></summary>
     <div class="set">
@@ -1206,7 +1222,7 @@ function addMsg(m) {
     showRadio();
     $("farMsg").textContent = m.text;
   }
-  if (m.speak) say(m.text, m.priority, m.kind);
+  if (m.speak && !m.phone_mute) say(m.text, m.priority, m.kind);   // con "solo Discord" parla il bot
 }
 
 // ---------- stato ----------
@@ -1612,6 +1628,33 @@ async function loadBox() {
   } catch (e) {}
 }
 $("trainchk").onchange = () => postSettings({ training_on: $("trainchk").checked });
+function setAout(o) { document.querySelectorAll("#aout button").forEach(b => b.classList.toggle("on", b.dataset.o === o)); }
+document.querySelectorAll("#aout button").forEach(b => b.onclick = () => { setAout(b.dataset.o); postSettings({ audio_out: b.dataset.o }).then(pollDiscord); });
+function showDiscord(d) {
+  if (!d) return;
+  const icon = { nel_canale: "🟢", connesso: "🟡", avvio: "⏳", errore: "🔴", spento: "⚪" }[d.state] || "";
+  let t = `${icon} ${esc(d.text || "")}`;
+  if (d.state === "nel_canale") t += d.voice_in ? " · ti sento quando dici «Radio, …»" : d.voice_in === false ? " · solo voce in uscita (riconoscimento vocale non ancora pronto)" : "";
+  if (d.runtime && d.runtime.state === "scarico") t += `<br>La prima volta il server installa Discord: ${esc(d.runtime.text)} (qualche minuto).`;
+  if (d.invite && d.state !== "nel_canale") t += `<br><a href="${d.invite}" target="_blank" style="color:var(--accent)">➕ Invita il bot nel tuo server Discord</a>`;
+  if (d.heard && d.heard.length) t += `<br>Ultima frase sentita: «${esc(d.heard[d.heard.length - 1].text)}»`;
+  $("dstat").innerHTML = t;
+}
+let dpoll = 0;
+async function pollDiscord() {
+  clearTimeout(dpoll);
+  try {
+    const d = await fetch("/api/discord").then(r => r.json());
+    showDiscord(d);
+    if (["avvio", "connesso"].includes(d.state) || (d.runtime && d.runtime.state === "scarico")) dpoll = setTimeout(pollDiscord, 3000);
+  } catch (e) {}
+}
+$("dsave").onclick = async () => {
+  const body = { discord_channel: $("dchan").value.trim(), discord_user: $("duser").value.trim() };
+  if ($("dtoken").value.trim()) body.discord_token = $("dtoken").value.trim();
+  if (!document.querySelector("#aout button.on") || document.querySelector("#aout button.on").dataset.o === "telefono") { body.audio_out = "discord"; setAout("discord"); }
+  await postSettings(body); $("dtoken").value = ""; setTimeout(pollDiscord, 800);
+};
 function setWork(w) { document.querySelectorAll("#worksel button").forEach(b => b.classList.toggle("on", b.dataset.w === w)); }
 document.querySelectorAll("#worksel button").forEach(b => b.onclick = () => { setWork(b.dataset.w); postSettings({ work_on: b.dataset.w }); });
 async function saveGoal(v) {
@@ -1704,6 +1747,10 @@ async function loadSettings() {
     $("akey").placeholder = s.anthropic_key ? "salvata: " + s.anthropic_key : "sk-ant-…";
     $("ploss").value = s.pit_loss;
     setWork(s.work_on || "tutto");
+    setAout(s.audio_out || "telefono");
+    $("dtoken").placeholder = s.discord_token ? "salvato: " + s.discord_token : "incolla il token";
+    $("dchan").value = s.discord_channel || ""; $("duser").value = s.discord_user || "";
+    showDiscord(s.discord);
     $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
     if (s.user) {
       $("userline").style.display = "block"; $("uname").textContent = s.user;
