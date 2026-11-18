@@ -35,6 +35,9 @@ class Energy:
         self.lap_min = None           # (percentuale minima, distanza) del giro in corso
         self.lap_start = None         # percentuale al traguardo
         self.lap_ends = []            # percentuale a fine di ogni giro di gara
+        self.lap_max = None           # carica massima nel giro in corso
+        self.peaks = []               # carica massima di ogni giro (quanto riesci a ricaricare)
+        self.prev_min = None          # minimo del giro precedente
         self.said = {}                # chiave -> giro dell'ultimo avviso
         self.straight_cache = (None, None)
 
@@ -51,6 +54,8 @@ class Energy:
         d = ld.get("lap_distance", -1)
         if d >= 0 and (self.lap_min is None or self.now_pct < self.lap_min[0]):
             self.lap_min = (self.now_pct, d)
+        if self.lap_max is None or self.now_pct > self.lap_max:
+            self.lap_max = self.now_pct
         self._live(ld)
 
     def longest_straight(self):
@@ -80,6 +85,13 @@ class Energy:
             return None
         return (st[0] - d) % length
 
+    @property
+    def cycling(self):
+        """Batteria che a ogni giro si svuota e si ricarica (auto 2026): arrivare a zero è normale,
+        conta quanto riesci a ricaricare. Si capisce dal giro precedente."""
+        # (in una gara vera con le auto 2026: a ogni giro da 0 al traguardo a circa il 45-55% e di nuovo a 0)
+        return self.prev_min is not None and self.prev_min <= 8 and bool(self.peaks) and self.peaks[-1] >= 35
+
     def _once_per(self, key, laps):
         lap = self.c.lap_num or 0
         last = self.said.get(key)
@@ -104,12 +116,15 @@ class Energy:
             me = r.me()
             if ahead and me and near_straight and p >= 45 and ahead.get("pit_status") == 0:
                 gap = r.gap_between(ahead, me)
-                if 0 < gap <= ATTACK_GAP and self._once_per(("attacco", ahead["idx"]), 2):
+                if 0.1 <= gap <= ATTACK_GAP and self._once_per(("attacco", ahead["idx"]), 2):
                     n = r.name(ahead["idx"])
                     c.say(f"Batteria al {p} per cento e {n} è a {num(gap)}: attacca sul rettilineo lungo, "
                           f"usa l'energia in uscita dalla curva.", "energia", level=1, urgent=True)
                     return
-            if behind and me and p <= 30 and behind.get("pit_status") == 0:
+            # senza almeno un giro di dati non so come si comporta la batteria di questa macchina
+            known = self.prev_min is not None and bool(self.peaks)
+            weak = known and (not self.cycling or self.peaks[-1] < 35)
+            if behind and me and p <= 30 and weak and behind.get("pit_status") == 0:
                 gap = r.gap_between(me, behind)
                 if 0 < gap <= DEFEND_GAP and self._once_per("difesa", 3):
                     n = r.name(behind["idx"])
@@ -117,7 +132,8 @@ class Energy:
                           f"tieni l'energia per difenderti sul rettilineo lungo.", "energia", level=1, urgent=True)
                     return
         # (in prova e qualifica lo dico a fine giro, non durante il giro veloce)
-        if p <= 10 and near_straight and c.in_race and self._once_per("scarica", 2):
+        if (p <= 10 and near_straight and c.in_race and not self.cycling and (c.lap_num or 0) > 2
+                and self._once_per("scarica", 2)):
             c.say(f"Batteria quasi scarica, {p} per cento, prima del rettilineo lungo. Ricarica: "
                   f"meno energia in uscita dalle curve lente.", "energia", level=1, urgent=True)
 
@@ -126,19 +142,24 @@ class Energy:
         """Chiamato dal coach a ogni traguardo. Restituisce un consiglio da dire o None."""
         c, p = self.c, self.now_pct
         lap_min, start = self.lap_min, self.lap_start
-        self.lap_min = None
+        # il primo giro (si parte carichi) e i giri con il pit stop (si ricarica ai box) non contano
+        if self.lap_max is not None and (c.lap_num or 0) > 1 and not c.lap_pit:
+            self.peaks = (self.peaks + [self.lap_max])[-5:]
+        self.prev_min = lap_min[0] if lap_min else None
+        self.lap_min = self.lap_max = None
         self.lap_start = p
         if p is None:
             return None
         if c.in_race:
             self.lap_ends.append(p)
             self.lap_ends = self.lap_ends[-4:]
-            if len(self.lap_ends) >= 3:
-                drop = (self.lap_ends[0] - self.lap_ends[-1]) / (len(self.lap_ends) - 1)
-                if drop >= 8 and p < 50 and self._once_per("tendenza", 5):
-                    laps = max(1, int(p / drop))
-                    return (f"Batteria: perdi circa {round(drop)} per cento a giro, ora sei al {p}. "
-                            f"Così tra {laps} {'giro' if laps == 1 else 'giri'} sei a secco: ricarica di più in staccata.")
+            pk = self.peaks[-3:]
+            if len(pk) >= 3:
+                # la carica massima che raggiungi cala giro dopo giro: non ricarichi abbastanza
+                drop = (pk[0] - pk[-1]) / (len(pk) - 1)
+                if drop >= 8 and pk[-1] < 30 and self._once_per("tendenza", 5):
+                    return (f"Batteria: ogni giro ricarichi meno, al massimo arrivi al {pk[-1]} per cento. "
+                            f"Ricarica di più in staccata e usa meno energia in uscita dalle curve lente.")
             return None
         if not (valid and complete):
             return None

@@ -63,7 +63,8 @@ DEFAULT = "stratega"
 
 # variazione per tipo di messaggio (solo Piper: Gemini riceve lo stile a parole):
 # alza o abbassa insieme tono e velocità rispetto al personaggio
-STILE_PIPER = {"urgente": 1.07, "entusiasta": 1.05, "calmo": 0.97, "normale": 1.0}
+# Tutti a 1: la voce deve restare sempre la stessa (con il tono che cambiava sembrava un'altra persona)
+STILE_PIPER = {"urgente": 1.0, "entusiasta": 1.0, "calmo": 1.0, "normale": 1.0}
 
 
 def get(cid):

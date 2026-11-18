@@ -61,7 +61,7 @@ class Recorder:
         index = [x for x in index if x["lap"] != info["lap"]]
         row = {"lap": info["lap"], "ms": info["ms"], "valid": info["valid"]}
         # per il riepilogo della gara, senza dover aprire ogni giro
-        for k in ("position", "grid", "compound", "tyre_age", "wear", "pit_stops"):
+        for k in ("position", "grid", "compound", "tyre_age", "wear", "pit_stops", "finished", "total_laps", "result"):
             if info.get(k) is not None:
                 row[k] = info[k]
         if info.get("partial"):

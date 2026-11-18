@@ -194,6 +194,18 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **Avvisi prima della curva** (come AiMotor): sulle 1-2 curve dove perdi di più, 4 secondi prima della frenata
+  ("Curva 14, puoi frenare 15 metri dopo"). Prova e time trial a voce, gara solo con "Tanto", mai nel giro lanciato.
+- **Su cosa lavorare** (Impostazioni o «Radio, lavoriamo sulla frenata»): frenata, centro curva, uscita o tutto.
+- **Chiedi all'ingegnere** in Analisi: "perché sono lento in curva 6?", "dove perdo di più?", "come freno?".
+- **In gara il confronto è con il passo gara**, non con il giro più veloce (che dice solo se lo chiedi).
+- **Amico in gara**: gomme, usura, batteria e piano di sosta dell'amico dal suo server; sfida curva per curva in
+  Analisi; record personale per pista (in pista e nella pagina Gare). "Compagno" solo se siete nella stessa squadra.
+- **Correzioni da una gara vera** (Shanghai, auto 2026, formato UDP 2025): bandiera a scacchi e riassunto ora partono
+  (a fine gara il tempo di sessione del gioco si ferma e arrivano pacchetti senza sessione); avvisi gomme sulla
+  temperatura interna e molto più rari; batteria delle auto 2026 (a ogni giro da 0 a circa il 50% e di nuovo a 0:
+  è normale, niente più avvisi continui); giri con il pit stop senza confronti; al primo giro i cambi di posizione
+  scritti ma non detti; nomi delle squadre 2026; stima di rientro con quanti davanti devono ancora fermarsi.
 - **Nuova interfaccia** in stile grafica F1 TV: sezioni Pista / Box / Impostazioni, mappa, classifica e telemetria
   a linguette, radio con il nome del personaggio, pulsanti di stato a un tocco (vedi "La dashboard").
 - **🏆 Campionato tra amici** (pagina /campionato): le gare online fatte insieme sullo stesso server (stessa sessione
@@ -348,8 +360,8 @@ solo al primo avvio, se manca.
   specifica F1 25 formato 2025; vanno verificati in un vero GP.
 - I consigli d'assetto leggono il pacchetto Motion Ex secondo la specifica F1 25 e le soglie sono
   stimate: vanno verificati con qualche sessione vera.
-- Assetti, radio di squadra e campionato sono provati solo con il simulatore (due PS5 finte nella stessa gara):
-  il formato del pacchetto Car Setups e il riconoscimento del compagno online vanno verificati in una gara vera.
+- Il pacchetto Car Setups è verificato su una gara vera. Radio di squadra e campionato sono provati solo con il
+  simulatore (due PS5 finte nella stessa gara): il riconoscimento del compagno online va verificato.
 - Batteria e qualifica sono provate solo con il simulatore: capacità della batteria (4 MJ come nelle F1 25),
   tempo che manca alla sessione e soglie delle gomme pronte (80–108 gradi) vanno verificati in una sessione vera.
 - La voce AI usa il modello Gemini TTS con piano gratuito (gemini-3.1-flash-tts-preview, poi i modelli 3.8

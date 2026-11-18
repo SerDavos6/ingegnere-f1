@@ -22,6 +22,8 @@ from allenamento import Training
 from parlato import fmt_lap, fmt_lap_voice, num, tenths
 from race import RaceEngineer
 from recorder import Recorder
+from avvisi_curva import CornerCues, GROUP as CUE_GROUP
+import storico
 
 GRID_STEP = 5.0           # metri tra un punto e l'altro del giro di riferimento
 BRAKE_ON = 0.15           # soglia pedale freno per considerare "in frenata"
@@ -166,6 +168,10 @@ class Coach:
         self.muted = False          # "Radio, silenzio": parla solo per le cose urgenti
         self.last_spoken = None     # per "Radio, ripeti"
         self.targets = {}           # tempo obiettivo per pista e categoria (ms), dalle impostazioni
+        self.cues = CornerCues(self)
+        self.work_on = "tutto"         # Impostazioni → Su cosa lavorare: tutto, frenata, centro, uscita
+        self.prewarm = lambda text, kind: None   # il server prepara l'audio in anticipo
+        self.friend_info = lambda: []  # dati delle macchine degli amici (gomme, batteria, piano)
         self.teammates = lambda: []  # amici del server nella stessa gara: [(nome, indice auto)]
         self.setups_dir = None      # assetti salvati (uno per pista e categoria, quello del giro migliore)
         self.reset()
@@ -178,6 +184,8 @@ class Coach:
         self.track_name = "-"
         self.category = None
         self.ref = None
+        self.record_ms = None         # il tuo record di sempre su questa pista (sessioni salvate)
+        self.record_past = False
         self.lap = Lap()
         self.lap_num = None
         self.lap_invalid = False
@@ -186,6 +194,8 @@ class Coach:
         self.analyzed = set()
         self.lap_zone_results = []
         self.tip_mem = {}            # staccata -> (tipo di consiglio, giro, quante volte di fila)
+        self.zone_hist = {}          # in gara: staccata -> tempi persi negli ultimi giri (il tuo passo lì)
+        self.pace_said = -10         # giro dell'ultimo "sei sopra il tuo passo" detto a voce
         self.history = []
         self.last_speak_t = -99.0
         self.now = 0.0
@@ -196,6 +206,8 @@ class Coach:
         self.ideal_said = None
         self.flag_pending = None     # bandiera a scacchi vista, aspetto il tempo dell'ultimo giro
         self.race_done = False       # gara finita: il giro di rientro non si registra
+        self.lap_pit = False         # giro con il pit stop (entrata o uscita)
+        self.lap_start_last = None   # "ultimo giro" del gioco quando è iniziato il giro in corso
         self.intro_pending = False   # annuncio "Gara di N giri…": lo dico solo se la gara deve ancora partire
         self.quali_pos_at = None     # qualifica: quando dire la posizione provvisoria dopo il giro
         self.outlap_said = None      # giro di uscita in cui ho già detto le temperature delle gomme
@@ -206,6 +218,7 @@ class Coach:
         self.setup.reset()
         self.energy.reset()
         self.training.reset()
+        self.cues.reset()
 
     def say(self, text, kind="info", level=2, urgent=False):
         """Mostra sempre il messaggio; lo legge a voce solo se il livello scelto lo prevede.
@@ -250,6 +263,8 @@ class Coach:
 
     # --------------------------------------------------------- ingressi
     def on_header(self, h):
+        if not h["session_uid"]:
+            return False           # a fine gara il gioco manda qualche pacchetto senza sessione: lo ignoro
         self.now = h["session_time"]
         self.player_idx = h["player_idx"]
         if h["session_uid"] != self.session_uid:
@@ -272,6 +287,8 @@ class Coach:
             self.category = cat
             self.ref = self._load_ref()
             self._load_outline()
+            self.record_ms = self._load_record(s)
+            self.record_past = self.record_ms is not None   # alla prima volta su una pista non c'è record da battere
             msg = f"Pista: {self.track_name}, {s['session_name']}, {s.get('category_name') or 'F1'}."
             if self.ref:
                 who = f" (giro di {self.ref.owner})" if self.ref.owner else ""
@@ -330,10 +347,13 @@ class Coach:
         # quindi l'ultimo giro va chiuso qui. Aspetto un attimo che arrivi il suo tempo.
         if (prev and not self.race_done and not self.flag_pending and ld["lap_num"] == self.lap_num
                 and ld.get("result_status") == 3 and prev.get("result_status") != 3):
-            self.flag_pending = (prev, self.now + 1.5, prev["last_lap_ms"])
+            # (a fine gara il tempo della sessione del gioco si ferma: aspetto con l'orologio vero)
+            # il tempo dell'ultimo giro a volte arriva nello stesso pacchetto, prima della bandiera:
+            # confronto con il tempo che c'era quando è iniziato questo giro
+            self.flag_pending = (prev, time.time() + 1.5, self.lap_start_last)
         if self.flag_pending:
             p, deadline, old_last = self.flag_pending
-            if ld["last_lap_ms"] != old_last or self.now >= deadline:
+            if ld["last_lap_ms"] != old_last or time.time() >= deadline:
                 self.flag_pending = None
                 self.race_done = True
                 ms = ld["last_lap_ms"] if ld["last_lap_ms"] != old_last else (
@@ -351,7 +371,11 @@ class Coach:
             self.analyzed = set()
             self.lap_zone_results = []
             self.lap_invalid = False
+            self.lap_pit = bool(ld.get("pit_status"))
+            self.lap_start_last = ld["last_lap_ms"]
             self.lap_num = ld["lap_num"]
+        if ld.get("pit_status"):
+            self.lap_pit = True
         if ld["invalid"] and not self.lap_invalid:
             self.lap_invalid = True
             self.say("Giro invalidato, limiti della pista.", "avviso", level=1, urgent=True)
@@ -381,6 +405,7 @@ class Coach:
         if len(self.lap) < before and self.ref:   # flashback
             self.analyzed = {n for n in self.analyzed if self.ref.zones[n - 1]["exit"] < d}
         self._check_zones(d)
+        self.cues.on_distance(d, tel["speed"])
         self._check_tyres(tel)
         self._outlap_tyres(ld, tel)
 
@@ -461,7 +486,7 @@ class Coach:
         m = z.get("brake", z.get("at"))
         name = curve.name_at(self.track_id, m) if m is not None else None
         if name:
-            return name
+            return name[:1].upper() + name[1:] if capital else name
         return ("Staccata " if capital else "staccata ") + str(z["n"])
 
     def on_damage(self, dm):
@@ -477,8 +502,8 @@ class Coach:
 
     # ------------------------------------------------------- analisi
     def _check_zones(self, d):
-        if not self.ref or len(self.lap) < 10:
-            return
+        if not self.ref or len(self.lap) < 10 or self.lap_pit:
+            return              # giro con il pit stop: le staccate di entrata e uscita non si confrontano
         for z in self.ref.zones:
             if z["n"] in self.analyzed or d < z["exit"]:
                 continue
@@ -491,12 +516,32 @@ class Coach:
         lap, ref = self.lap, self.ref
         a, b = z["brake"] - 150, z["exit"]
         loss = (lap.interp(lap.t, b) - lap.interp(lap.t, a)) - (ref.t_at(b) - ref.t_at(a))
+        ap = z["apex"]
+        entry_loss = (lap.interp(lap.t, ap) - lap.interp(lap.t, a)) - (ref.t_at(ap) - ref.t_at(a))
         i0 = bisect.bisect_left(lap.dist, a)
         i1 = bisect.bisect_right(lap.dist, b)
         brake_pt, vmin, full_pt = None, 999, None
+        # la frenata vera più vicina a quella del riferimento: nelle sequenze di curve (Shanghai 1-2-3)
+        # i colpetti di freno della curva prima facevano dire "freni 120 metri prima". Conto solo
+        # frenate decise (pedale oltre metà o almeno 10 metri) entro 60 metri dal punto del riferimento.
+        cands, i = [], i0
+        while i < i1:
+            if lap.brk[i] >= BRAKE_ON and (i == 0 or lap.brk[i - 1] < BRAKE_ON):
+                k, peak = i, 0.0
+                while k < i1 and lap.brk[k] >= BRAKE_ON:
+                    peak = max(peak, lap.brk[k])
+                    k += 1
+                start, length = lap.dist[i], lap.dist[min(k, i1) - 1] - lap.dist[i]
+                if peak >= 0.5 or length >= 10:
+                    cands.append(start)
+                i = k
+            else:
+                i += 1
+        if cands:
+            best = min(cands, key=lambda d: abs(d - z["brake"]))
+            if abs(best - z["brake"]) <= 60:
+                brake_pt = best
         for i in range(i0, i1):
-            if brake_pt is None and lap.brk[i] >= BRAKE_ON:
-                brake_pt = lap.dist[i]
             if lap.dist[i] >= z["brake"] - 50:
                 vmin = min(vmin, lap.speed[i])
         if brake_pt is not None:
@@ -511,6 +556,16 @@ class Coach:
             res["brake_delta"] = round(brake_pt - z["brake"], 1)   # negativo = frena prima
         if full_pt is not None:
             res["full_delta"] = round(full_pt - z["full"], 1)      # positivo = gas dopo
+        # in gara il confronto non è con il giro più veloce ma con il tuo passo in quella curva:
+        # la media degli ultimi giri. Un consiglio solo se in quel giro sei andato peggio del solito.
+        if self.in_race:
+            h = self.zone_hist.setdefault(z["n"], [])
+            base = sorted(h[-5:])[len(h[-5:]) // 2] if len(h) >= 3 else None
+            if loss <= 1.0 and not (self.last_lapdata or {}).get("pit_status") and not self.lap_pit:
+                h.append(loss)
+                del h[:-8]
+            res["pace_loss"] = round(loss - base, 3) if base is not None else None
+            loss = res["pace_loss"] if base is not None else 0.0
         self.lap_zone_results.append(res)
 
         tip_level = 3 if self.in_race else 2   # in gara i consigli di guida solo con "tanto"
@@ -518,6 +573,9 @@ class Coach:
         if focus is not None:
             tip_level = 1 if z["n"] == focus else 4
         tag, tag_l, f = self.zone_label(z, capital=True), self.zone_label(z), self.frasi
+        # più di un secondo in una sola curva: un errore, un sorpasso o l'entrata ai box, non guida da correggere
+        if loss > 1.0 or (self.last_lapdata or {}).get("pit_status"):
+            return
         if loss >= 0.08:
             bd, vd, fd = res["brake_delta"], res["vmin_delta"], res["full_delta"]
             if bd is not None and bd <= -12:
@@ -528,8 +586,14 @@ class Coach:
                 kind, tip = "vmin", f("vmin", kmh=f"{abs(vd):.0f}")
             elif fd is not None and fd >= 20:
                 kind, tip = "gas", f("gas", m=f"{fd:.0f}")
+            elif loss - entry_loss >= entry_loss:
+                kind, tip = "uscita", f("uscita_lenta")
             else:
-                kind, tip = "trazione", f("trazione")
+                kind, tip = "ingresso", f("ingresso_lento")
+            self.cues.on_zone(z, kind, loss, abs(bd) if kind == "freni_prima" else None)
+            # Su cosa lavorare: i consigli di un altro tipo restano solo scritti
+            if focus is None and self.work_on != "tutto" and CUE_GROUP.get(kind) != self.work_on:
+                tip_level = 3
             # stesso consiglio sulla stessa curva nei giri appena fatti: lo dico in un altro modo,
             # e dalla terza volta di fila solo con "Tanto" (resta comunque scritto)
             prev = self.tip_mem.get(z["n"])
@@ -540,10 +604,12 @@ class Coach:
             text = f("ancora" if times >= 2 else "consiglio", tag=tag, tag_l=tag_l, tip=tip, perdi=perdi)
             self.say(text[0].upper() + text[1:], "consiglio",
                      level=tip_level if focus is not None else 3 if times >= 3 else tip_level)
-        elif loss <= -0.12:
-            self.tip_mem.pop(z["n"], None)
-            text = f("bene_zona", tag=tag, tag_l=tag_l, gain=tenths(loss))
-            self.say(text[0].upper() + text[1:], "consiglio", level=1 if focus == z["n"] else 3)
+        else:
+            self.cues.on_zone(z, None, loss)
+            if loss <= -0.12:
+                self.tip_mem.pop(z["n"], None)
+                text = f("bene_zona", tag=tag, tag_l=tag_l, gain=tenths(loss))
+                self.say(text[0].upper() + text[1:], "consiglio", level=1 if focus == z["n"] else 3)
 
     def _outlap_tyres(self, ld, tel):
         """Prova e qualifica, giro di uscita: verso la fine dico se le gomme sono pronte per il giro."""
@@ -569,13 +635,22 @@ class Coach:
                      "qualifica", level=1, urgent=True)
 
     def _check_tyres(self, tel):
-        temps = tel["tyre_surface"]
-        hot = [i for i, x in enumerate(temps) if x >= 110]
-        if hot and self._once("tyrehot", 45):
+        """Gomme troppo calde. Uso la temperatura interna (la carcassa): quella di superficie sale di
+        30-40 gradi in ogni curva veloce e si raffredda subito, e dava avvisi a ogni giro.
+        L'avviso parte solo se resta alta per qualche secondo, e al massimo una volta ogni 4 minuti."""
+        temps = tel.get("tyre_inner") or tel.get("tyre_surface")
+        if not temps:
+            return
+        hot = [i for i, x in enumerate(temps) if x >= 112]
+        if not hot:
+            self.warned.pop("tyrehot_since", None)
+            return
+        since = self.warned.setdefault("tyrehot_since", self.now)
+        if self.now - since >= 4 and self._once("tyrehot", 240):
             names = ["posteriore sinistra", "posteriore destra", "anteriore sinistra", "anteriore destra"]
-            g = names[hot[0]]
-            self.say(self.frasi("gomma_calda", g=g, G=g[0].upper() + g[1:], t=temps[hot[0]]),
-                     "avviso", level=2)
+            i = max(hot, key=lambda k: temps[k])
+            g = names[i]
+            self.say(self.frasi("gomma_calda", g=g, G=g[0].upper() + g[1:], t=temps[i]), "avviso", level=2)
 
     # --------------------------------------------------- fine giro
     def _lap_kind(self):
@@ -599,16 +674,32 @@ class Coach:
         info = dict(entry, s1=s1, s2=s2,
                     s3=lap_ms - s1 - s2 if s1 and s2 and kind == "completo" else 0,
                     compound=self.status.get("compound"), tyre_age=self.status.get("tyre_age"),
-                    position=prev_ld.get("position"), grid=prev_ld.get("grid_position") or None,
+                    position=prev_ld.get("position"), grid=prev_ld.get("grid_position") or self.race.start_grid or None,
                     pit_stops=prev_ld.get("pit_stops"),
                     wear=round(max(self.damage["tyre_wear"]), 1) if self.damage.get("tyre_wear") else None,
-                    race=bool(self.in_race))
+                    race=bool(self.in_race),
+                    # gara arrivata in fondo (bandiera a scacchi) o no: chi esce a metà è ritirato
+                    finished=True if self.in_race and self.race_done else None,
+                    total_laps=self.session.get("total_laps") if self.in_race else None,
+                    result=prev_ld.get("result_status") if self.in_race else None)
         if kind != "completo":
             info.update(partial=True, kind=kind)
         try:
             self.recorder.save_lap(self.session_uid, self.session, self.lap, info)
         except OSError as e:
             print("Impossibile salvare il giro:", e, flush=True)
+
+    def race_pace(self, skip=None):
+        """Il tuo passo gara: la mediana degli ultimi 5 giri puliti dello stint (senza primo giro,
+        pit e safety car). Dopo il pit riparte da zero: servono 3 giri con le gomme nuove."""
+        laps = [h for h in self.history if h.get("race") and h["valid"] and h.get("clean") and h is not skip]
+        stint = [h for h in laps if h.get("stint") == self.race.my_stops]
+        # dopo il pit le gomme nuove cambiano il passo: aspetto 3 giri con queste prima di confrontare
+        use = stint if (self.race.my_stops or 0) > 0 else laps
+        if len(use) < 3:
+            return None
+        ms = sorted(h["ms"] for h in use[-5:])
+        return ms[len(ms) // 2]
 
     def _update_ideal(self, lap_ms):
         self.session_laps.append({"lap": self.lap_num, "ms": lap_ms, "d": list(self.lap.dist), "t": list(self.lap.t)})
@@ -655,6 +746,10 @@ class Coach:
         kind = self._lap_kind()
         complete = kind == "completo"
         entry = {"lap": self.lap_num, "ms": lap_ms, "valid": valid, "zones": self.lap_zone_results}
+        if self.in_race:
+            entry.update(race=True, stint=self.race.my_stops,
+                         clean=complete and (self.lap_num or 0) > 1 and not self.lap_pit
+                         and not self.session.get("safety_car"))
         self.history.append(entry)
         self.history = self.history[-30:]
 
@@ -668,8 +763,17 @@ class Coach:
         owner = self.ref.owner if self.ref else None
         f = self.frasi
         parts = [f("giro", t=fmt_lap_voice(lap_ms))]
-        if not valid:
+        pit_lap = self.lap_pit
+        if pit_lap:
+            parts.append("con il pit stop")
+        elif not valid:
             parts.append("non valido")
+        elif self.in_race:
+            pace = self.race_pace(skip=entry)
+            if pace:
+                delta = (lap_ms - pace) / 1000.0
+                parts.append("in linea con il tuo passo" if abs(delta) < 0.2 else
+                             f"{tenths(delta)} {'sopra' if delta > 0 else 'sotto'} il tuo passo")
         elif best_before:
             delta = (lap_ms - best_before) / 1000.0
             key = ("piu" if delta >= 0 else "meno") + ("_di" if owner else "")
@@ -677,14 +781,32 @@ class Coach:
         target = self.target_ms()
         if target and valid and complete and lap_ms > target:
             parts.append(f"a {tenths((lap_ms - target) / 1000)} dall'obiettivo")
-        worst = sorted([r for r in self.lap_zone_results if r["loss"] > 0.05], key=lambda r: -r["loss"])[:2]
-        if worst:
+        lk = "pace_loss" if self.in_race else "loss"
+        worst = sorted([r for r in self.lap_zone_results if (r.get(lk) or 0) > 0.05], key=lambda r: -r[lk])[:2]
+        if worst and not pit_lap:
             parts.append(f("perdi_in", dove=" e ".join(self.zone_label(r) for r in worst)))
 
         lap_level = 3 if self.in_race else 1   # in gara il riepilogo lo fa l'ingegnere di gara
+        if self.in_race and valid and complete and not pit_lap and not self.session.get("safety_car"):
+            pace = self.race_pace(skip=entry)
+            # in gara a voce solo i giri fuori dal tuo passo: mezzo secondo più lento (al massimo
+            # ogni 3 giri, per non insistere) o 3 decimi più veloce
+            lapn = self.lap_num or 0
+            if pace and pace - lap_ms >= 300:
+                lap_level = 2
+            elif pace and lap_ms - pace >= 500 and lapn - self.pace_said >= 3:
+                lap_level, self.pace_said = 2, lapn
         if valid and complete:
             self._save_setup(lap_ms)
-        if valid and complete and (best_before is None or lap_ms < best_before):
+        new_best = valid and complete and (best_before is None or lap_ms < best_before)
+        if new_best and self.in_race:
+            # in gara il giro più veloce non lo annuncio: aggiorno il riferimento in silenzio
+            # e te lo dico solo se lo chiedi ("qual è il mio giro più veloce?")
+            self.ref = Reference.from_lap(self.lap, lap_ms)
+            self._save_ref()
+            self.zone_hist = {}          # staccate rinumerate sul nuovo riferimento
+            self.say(", ".join(parts) + ".", "giro", level=lap_level, urgent=True)
+        elif new_best:
             self.ref = Reference.from_lap(self.lap, lap_ms)
             self._save_ref()
             t = fmt_lap_voice(lap_ms)
@@ -693,11 +815,23 @@ class Coach:
                 text = f("battuto", chi=owner, t=t, d=tenths((best_before - lap_ms) / 1000))
             elif best_before:
                 text = f("giro_migliore", t=t, d=tenths((best_before - lap_ms) / 1000))
-            self.say(text, "giro", level=2 if self.in_race else 1, urgent=True)
+            rec = self.record_ms if self.record_past else None
+            if rec and lap_ms < rec:
+                text = (f"Record personale a {self.track_name}! {fmt_lap_voice(lap_ms)}, "
+                        f"{tenths((rec - lap_ms) / 1000)} meglio del tuo record di prima.")
+            elif rec and lap_ms - rec < 3000:
+                text += f" Il tuo record qui è a {tenths((lap_ms - rec) / 1000)}."
+            self.say(text, "giro", level=1, urgent=True)
+        elif valid and complete and not self.in_race and self.record_past and self.record_ms and lap_ms < self.record_ms:
+            # più veloce del tuo record ma non del riferimento (per esempio il giro di un amico)
+            self.say(f"Record personale a {self.track_name}! {fmt_lap_voice(lap_ms)}, "
+                     f"{tenths((self.record_ms - lap_ms) / 1000)} meglio di prima.", "giro", level=1, urgent=True)
         else:
             # giro di uscita o di rientro: il tempo non dice niente, lo leggo solo con "Tanto"
             self.say(", ".join(parts) + ".", "giro", level=lap_level if complete else 3, urgent=True)
         self.emit("fine_giro", json.dumps(entry), False, 0)
+        if valid and complete and (self.record_ms is None or lap_ms < self.record_ms):
+            self.record_ms = lap_ms
         if complete and valid:
             self._update_ideal(lap_ms)
         if target and valid and complete and lap_ms <= target and self.target_said != target:
@@ -734,6 +868,16 @@ class Coach:
         os.makedirs(self.ref_dir, exist_ok=True)
         with open(self._ref_path(), "w") as f:
             json.dump(self.ref.to_json(), f)
+
+    def _load_record(self, s):
+        """Il tuo record di sempre su questa pista e categoria, dalle sessioni salvate (non questa)."""
+        try:
+            rs = storico.records(self.recorder.data_dir, s.get("track_name"), s.get("category"),
+                                 exclude_uid=self.session_uid)
+            return rs[0]["ms"] if rs else None
+        except Exception as e:
+            print("Record non letto:", e, flush=True)
+            return None
 
     def _load_ref(self):
         try:
@@ -819,9 +963,11 @@ class Coach:
         corner, straight = self.corner_state()
         delta = None
         target = self.target_ms()
+        pace = self.race_pace() if self.in_race else None
         if self.ref and ld and len(self.lap) > 5 and ld.get("lap_distance", -1) > 0:
-            # con un tempo obiettivo il riferimento è "stirato" fino a quel tempo
-            scale = target / self.ref.lap_ms if target and self.ref.lap_ms else 1.0
+            # con un tempo obiettivo il riferimento è "stirato" fino a quel tempo; in gara fino al tuo passo
+            goal = pace or target
+            scale = goal / self.ref.lap_ms if goal and self.ref.lap_ms else 1.0
             delta = round(ld["current_lap_ms"] / 1000.0 - self.ref.t_at(ld["lap_distance"]) * scale, 2)
         last = self.history[-1] if self.history else None
         return {
@@ -841,7 +987,7 @@ class Coach:
             "fuel_laps": st.get("fuel_laps"), "compound": st.get("compound"),
             "tyre_age": st.get("tyre_age"),
             "ers": self.energy.now_pct, "ers_mode": self.energy.snapshot()["mode"],
-            "is_quali": self.is_quali, "muted": self.muted, "target_ms": target,
+            "is_quali": self.is_quali, "muted": self.muted, "target_ms": target, "record_ms": self.record_ms, "pace_ms": pace, "work_on": self.work_on,
             "training": self.training.snapshot(), "session_name": self.session.get("session_name"),
             "time_left": self.session.get("time_left"),
             "verbosity": self.verbosity,

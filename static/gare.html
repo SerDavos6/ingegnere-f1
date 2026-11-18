@@ -61,7 +61,9 @@
 </header>
 <div class="stats" id="tot"></div>
 <p class="hint" id="bestw"></p>
-<h2>Per pista</h2>
+<h2>Record per pista</h2>
+<div class="card" id="records"><div class="empty">Carico…</div></div>
+<h2>Gare per pista</h2>
 <div class="card" id="tracks"><div class="empty">Carico…</div></div>
 <h2>Tutte le gare</h2>
 <div class="card" id="races"><div class="empty">Carico…</div></div>
@@ -78,10 +80,15 @@ fetch("/api/gare").then(r => { if (r.status === 401) { location.href = "/login";
   const t = j.total;
   $("tot").innerHTML = [["Gare", t.races], ["Vittorie", t.wins], ["Podi", t.podiums],
     ["Arrivo medio", t.avg_finish != null ? "P" + t.avg_finish : "–"], ["Miglior arrivo", t.best_finish ? "P" + t.best_finish : "–"],
-    ["Posizioni guadagnate", (t.gained > 0 ? "+" : "") + t.gained]]
+    ["Ritiri", t.dnf || 0]]
     .map(([l, v]) => `<div class="st"><b class="mono">${esc(v)}</b><small>${l}</small></div>`).join("");
   $("bestw").innerHTML = (j.best_track ? `Pista migliore: <b>${esc(j.best_track)}</b>. ` : "") +
                          (j.worst_track ? `Da migliorare: <b>${esc(j.worst_track)}</b>.` : "");
+  const rec = j.records || [];
+  $("records").innerHTML = rec.length ? rec.map(x => `<a class="trk" style="color:inherit;text-decoration:none" href="/analisi?s=${encodeURIComponent(x.id || "")}"><div><b>${esc(x.track)}</b>
+      <small>${esc(x.category_name || "")} · ${x.sessions} ${x.sessions === 1 ? "sessione" : "sessioni"} · ${esc(x.session || "")} del ${day(x.date)}</small></div>
+      <div class="t mono"><b>${fmt(x.ms)}</b><small>${x.gained_ms > 0 ? `<span class="up">−${(x.gained_ms / 1000).toFixed(3)}</span> dalla prima volta` : x.sessions >= 2 ? "come la prima volta" : "prima volta"}</small></div></a>`).join("")
+    : '<div class="empty">Ancora nessun giro valido salvato.</div>';
   if (!j.races.length) {
     $("tracks").innerHTML = $("races").innerHTML = '<div class="empty">Ancora nessuna gara salvata.<br>Fai una gara e torna qui.</div>';
     return;
@@ -90,8 +97,8 @@ fetch("/api/gare").then(r => { if (r.status === 401) { location.href = "/login";
       <small>${esc(x.category_name || "")} · ${x.races} ${x.races === 1 ? "gara" : "gare"} · ${x.wins} ${x.wins === 1 ? "vittoria" : "vittorie"} · ${x.podiums} ${x.podiums === 1 ? "podio" : "podi"}</small></div>
       <div class="t mono"><b>${x.avg_finish != null ? "P" + x.avg_finish : "–"}</b><small>giro ${fmt(x.best_ms)}</small></div></div>`).join("");
   $("races").innerHTML = j.races.map(r => `<a class="race" style="color:inherit;text-decoration:none" href="/analisi?s=${encodeURIComponent(r.id)}">
-      <div class="fin mono">${r.finish ? "P" + r.finish : "–"}</div>
-      <div><b>${esc(r.track)}</b><small>${day(r.date)} · ${r.grid ? "partito P" + r.grid + " " : ""}${gained(r.gained)} · ${r.laps} giri ·
+      <div class="fin mono">${r.finish ? "P" + r.finish : r.dnf ? "RIT" : "–"}</div>
+      <div><b>${esc(r.track)}</b><small>${day(r.date)} · ${r.dnf ? "ritirato dopo " + r.laps + (r.total_laps ? " giri su " + r.total_laps : " giri") + " · " : ""}${r.grid ? "partito P" + r.grid + " " : ""}${r.dnf ? "" : gained(r.gained) + " · " + r.laps + " giri ·"}
         ${r.stops === 0 ? "nessuna sosta" : r.stops === 1 ? "1 sosta" : r.stops + " soste"}</small></div>
       <div class="t mono"><b>${fmt(r.best_ms)}</b><small>${r.consistency != null ? "costanza ±" + r.consistency.toFixed(2) : ""}</small></div></a>`).join("");
 }).catch(() => {});

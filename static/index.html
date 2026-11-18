@@ -601,6 +601,14 @@
       quella, finché non la sistemi. Poi passa alla prossima. A voce: «Radio, allenamento».</div>
   </div>
 
+  <div class="card" id="workcard">
+    <div class="lbl">🎯 Su cosa lavorare</div>
+    <div class="seg" id="worksel" style="grid-template-columns:repeat(4,1fr)"><button data-w="tutto" class="on">Tutto</button><button data-w="frenata">Frenata</button><button data-w="centro">Centro curva</button><button data-w="uscita">Uscita</button></div>
+    <div class="hint">L'ingegnere ti dà a voce solo quel tipo di consiglio, e prima della curva ti ricorda cosa fare
+      sulle 1-2 curve dove perdi di più («Curva 14, puoi frenare 15 metri dopo»). Gli altri consigli restano scritti.
+      A voce: «Radio, lavoriamo sulla frenata».</div>
+  </div>
+
   <div class="card" id="voicecard">
     <div class="lbl">🔊 Voce dell'ingegnere</div>
     <div class="seg" id="vmode"><button data-m="dev">Telefono</button><button data-m="piper" class="on">Server</button><button data-m="ai">Voce AI</button></div>
@@ -773,8 +781,9 @@ function say(text, prio, kind) {
   if (!voiceOn()) return;
   if (prio >= 2) speakQ = speakQ.filter(x => x.prio >= 2);
   const it = { text, prio, kind: kind || "", t: Date.now(), style: styleOf(text, prio, kind || "") };
-  // la voce AI la prepara subito, mentre aspetta il rettilineo ("Dimmi" no: deve essere immediato)
-  if (aiVoice && Date.now() > aiPauseUntil && it.kind !== "dimmi") fetchAI(it);
+  // la voce del server (o AI) la prepara subito, mentre aspetta il rettilineo. Anche "Dimmi":
+  // una sola voce per tutta la gara (è tra le frasi già pronte, quindi arriva subito)
+  if (aiVoice && Date.now() > aiPauseUntil) fetchAI(it);
   speakQ.push(it);
   pump();
 }
@@ -782,7 +791,7 @@ function fetchAI(it, charName) {
   it.ai = "pending";
   return fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ text: it.text, kind: it.kind, prio: it.prio, style: it.style,
-                                         engine: vEngineNow, char: charName || charId }) })
+                                         engine: vEngineNow, char: charName || charId, fallback: false }) })
     .then(async r => {
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "errore"); }
       it.url = URL.createObjectURL(await r.blob()); it.ai = "ready";
@@ -794,9 +803,9 @@ function fetchAI(it, charName) {
       it.ai = "failed";
       if (/quota|limite/i.test(e.message)) {
         aiPauseUntil = Date.now() + (/giorno/i.test(e.message) ? 1800000 : 60000);
-        aiNote = "Voce AI in pausa (" + e.message + "): per ora parla il telefono.";
+        aiNote = "Voce in pausa (" + e.message + "): i messaggi restano scritti, con il bip della radio.";
       }
-      else aiNote = "Voce AI non disponibile (" + e.message + "): parla il telefono.";
+      else aiNote = "Voce non disponibile (" + e.message + "): i messaggi restano scritti, con il bip della radio.";
       showAiNote();
     })
     .finally(() => pump());
@@ -954,9 +963,17 @@ function pump() {
   const maxAge = quietCorners ? (it.prio >= 2 ? 20000 : 25000) : 8000;
   if (Date.now() - it.t > maxAge) { speakQ.shift(); return pump(); }   // avviso vecchio: ormai inutile
   if (!canSpeakNow(it)) { pumpTimer = setTimeout(pump, 120); return; }
-  // voce AI in preparazione: la aspetto al massimo 4 secondi dall'arrivo del messaggio
-  // (la voce del server sul server gratuito è più lenta: fino a 6 secondi)
-  if (it.ai === "pending" && Date.now() - it.t < (vEngineNow === "piper" ? 6000 : 4000)) { pumpTimer = setTimeout(pump, 120); return; }
+  // una sola voce: con la voce del server (o AI) non passo mai alla voce del telefono.
+  // Aspetto l'audio fino a 15 secondi; se non arriva, solo il bip della radio (il messaggio è scritto)
+  if (aiVoice) {
+    if (it.ai === "pending" && Date.now() - it.t < 15000) { pumpTimer = setTimeout(pump, 120); return; }
+    if (it.ai !== "ready") {
+      speakQ.shift();
+      const ms = beep("in") || 200;
+      setTimeout(() => { lastSpokeEnd = Date.now(); pump(); }, ms + 150);
+      return;
+    }
+  }
   speakQ.shift();
   const done = () => { lastSpokeEnd = Date.now(); setTimeout(pump, 150); };
   withRadio(it, done);
@@ -972,8 +989,11 @@ function unlockVoice(greet) {
   // sblocca anche l'audio della voce AI (iPhone: serve un tocco), con un audio muto brevissimo
   audioEl.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
   audioEl.play().catch(() => {});
-  const u = new SpeechSynthesisUtterance(greet ? "Ingegnere collegato." : " ");
-  u.lang = "it-IT"; if (itVoice) u.voice = itVoice; if (!greet) u.volume = 0;
+  // il saluto con la voce scelta: se parla il server, lo dice il server (una sola voce)
+  const phoneGreet = greet && !aiVoice;
+  const u = new SpeechSynthesisUtterance(phoneGreet ? "Ingegnere collegato." : " ");
+  u.lang = "it-IT"; if (itVoice) u.voice = itVoice; if (!phoneGreet) u.volume = 0;
+  if (greet && aiVoice) setTimeout(() => say("Ingegnere collegato.", 1, "info"), 300);
   u.rate = vcfg.rate; u.pitch = vcfg.pitch;
   speechSynthesis.speak(u);
   keepAwake();
@@ -1240,7 +1260,7 @@ function render(s) {
   $("qclock").style.display = s.is_quali && s.time_left != null ? "" : "none";
   if (s.time_left != null) $("qtime").textContent = Math.floor(s.time_left / 60) + ":" + String(s.time_left % 60).padStart(2, "0");
   $("lapq").textContent = s.lap ?? "–"; $("lastq").textContent = fmt(s.last_ms); $("bestq").textContent = fmt(s.best_ms);
-  $("deltalbl").textContent = s.target_ms ? "Delta sull'obiettivo " + fmt(s.target_ms) : "Delta sul migliore";
+  $("deltalbl").textContent = s.pace_ms ? "Delta sul passo gara " + fmt(s.pace_ms) : s.target_ms ? "Delta sull'obiettivo " + fmt(s.target_ms) : "Delta sul migliore";
   const tr = s.training || {}, chips = [];
   if (tr.active && tr.zone) chips.push(`<span class="chip on">🧠 ${esc(tr.zone)}: ${tr.start?.toFixed(2)} → ${tr.last?.toFixed(2)} s</span>`);
   else if (tr.active && tr.on) chips.push('<span class="chip">🧠 allenamento: scelgo la staccata dopo 2 giri</span>');
@@ -1252,6 +1272,7 @@ function render(s) {
       (s.target_ms ? fmt(s.target_ms) : "nessuno") + ".";
   if (document.activeElement !== $("mutechk")) $("mutechk").checked = !!s.muted;
   if (tr.on != null) $("trainchk").checked = !!tr.on;
+  if (s.work_on) setWork(s.work_on);
 
   // dettagli
   $("cur").textContent = fmt(s.current_ms); $("lastt").textContent = fmt(s.last_ms); $("best").textContent = fmt(s.best_ms);
@@ -1389,7 +1410,8 @@ function applyPtab(race) {
   $("live").style.display = p === "tel" ? "" : "none";
 }
 $("ptabs").onclick = e => { const b = e.target.closest("button"); if (b) showPtab(b.dataset.p); };
-const TEAMC = { 0: "#27F4D2", 1: "#E8002D", 2: "#3671C6", 3: "#64C4FF", 4: "#229971", 5: "#FF87BC", 6: "#6692FF", 7: "#B6BABD", 8: "#FF8000" };
+const TEAMC = { 0: "#27F4D2", 1: "#E8002D", 2: "#3671C6", 3: "#64C4FF", 4: "#229971", 5: "#FF87BC", 6: "#6692FF", 7: "#B6BABD", 8: "#FF8000", 9: "#52E252",
+  220: "#27F4D2", 221: "#E8002D", 222: "#3671C6", 223: "#64C4FF", 224: "#229971", 225: "#FF87BC", 226: "#6692FF", 227: "#B6BABD", 228: "#FF8000", 229: "#BB0A30", 230: "#C0C0C0" };
 function renderTower(r) {
   const t = r.tower || [];
   $("ptower").innerHTML = t.length ? t.map(c => {
@@ -1489,9 +1511,9 @@ function showVoiceSettings() {
     if (piperState.state !== "pronta") h += `Voce del server: ${piperState.text || "non disponibile"}. `;
     if (vEngine === "ai" && vEngineNow !== "ai") h += "Per la voce AI inserisci la chiave Gemini in ⚙️ Impostazioni. ";
     if (vEngineNow === "dev") h += "Intanto parla il telefono. ";
-    if (vEngine === "ai") h += "Se finisce la quota gratuita parla la voce del server, e se manca anche quella il telefono. ";
+    if (vEngine === "ai") h += "Con la quota gratuita finita non cambia voce: per non avere limiti scegli Server. ";
     if (ch && ch.nota && vEngine === "piper") h += "Con questo personaggio " + ch.nota + ". ";
-    if (vEngine === "piper") h += "Tono e velocità cambiano da soli: più deciso per box e safety car, più calmo per i consigli.";
+    h += "La voce resta sempre la stessa per tutta la gara: se un audio non arriva in tempo senti solo il bip della radio e il messaggio resta scritto.";
   }
   $("vsrvhint").textContent = h.trim();
 }
@@ -1576,7 +1598,7 @@ async function loadBox() {
     if (r) {
       const d = r.date ? new Date(r.date * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) : "";
       $("brtitle").textContent = `Ultima gara · ${r.track} · ${d}`;
-      $("brpos").textContent = r.finish ? "P" + r.finish : "–";
+      $("brpos").textContent = r.finish ? "P" + r.finish : r.dnf ? "RIT" : "–";
       const g = r.gained;
       $("brinfo").innerHTML = (r.grid ? `partito P${r.grid}` : "") +
         (g ? ` · <b style="color:${g > 0 ? "var(--good)" : "var(--bad)"}">${g > 0 ? g + " posizioni guadagnate" : -g + " posizioni perse"}</b>` : "") +
@@ -1590,6 +1612,8 @@ async function loadBox() {
   } catch (e) {}
 }
 $("trainchk").onchange = () => postSettings({ training_on: $("trainchk").checked });
+function setWork(w) { document.querySelectorAll("#worksel button").forEach(b => b.classList.toggle("on", b.dataset.w === w)); }
+document.querySelectorAll("#worksel button").forEach(b => b.onclick = () => { setWork(b.dataset.w); postSettings({ work_on: b.dataset.w }); });
 async function saveGoal(v) {
   const s = await postSettings({ target: v });
   if (!s) return;
@@ -1679,6 +1703,7 @@ async function loadSettings() {
     $("gkey").placeholder = s.gemini_key ? "salvata: " + s.gemini_key : "incolla qui la chiave";
     $("akey").placeholder = s.anthropic_key ? "salvata: " + s.anthropic_key : "sk-ant-…";
     $("ploss").value = s.pit_loss;
+    setWork(s.work_on || "tutto");
     $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
     if (s.user) {
       $("userline").style.display = "block"; $("uname").textContent = s.user;

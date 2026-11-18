@@ -9,6 +9,7 @@ import re
 
 from distacchi import GapTimer
 from parlato import fmt_lap_voice, num, plural, tenths
+from amico_live import FriendWatch
 from strategia import Strategy
 
 # nomi generici che il gioco manda al posto dell'ID online nascosto (varie lingue)
@@ -16,7 +17,10 @@ GENERIC = re.compile(r"^(player|giocatore|joueur|spieler|jugador|jogador|gracz|i
 
 # squadre: solo quelle con lo stesso id e lo stesso nome nelle stagioni 2025 e 2026
 TEAMS = {0: "Mercedes", 1: "Ferrari", 2: "Red Bull", 3: "Williams", 4: "Aston Martin",
-         5: "Alpine", 6: "Racing Bulls", 7: "Haas", 8: "McLaren"}
+         5: "Alpine", 6: "Racing Bulls", 7: "Haas", 8: "McLaren", 9: "Sauber",
+         # auto 2026 (2026 Season Pack), visti in una gara vera
+         220: "Mercedes", 221: "Ferrari", 222: "Red Bull", 223: "Williams", 224: "Aston Martin",
+         225: "Alpine", 226: "Racing Bulls", 227: "Haas", 228: "McLaren", 229: "Audi", 230: "Cadillac"}
 
 
 def cap(t):
@@ -104,7 +108,9 @@ class RaceEngineer:
         self.pos_announced = None
         self.warnings = 0
         self.mate_close = {}          # compagno -> giro dell'ultimo avviso "è vicino"
+        self.start_grid = None        # posizione di partenza (a fine gara il gioco a volte manda 0)
         self.strategy = Strategy(self)
+        self.friend = FriendWatch(self)
 
     # ---------------------------------------------------------- utilità
     @property
@@ -138,7 +144,7 @@ class RaceEngineer:
         """Come chiamare un pilota. voice=False: nome completo per la dashboard."""
         mate = self.mate_name(idx) if voice else None
         if mate:
-            return f"il tuo compagno {mate}"
+            return f"{self.mate_word(idx)} {mate}"
         p = self.names.get(idx) or {}
         n = p.get("name", "")
         if n and not GENERIC.match(n) and (p.get("ai") or p.get("show_name", True)):
@@ -172,6 +178,16 @@ class RaceEngineer:
 
     def mate_name(self, idx):
         return next((n for n, i in self.mates() if i == idx), None)
+
+    def same_team(self, idx):
+        """True solo se l'amico guida davvero per la tua stessa squadra nel gioco."""
+        mine = (self.names.get(self.c.player_idx) or {}).get("team")
+        theirs = (self.names.get(idx) or {}).get("team")
+        return mine is not None and mine == theirs and mine != 255
+
+    def mate_word(self, idx):
+        """'il tuo compagno' se siete nella stessa squadra, altrimenti 'il tuo amico'."""
+        return "il tuo compagno" if self.same_team(idx) else "il tuo amico"
 
     def _wear(self):
         w = self.c.damage.get("tyre_wear")
@@ -339,7 +355,11 @@ class RaceEngineer:
         else:
             self.close_since = None
 
+        if self.start_grid is None and me.get("grid_position"):
+            self.start_grid = me["grid_position"]
         # radio di squadra: il compagno (un amico del server) è subito davanti o dietro
+        if stable:
+            self.friend.on_live(me)
         if me["lap_num"] > 1 and stable and me["pit_status"] == 0:
             for off, where in ((-1, "davanti"), (1, "dietro")):
                 car = self.rel(off)
@@ -349,9 +369,11 @@ class RaceEngineer:
                 gap = self.gap_between(car, me) if off < 0 else self.gap_between(me, car)
                 if 0 < gap < 1.0 and me["lap_num"] - self.mate_close.get(mate, -10) >= 3:
                     self.mate_close[mate] = me["lap_num"]
-                    say(f"{where.capitalize()} c'è il tuo compagno {mate}, a {num(gap)}. " +
+                    team = self.same_team(car["idx"])
+                    say(f"{where.capitalize()} c'è {self.mate_word(car['idx'])} {mate}, a {num(gap)}. " +
                         ("Se lo attacchi fallo pulito, niente contatti." if off < 0 else
-                         "Lascia spazio in staccata, non buttiamo via punti per la squadra."),
+                         "Lascia spazio in staccata, non buttiamo via punti per la squadra." if team else
+                         "Difenditi pulito, niente contatti tra amici."),
                         "squadra", level=2, urgent=True)
 
         # il tuo pit stop
@@ -374,10 +396,13 @@ class RaceEngineer:
             if self.c.now - self.retire_t < 15 and pos < (self.pos_announced or 99):
                 pass                                   # posizione guadagnata per un ritiro: già detto
             elif self.pos_announced is not None and me["pit_status"] == 0:
+                # al primo giro le posizioni cambiano di continuo: le scrivo ma non le dico,
+                # la posizione la dico a fine giro (come in una gara vera)
+                lvl = 3 if me["lap_num"] <= 1 else 2
                 if pos < self.pos_announced:
-                    say(self.c.frasi("sorpasso", p=pos), "gara", level=2)
+                    say(self.c.frasi("sorpasso", p=pos), "gara", level=lvl)
                 else:
-                    say(self.c.frasi("perso", p=pos), "gara", level=2)
+                    say(self.c.frasi("perso", p=pos), "gara", level=lvl)
             self.pos_announced = pos
 
     # ------------------------------------------------------------- bandiere
@@ -512,7 +537,7 @@ class RaceEngineer:
             front, back = (car, me) if car["position"] < me["position"] else (me, car)
             g = self.gap_between(front, back)
             side = "davanti" if car["position"] < me["position"] else "dietro"
-            txt = f"il tuo compagno {mname} è P{car['position']}"
+            txt = f"{self.mate_word(midx)} {mname} è P{car['position']}"
             if g and g < 60:
                 txt += f", a {num(g)} {side}"
             parts.append(txt)
@@ -524,7 +549,11 @@ class RaceEngineer:
         if ideal and me["pit_stops"] == 0:
             if lap == ideal and self._once(("apre", ideal)):
                 est = self.rejoin_estimate(self.c.pit_loss)
-                where = f" Se ti fermi ora rientri circa P{est['pos']}." if est else ""
+                where = f" Se ti fermi ora rientri circa P{est['pos']}" if est else ""
+                if est and est.get("to_stop") and est["pos"] > me["position"] + 1:
+                    n = est["to_stop"]
+                    where += f", ma {n} di quelli davanti {'deve' if n == 1 else 'devono'} ancora fermarsi"
+                where += "." if est else ""
                 say(f"Siamo nella finestra pit: box quando vuoi entro il giro {latest}.{where}", "strategia", level=1, urgent=True)
             elif lap == latest and not (self.strategy.plan() or {}).get("compound") and self._once(("chiude", latest)):
                 say("Ultimo giro utile per la sosta. Box, box!", "strategia", level=1, urgent=True)
@@ -546,6 +575,7 @@ class RaceEngineer:
 
         self._stint_lap(me, lap)
         self._undercut(me, remaining)
+        self.friend.on_lap(me, remaining)
         self.strategy.on_lap(me, remaining)
 
     # ------------------------------------------------------ briefing prima del via
@@ -556,6 +586,7 @@ class RaceEngineer:
         me = self.me()
         if me:
             grid = me.get("grid_position") or me["position"]
+            self.start_grid = self.start_grid or grid      # online il gioco a volte non manda la griglia
             txt = "Parti dalla pole" if grid == 1 else f"Parti P{grid}"
             front = next((x for x in self.cars if x["position"] == grid - 1), None)
             back = next((x for x in self.cars if x["position"] == grid + 1), None)
@@ -592,12 +623,13 @@ class RaceEngineer:
         """Il riassunto della gara alla radio, come dopo il traguardo vero: posizioni, giro migliore,
         costanza, soste, penalità e il punto dove hai perso di più."""
         c, parts = self.c, []
-        pos, grid = me["position"], me.get("grid_position") or 0
+        pos, grid = me["position"], me.get("grid_position") or self.start_grid or 0
         if grid:
             d = grid - pos
             how = (f"{d} posizioni guadagnate" if d > 1 else "una posizione guadagnata" if d == 1 else
                    f"{-d} posizioni perse" if d < -1 else "una posizione persa" if d == -1 else "stessa posizione del via")
-            parts.append(f"Partito P{grid}, arrivato P{pos}: {how}")
+            parts.append("Dalla pole alla vittoria, partenza e arrivo in testa" if grid == 1 and pos == 1
+                         else f"Partito P{grid}, arrivato P{pos}: {how}")
         laps = [h for h in c.history if h.get("valid") and h.get("ms")]
         if laps:
             best = min(laps, key=lambda h: h["ms"])
@@ -755,8 +787,12 @@ class RaceEngineer:
         behind = [c for c in others if t_of(c) > target]
         out = {"pos": len(ahead) + 1, "loss": pit_loss, "source": "distacchi"}
         game = self.c.session.get("pit_rejoin", 0)
-        if game:
+        # la stima del gioco a volte è senza senso (in una gara vera diceva P21 da primo): la uso
+        # solo se è vicina al calcolo sui distacchi
+        if game and abs(game - out["pos"]) <= 3:
             out["pos"], out["source"] = game, "gioco"
+        # quelli davanti che non si sono ancora fermati: dopo la loro sosta ti ripassano davanti
+        out["to_stop"] = sum(1 for c in ahead if c["pit_stops"] <= me["pit_stops"])
         if ahead:
             a = max(ahead, key=t_of)
             out["ahead"] = {"name": self.name(a["idx"]), "gap": round(target - t_of(a), 1)}

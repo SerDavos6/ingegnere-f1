@@ -80,8 +80,12 @@ class Tenant:
         self.coach.muted = bool(cfg.get("muted"))
         self.coach.training.enabled = cfg.get("training", True) is not False
         self.coach.targets = dict(cfg.get("targets") or {})
+        self.coach.work_on = cfg.get("work_on") if cfg.get("work_on") in WORK_ON else "tutto"
+        self.coach.prewarm = self.prewarm
+        self._warmed = set()
         self.coach.setups_dir = os.path.join(root, "assetti")
         self.coach.teammates = lambda: find_teammates(self)
+        self.coach.friend_info = lambda: friend_info(self)
         self.answers = Answers(self.coach)
 
     def broadcast(self, event, payload):
@@ -148,7 +152,8 @@ class Tenant:
         c = self.coach
         try:
             with self.lock:
-                c.on_header(h)
+                if c.on_header(h) is False:
+                    return
                 if pid == P.PID_SESSION:
                     s = P.parse_session(data)
                     s and c.on_session(s)
@@ -201,17 +206,27 @@ class Tenant:
         if answer is None:
             answer = engineer_ai.ask(ctx, question, self.config_path)
         if answer is None:
-            answer = ("Non ho capito la domanda. " + Answers.HELP +
-                      " Per le domande libere inserisci una chiave Gemini gratuita nelle impostazioni.")
+            answer = self._not_understood()
         self._save_radio_state()           # i comandi a voce (silenzio, parla di più…) restano salvati
         self.coach.last_spoken = answer     # "Radio, ripeti" ripete anche le risposte
         self.emit("ingegnere", answer, True, 2)
         return answer
 
+    def _not_understood(self):
+        """Domanda che non so a cui rispondere: la spiegazione lunga una volta sola, poi una frase corta.
+        L'elenco completo lo dice "Radio, aiuto"."""
+        now = time.time()
+        first = now - getattr(self, "_nu_t", 0) > 1800        # la prima volta, o dopo mezz'ora
+        self._nu_t = now
+        if not first:
+            return "Non ho capito, ripeti?"
+        return ("Non ho capito. Prova con box, strategia, gomme, distacchi, meteo o batteria; "
+                "dimmi «Radio, aiuto» per l'elenco completo.")
+
     def _save_radio_state(self):
         cfg = engineer_ai.load_config(self.config_path)
         c = self.coach
-        new = {"verbosity": c.verbosity, "muted": c.muted, "training": c.training.enabled}
+        new = {"verbosity": c.verbosity, "muted": c.muted, "training": c.training.enabled, "work_on": c.work_on}
         if any(cfg.get(k) != v for k, v in new.items()):
             cfg.update(new)
             engineer_ai.save_config(cfg, self.config_path)
@@ -274,6 +289,18 @@ class Tenant:
         return sorted(out, key=lambda x: x["started"] or 0)
 
     # ---- voce AI
+    def prewarm(self, text, kind):
+        """Prepara l'audio di un avviso che servirà tra poco (avvisi prima della curva):
+        la voce del telefono poi lo trova già pronto in cache."""
+        key = (text, kind)
+        if key in self._warmed:
+            return
+        self._warmed.add(key)
+        if len(self._warmed) > 300:
+            self._warmed = {key}
+        body = {"text": text, "kind": kind, "prio": 2, "fallback": False}
+        threading.Thread(target=lambda: self.tts(body), daemon=True).start()
+
     def tts(self, body):
         """(audio WAV, None, motore usato) oppure (None, motivo, None) se va usata la voce del telefono.
         Voce AI che non risponde (quota, rete) → voce del server (Piper) → voce del telefono."""
@@ -295,7 +322,8 @@ class Tenant:
             except Exception as e:   # rete, chiave sbagliata, risposta strana
                 print(f"[{self.name}] voce AI non disponibile: {e}", flush=True)
                 why = "voce AI non disponibile"
-        if engine in ("ai", "piper") and PIPER.ready():
+        # (fallback false: la dashboard vuole una sola voce, quindi niente cambio da voce AI a voce del server)
+        if (engine == "piper" or (engine == "ai" and body.get("fallback") is not False)) and PIPER.ready():
             try:
                 return PIPER.synth(text, cid, style), why, "piper"
             except Exception as e:
@@ -340,6 +368,7 @@ class Tenant:
                 "voice_char": cfg.get("voice_char", voci.DEFAULT), "voice_chars": voci.elenco(),
                 "piper": PIPER.status(),
                 "muted": self.coach.muted, "training_on": self.coach.training.enabled,
+                "work_on": self.coach.work_on,
                 "target_ms": self.coach.target_ms(), "target_track": self.coach.track_name
                 if self.coach.track_id is not None else None,
                 "udp_port": self.udp_port, "server_ip": ARGS.public_ip if ARGS else None,
@@ -369,6 +398,8 @@ class Tenant:
             cfg["team_color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
         if "muted" in body:
             self.coach.muted = cfg["muted"] = bool(body["muted"])
+        if body.get("work_on") in WORK_ON:
+            self.coach.work_on = cfg["work_on"] = body["work_on"]
         if "training_on" in body:
             self.coach.training.set_enabled(body["training_on"])
             cfg["training"] = self.coach.training.enabled
@@ -409,9 +440,34 @@ def parse_lap_time(txt):
 
 
 # --------------------------------------------------------------------------- squadra e campionato
+WORK_ON = ("tutto", "frenata", "centro", "uscita")   # Impostazioni → Su cosa lavorare
+
+
 def find_teammates(me):
     """Gli altri utenti del server nella stessa gara online (stessa sessione del gioco):
     [(nome, indice della sua auto nei miei dati)]. Solo chi condivide i giri."""
+    return [(n, i) for n, i, _ in _friends_in_race(me)]
+
+
+def friend_info(me):
+    """Cosa sa il server delle macchine degli amici in gara con te: gomme, batteria, soste, piano."""
+    out = []
+    for name, idx, o in _friends_in_race(me):
+        oc = o.coach
+        try:
+            wear = oc.damage.get("tyre_wear")
+            ld = oc.last_lapdata or {}
+            plan = oc.race.strategy.last_plan or (False, None, None, None)     # (sosta?, giro, gomma, due soste)
+            out.append({"name": name, "idx": idx, "wear": max(wear) if wear else None,
+                        "compound": oc.status.get("compound"), "tyre_age": oc.status.get("tyre_age"),
+                        "ers": oc.energy.now_pct, "stops": ld.get("pit_stops"),
+                        "plan_lap": plan[1] if plan[0] else None})
+        except Exception as e:
+            print("Dati amico non letti:", e, flush=True)
+    return out
+
+
+def _friends_in_race(me):
     if MODE != "cloud":
         return []
     c = me.coach
@@ -434,7 +490,7 @@ def find_teammates(me):
                 if theirs.get("number") and p.get("number") == theirs.get("number") and p.get("team") == theirs.get("team"):
                     idx = i
                     break
-        out.append((name, idx))
+        out.append((name, idx, o))
     return out
 
 
@@ -450,7 +506,7 @@ def championship(me):
             continue
         for meta in recorder.list_sessions(t.data_dir):
             r = storico._race_of(meta)
-            if not r or not r.get("uid") or not r.get("finish") or r["laps"] < 2:
+            if not r or not r.get("uid") or r["laps"] < 1:
                 continue
             races.setdefault(r["uid"], []).append(dict(r, driver=name, me=t is me))
     rows, results = {}, []
@@ -458,22 +514,27 @@ def championship(me):
         drivers = {x["driver"] for x in rs}
         if len(drivers) < 2:
             continue
-        rs = sorted({x["driver"]: x for x in rs}.values(), key=lambda x: x["finish"])
+        # chi è arrivato in ordine d'arrivo, poi i ritirati (zero punti)
+        rs = sorted({x["driver"]: x for x in rs}.values(), key=lambda x: (x["finish"] is None, x["finish"] or 99))
+        if all(x["finish"] is None for x in rs):
+            continue                    # gara lasciata a metà da tutti: non conta
         best = min((x["best_ms"] for x in rs if x["best_ms"]), default=None)
         for x in rs:
-            pts = POINTS[x["finish"] - 1] if x["finish"] <= len(POINTS) else 0
+            pts = POINTS[x["finish"] - 1] if x["finish"] and x["finish"] <= len(POINTS) else 0
             x["points"] = pts
             x["fastest"] = bool(best and x["best_ms"] == best)
             row = rows.setdefault(x["driver"], {"driver": x["driver"], "me": x["me"], "points": 0, "races": 0,
                                                "wins": 0, "podiums": 0, "beaten": 0})
             row["points"] += pts
             row["races"] += 1
-            row["wins"] += x["finish"] == 1
-            row["podiums"] += x["finish"] <= 3
-            row["beaten"] += sum(1 for y in rs if y["finish"] > x["finish"])   # amici arrivati dietro
+            fin = x["finish"]
+            row["wins"] += fin == 1
+            row["podiums"] += bool(fin and fin <= 3)
+            row["dnf"] = row.get("dnf", 0) + (fin is None)
+            row["beaten"] += sum(1 for y in rs if fin and (y["finish"] is None or y["finish"] > fin))
         results.append({"uid": uid, "track": rs[0]["track"], "date": min(x["date"] or 0 for x in rs),
                         "category_name": rs[0]["category_name"],
-                        "results": [{k: x[k] for k in ("driver", "me", "finish", "grid", "points", "best_ms", "fastest")}
+                        "results": [{k: x.get(k) for k in ("driver", "me", "finish", "grid", "points", "best_ms", "fastest", "dnf", "laps")}
                                     for x in rs]})
     table = sorted(rows.values(), key=lambda r: (-r["points"], -r["wins"], -r["podiums"]))
     for i, r in enumerate(table):

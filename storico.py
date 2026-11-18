@@ -29,6 +29,17 @@ def _race_of(meta):
     best = min(valid, key=lambda l: l["ms"]) if valid else None
     grid = next((l.get("grid") for l in laps if l.get("grid")), None)
     finish = next((l.get("position") for l in reversed(laps) if l.get("position")), None)
+    # arrivata in fondo? Sì se c'è la bandiera a scacchi o se hai fatto tutti i giri. Le gare salvate
+    # prima di questa versione non lo dicono: se l'ultimo giro è a metà (sei uscito) è un ritiro.
+    total = max((l.get("total_laps") or 0 for l in laps), default=0)
+    if any(l.get("finished") for l in laps) or (total and laps[-1]["lap"] >= total and not laps[-1].get("partial")):
+        finished = True
+    elif any(l.get("result") in (4, 5, 6, 7) for l in laps) or laps[-1].get("partial"):
+        finished = False
+    else:
+        finished = not total            # vecchie gare complete: le considero arrivate
+    if not finished:
+        finish = None
     sd = None
     if best:
         clean = [l["ms"] / 1000 for l in valid if l["lap"] > 1 and l["ms"] <= best["ms"] * 1.03]
@@ -37,10 +48,40 @@ def _race_of(meta):
             sd = round((sum((x - m) ** 2 for x in clean) / len(clean)) ** 0.5, 3)
     return {"id": meta["id"], "uid": meta.get("uid"), "track": meta.get("track", "-"), "track_id": meta.get("track_id"),
             "category": meta.get("category"), "category_name": meta.get("category_name"),
-            "date": meta.get("started"), "laps": len(full), "grid": grid, "finish": finish,
+            "date": meta.get("started"), "laps": len(full), "grid": grid, "finish": finish, "dnf": not finished,
+            "total_laps": total or None,
             "gained": (grid - finish) if grid and finish else None,
             "best_ms": best["ms"] if best else None, "best_lap": best["lap"] if best else None,
             "stops": max((l.get("pit_stops") or 0) for l in laps), "consistency": sd}
+
+
+def records(data_dir, track=None, category=None, exclude_uid=None):
+    """Il record personale di sempre per ogni pista e categoria (giri validi e completi, anche in prova
+    e qualifica), con il miglioramento dalla prima sessione. Con track: solo quella pista."""
+    best = {}
+    for m in recorder.list_sessions(data_dir):
+        if track is not None and (str(m.get("track", "")).lower() != str(track).lower()
+                                  or (m.get("category") or None) != (category or None)):
+            continue
+        if exclude_uid is not None and str(m.get("uid")) == str(exclude_uid):
+            continue
+        ok = [l for l in m.get("laps", []) if l.get("valid") and not l.get("partial") and l.get("ms")]
+        if not ok:
+            continue
+        lap = min(ok, key=lambda l: l["ms"])
+        k = (m.get("track", "-"), m.get("category_name") or "")
+        r = best.setdefault(k, {"track": k[0], "category_name": k[1], "ms": None, "sessions": 0,
+                                "first_ms": None, "first_date": None})
+        r["sessions"] += 1
+        date = m.get("started") or 0
+        if r["ms"] is None or lap["ms"] < r["ms"]:
+            r.update(ms=lap["ms"], date=date, session=m.get("session"), id=m.get("id"), lap=lap["lap"])
+        if r["first_date"] is None or date < r["first_date"]:
+            r.update(first_ms=lap["ms"], first_date=date)
+    out = list(best.values())
+    for r in out:
+        r["gained_ms"] = r["first_ms"] - r["ms"] if r["sessions"] >= 2 else None
+    return sorted(out, key=lambda r: (-(r["sessions"]), r["track"]))
 
 
 def gare(data_dir):
@@ -51,6 +92,7 @@ def gare(data_dir):
         fin = [r["finish"] for r in rs if r["finish"]]
         gained = [r["gained"] for r in rs if r["gained"] is not None]
         return {"races": len(rs), "wins": sum(1 for f in fin if f == 1), "podiums": sum(1 for f in fin if f <= 3),
+                "dnf": sum(1 for r in rs if r.get("dnf")),
                 "avg_finish": round(sum(fin) / len(fin), 1) if fin else None,
                 "best_finish": min(fin) if fin else None,
                 "gained": sum(gained) if gained else 0,
@@ -63,7 +105,7 @@ def gare(data_dir):
     rated = [t for t in tracks if t["avg_finish"] is not None and t["races"] >= 1]
     best = min(rated, key=lambda t: t["avg_finish"]) if rated else None
     worst = max(rated, key=lambda t: t["avg_finish"]) if len(rated) >= 2 else None
-    return {"races": races, "total": stats(races), "tracks": tracks,
+    return {"races": races, "total": stats(races), "tracks": tracks, "records": records(data_dir),
             "best_track": best["track"] if best else None,
             "worst_track": worst["track"] if worst and worst is not best else None}
 

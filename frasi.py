@@ -32,6 +32,13 @@ T = {
                  "in uscita perdi trazione, più progressivo col gas",
                  "l'uscita non è pulita, gas più dolce",
                  "slitti in uscita, accompagna il gas"],
+    # quando non c'è una causa chiara (frenata e velocità minima come nel riferimento): dico solo dove
+    # si perde il tempo, prima o dopo il centro curva, senza inventare il motivo
+    "uscita_lenta": ["il tempo lo perdi dopo il centro curva: prova a dare gas pieno un attimo prima",
+                     "esci più lento del solito, lavora sull'uscita",
+                     "perdi in uscita: gas pieno un filo prima, se la macchina lo permette"],
+    "ingresso_lento": ["il tempo lo perdi in ingresso, prima del centro curva",
+                       "perdi tra la frenata e il centro curva: porta un po' più velocità in ingresso"],
     "perdi": ["Perdi {loss}.", "Lasci lì {loss}.", "Costa {loss}.", "Sono {loss} persi.", "Ci perdi {loss}."],
     "consiglio": ["{tag}: {tip}. {perdi}", "{tag}, {tip}. {perdi}"],
     "ancora": ["{tag}, di nuovo: {tip}. {perdi}", "Ancora {tag_l}: {tip}.", "{tag}, sempre lo stesso: {tip}.",

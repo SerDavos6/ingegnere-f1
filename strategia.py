@@ -60,9 +60,16 @@ class Strategy:
             return None
         return LIMIT / rate_now * LIFE[compound] / LIFE[comp_now]
 
+    def slicks(self):
+        """Le mescole che esistono per questa categoria: la supersoft c'è solo in F2
+        (in una gara vera con le F1 2026 l'ingegnere proponeva la supersoft)."""
+        if (self.c.category or "").startswith("f2"):
+            return SLICKS
+        return tuple(c for c in SLICKS if c != "supersoft")
+
     def pick_compound(self, laps_needed, rate, comp_now, exclude=()):
         """La mescola più veloce (più morbida) che arriva fino in fondo."""
-        options = [c for c in SLICKS if c not in exclude]
+        options = [c for c in self.slicks() if c not in exclude]
         for comp in options:
             life = self.life(comp, rate, comp_now)
             if life is not None and life >= laps_needed * 1.05:
@@ -119,6 +126,8 @@ class Strategy:
         if not p:
             return "Mi servono ancora un paio di giri per capire l'usura delle gomme."
         if not p["stop"]:
+            if me and me.get("pit_stops"):
+                return "Strategia: nessun'altra sosta, con questo ritmo le gomme arrivano fino in fondo."
             return "Strategia: nessuna sosta, con questo ritmo le gomme arrivano fino in fondo."
         if p["why"] == "finestra":
             return f"Strategia: una sosta tra il giro {p['lap']} e il {p['lap_to']}. La gomma te la dico più avanti."

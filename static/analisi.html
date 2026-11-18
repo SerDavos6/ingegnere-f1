@@ -140,8 +140,20 @@
   </div>
 
   <div class="card" style="margin-top:10px">
-    <div class="lbl" style="margin-bottom:6px">Staccate · confronto con il riferimento del coach</div>
+    <div class="lbl" style="margin-bottom:6px" id="zoneslbl">Staccate · confronto con il riferimento del coach</div>
+    <div id="sfida"></div>
     <div id="zones"></div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px">💬 Chiedi all'ingegnere</div>
+    <form id="askf" style="display:flex;gap:8px">
+      <input id="askq" placeholder="perché sono lento in curva 6?" autocomplete="off"
+        style="flex:1;min-width:0;background:#0c0e11;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:15px">
+      <button class="btn main">Chiedi</button>
+    </form>
+    <div id="askchips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+    <div id="aska" style="margin-top:10px;font-size:14px;line-height:1.55"></div>
   </div>
 
   <div class="card" style="margin-top:10px">
@@ -607,7 +619,12 @@ function raceStats(s) {
   const best = laps.filter(l => l.valid).reduce((a, b) => (!a || b.ms < a.ms) ? b : a, null);
   const withPos = laps.filter(l => l.position);
   const grid = (laps.find(l => l.grid) || {}).grid || null;
-  const finish = withPos.length ? withPos[withPos.length - 1].position : null;
+  // gara finita o lasciata a metà (stessa regola della pagina Le mie gare)
+  const all = [...s.laps].sort((a, b) => a.lap - b.lap), lastL = all[all.length - 1] || {};
+  const total = Math.max(0, ...all.map(l => l.total_laps || 0));
+  const dnf = !(all.some(l => l.finished) || (total && lastL.lap >= total && !lastL.partial)) &&
+              (all.some(l => [4, 5, 6, 7].includes(l.result)) || !!lastL.partial || !!total);
+  const finish = !dnf && withPos.length ? withPos[withPos.length - 1].position : null;
   // stint: cambi di mescola (o età delle gomme che torna a zero)
   const stints = [];
   for (const l of laps) {
@@ -629,7 +646,7 @@ function raceStats(s) {
       sd = Math.sqrt(ok.reduce((a, b) => a + (b - m) ** 2, 0) / ok.length) / 1000;
     }
   }
-  return {laps, best, grid, finish, stints, stops, sd};
+  return {dnf, laps, best, grid, finish, stints, stops, sd};
 }
 function drawSpark(canvas, pts, {invert = false, color = "#3987e5", min, max, label} = {}) {
   const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
@@ -663,7 +680,8 @@ function renderRaceSummary() {
   const sdVerdict = r.sd == null ? "servono più giri puliti" : r.sd < 0.3 ? "ottima" : r.sd < 0.6 ? "buona" : "da migliorare";
   const stintTxt = r.stints.filter(x => x.compound).map(x => `${COMP_IT[x.compound] || x.compound} (${x.from}–${x.to})`).join(" → ");
   $("rstats").innerHTML = `
-    <div><small>Partenza → arrivo</small><b class="mono">${r.grid ? "P" + r.grid : "?"} → ${r.finish ? "P" + r.finish : "?"}</b>
+    <div><small>Partenza → arrivo</small><b class="mono">${r.grid ? "P" + r.grid : "–"} → ${r.finish ? "P" + r.finish : r.dnf ? "RIT" : "–"}</b>
+      ${!r.grid ? '<small>il gioco non ha mandato la griglia</small>' : ""}
       ${gained != null ? `<small class="${gained > 0 ? "good" : gained < 0 ? "bad" : ""}">${gained > 0 ? "+" + gained + " posizioni" : gained < 0 ? gained + " posizioni" : "stessa posizione"}</small>` : ""}</div>
     <div><small>Giro più veloce</small><b class="mono">${r.best ? fmt(r.best.ms) : "–"}</b><small>${r.best ? "giro " + r.best.lap : ""}</small></div>
     <div><small>Costanza</small><b class="mono">${sdTxt}</b><small>${sdVerdict}</small></div>
@@ -679,7 +697,7 @@ $("raceshare").onclick = async () => {
   const r = raceSum; if (!r) return;
   const gained = r.grid && r.finish ? r.grid - r.finish : null;
   const lines = [`🏁 ${cur.track} · gara`,
-    r.grid && r.finish ? `Partenza P${r.grid} → arrivo P${r.finish}${gained ? ` (${gained > 0 ? "+" : ""}${gained})` : ""}` : (r.finish ? `Arrivo P${r.finish}` : ""),
+    r.dnf ? "Ritirato" : r.grid && r.finish ? `Partenza P${r.grid} → arrivo P${r.finish}${gained ? ` (${gained > 0 ? "+" : ""}${gained})` : ""}` : (r.finish ? `Arrivo P${r.finish}` : ""),
     r.best ? `Giro più veloce ${fmt(r.best.ms)} (giro ${r.best.lap})` : "",
     r.sd != null ? `Costanza ± ${r.sd.toFixed(2)} s` : "",
     `Soste: ${r.stops}` + (r.stints.some(x => x.compound) ? " · " + r.stints.filter(x => x.compound).map(x => COMP_IT[x.compound] || x.compound).join(" → ") : "")];
@@ -713,8 +731,163 @@ async function renameCurve(m, n) {
 }
 
 // ------------------------------------------------------------ staccate
+// Le staccate del giro di confronto, trovate qui nel telefono: così la tabella confronta davvero
+// con il giro scelto (anche quello di un amico) e non solo con il riferimento del coach.
+const BRAKE_ON = 0.15;
+function brakeStarts(tr, i0, i1) {
+  const out = [];
+  for (let i = Math.max(1, i0); i < i1; i++) {
+    if (tr.brk[i] >= BRAKE_ON && tr.brk[i - 1] < BRAKE_ON) {
+      let k = i, peak = 0;
+      while (k < i1 && tr.brk[k] >= BRAKE_ON) { peak = Math.max(peak, tr.brk[k]); k++; }
+      if (peak >= 0.5 || tr.d[k - 1] - tr.d[i] >= 10) out.push({ i, k });
+      i = k;
+    }
+  }
+  return out;
+}
+function findZones(tr) {
+  const n = tr.d.length, Z = [];
+  for (const b of brakeStarts(tr, 1, n)) {
+    let j = b.i, a = b.i;
+    while (j < n && !(j >= b.k && tr.thr[j] >= 0.95)) { if (tr.v[j] < tr.v[a]) a = j; j++; }
+    if (tr.v[b.i] - tr.v[a] < 15) continue;                 // solo un ritocco, non una curva
+    const z = { brake: tr.d[b.i], apex: tr.d[a], vmin: tr.v[a], full: j < n ? tr.d[j] : null };
+    z.exit = (z.full ?? z.apex) + 30;
+    const last = Z[Z.length - 1];
+    if (last && z.brake - last.exit < 120) {                 // curve in sequenza: una staccata sola
+      if (z.vmin < last.vmin) { last.apex = z.apex; last.vmin = z.vmin; }
+      last.full = z.full; last.exit = z.exit;
+    } else Z.push(z);
+  }
+  return Z;
+}
+function idxAt(tr, d) { let lo = 0, hi = tr.d.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tr.d[m] <= d) lo = m; else hi = m; } return lo; }
+function compareZones() {
+  const A = sel.trace, B = ref.trace, out = [];
+  findZones(B).forEach((z, n) => {
+    const a = z.brake - 150, b = z.exit;
+    if (a < A.d[0] || b > A.d[A.d.length - 1]) return;
+    const loss = (interp(A, "t", b) - interp(A, "t", a)) - (interp(B, "t", b) - interp(B, "t", a));
+    const i0 = idxAt(A, a), i1 = idxAt(A, b) + 1;
+    let bp = null;
+    for (const c of brakeStarts(A, i0, i1)) { const d = A.d[c.i]; if (Math.abs(d - z.brake) <= 60 && (bp == null || Math.abs(d - z.brake) < Math.abs(bp - z.brake))) bp = d; }
+    let vmin = 999, ai = i0;
+    for (let i = idxAt(A, z.brake - 50); i < i1; i++) if (A.v[i] < vmin) { vmin = A.v[i]; ai = i; }
+    let full = null;
+    for (let i = ai; i < A.d.length && A.d[i] < z.exit + 200; i++) if (A.thr[i] >= 0.95) { full = A.d[i]; break; }
+    out.push({ n: n + 1, at: z.brake, loss, brake_delta: bp == null ? null : bp - z.brake,
+               vmin_delta: vmin < 999 ? vmin - z.vmin : null, full_delta: full != null && z.full != null ? full - z.full : null });
+  });
+  return out;
+}
+// ------------------------------------------------------------ chiedi all'ingegnere
+// Risposte dai dati delle curve di questo giro, senza AI e senza chiave: "perché sono lento in curva 6?",
+// "dove perdo di più?", "come freno?", "dove esco male?", "dove vado forte?".
+let zoneCmp = "";
+const ASK_EX = ["Dove perdo di più?", "Come freno?", "Dove esco male dalle curve?", "Dove vado forte?"];
+function zoneTitle(r) { const c = curveName(r.at); return c ? c[0].toUpperCase() + c.slice(1) : "Staccata " + r.n; }
+function nrm(t) { return t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+function explainZone(r) {
+  const s = [], fix = [];
+  if (r.brake_delta != null && Math.abs(r.brake_delta) >= 8) {
+    if (r.brake_delta < 0) { s.push(`freni ${Math.round(-r.brake_delta)} m prima`); fix.push([Math.abs(r.brake_delta) / 8, `prova a frenare ${Math.round(-r.brake_delta)} metri più avanti`]); }
+    else { s.push(`freni ${Math.round(r.brake_delta)} m dopo`); if ((r.vmin_delta ?? 0) <= -3) fix.push([2, "freni troppo tardi e poi devi rallentare di più: anticipa un filo e porta velocità"]); }
+  }
+  if (r.vmin_delta != null && Math.abs(r.vmin_delta) >= 3) {
+    s.push(`a centro curva hai ${Math.abs(Math.round(r.vmin_delta))} km/h ${r.vmin_delta < 0 ? "in meno" : "in più"}`);
+    if (r.vmin_delta < 0) fix.push([Math.abs(r.vmin_delta) / 3, "rilascia il freno prima e lascia scorrere la macchina a centro curva"]);
+  }
+  if (r.full_delta != null && Math.abs(r.full_delta) >= 15) {
+    s.push(`dai gas pieno ${Math.abs(Math.round(r.full_delta))} m ${r.full_delta > 0 ? "dopo" : "prima"}`);
+    if (r.full_delta > 0) fix.push([r.full_delta / 15, "dai gas pieno prima in uscita, raddrizzando lo sterzo"]);
+  }
+  let h = `<b>${escH(zoneTitle(r))}</b>: ${r.loss > 0.02 ? `perdi <span class="bad">${r.loss.toFixed(2)} s</span>` : r.loss < -0.02 ? `guadagni <span class="good">${(-r.loss).toFixed(2)} s</span>` : "sei pari"} rispetto al ${escH(zoneCmp)}.`;
+  if (s.length) h += ` Rispetto al confronto ${s.join(", ")}.`;
+  if (r.loss > 0.02) {
+    fix.sort((a, b) => b[0] - a[0]);
+    h += fix.length ? ` <b>Cosa fare:</b> ${fix[0][1]}.` : " Frenata e velocità sono simili: il tempo lo perdi nella traiettoria, prova a entrare più largo e a sfruttare tutto il cordolo in uscita.";
+  }
+  return h;
+}
+function ask(q0) {
+  const q = nrm(q0), out = $("aska"), R = zoneRows || [];
+  if (!R.length) { out.innerHTML = "Per questo giro non ho dati sulle curve: scegli un giro completo e un giro di confronto."; return; }
+  const num = (q.match(/(?:curva|curve|staccata|t)\s*(\d+)/) || q.match(/\b(\d{1,2})\b/) || [])[1];
+  if (num) {
+    const n = +num;
+    const r = R.find(r => { const c = curveName(r.at); return c && new RegExp(`\\b${n}\\b`).test(c); })
+           || (/staccata/.test(q) || !R.some(r => curveName(r.at)) ? R.find(r => r.n === n) : null);
+    out.innerHTML = r ? explainZone(r) : `Non trovo la curva ${n} tra le staccate di questo giro. Le curve analizzate sono: ${R.map(zoneTitle).join(", ")}.`;
+    return;
+  }
+  const list = (rows, f) => rows.length ? rows.map(f).join("<br>") : "";
+  if (/frena|freno|stacc/.test(q)) {
+    const rows = R.filter(r => r.brake_delta != null && Math.abs(r.brake_delta) >= 8);
+    out.innerHTML = rows.length ? "<b>Le frenate</b> rispetto al " + escH(zoneCmp) + ":<br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${r.brake_delta < 0 ? `freni <span class="bad">${Math.round(-r.brake_delta)} m prima</span>` : `freni <span class="good">${Math.round(r.brake_delta)} m dopo</span>`}`)
+      : "Le frenate sono tutte entro 8 metri dal confronto: su quelle sei a posto.";
+    return;
+  }
+  if (/uscit|\besc[oi]\b|gas|accelera|trazion/.test(q)) {
+    const rows = R.filter(r => r.full_delta != null && r.full_delta >= 15).sort((a, b) => b.full_delta - a.full_delta);
+    out.innerHTML = rows.length ? "<b>Dove dai gas pieno più tardi:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${Math.round(r.full_delta)} m dopo`)
+      : "In uscita dai gas pieno come nel confronto, lì non perdi.";
+    return;
+  }
+  if (/centro|velocita|percorr|minima/.test(q)) {
+    const rows = R.filter(r => r.vmin_delta != null && r.vmin_delta <= -3).sort((a, b) => a.vmin_delta - b.vmin_delta);
+    out.innerHTML = rows.length ? "<b>Dove sei più lento a centro curva:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${Math.round(-r.vmin_delta)} km/h in meno`)
+      : "A centro curva hai la stessa velocità del confronto.";
+    return;
+  }
+  if (/forte|guadagn|meglio|bene|veloce/.test(q) && !/lent|perd/.test(q)) {
+    const rows = R.filter(r => r.loss < -0.02).sort((a, b) => a.loss - b.loss);
+    out.innerHTML = rows.length ? "<b>Dove vai più forte del confronto:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: <span class="good">${(-r.loss).toFixed(2)} s</span>`)
+      : "In questo giro non sei più veloce in nessuna curva.";
+    return;
+  }
+  if (/perd|lent|peggio|miglior|sbagl|tempo|dove/.test(q)) {
+    const rows = R.filter(r => r.loss > 0.02).sort((a, b) => b.loss - a.loss).slice(0, 3);
+    out.innerHTML = rows.length ? `Le curve dove perdi di più rispetto al ${escH(zoneCmp)}:<br>` + rows.map(r => "· " + explainZone(r)).join("<br>")
+      : "In questo giro non perdi tempo in nessuna curva. Ottimo!";
+    return;
+  }
+  out.innerHTML = "Non ho capito. Prova con: " + ASK_EX.map(x => `«${x}»`).join(", ") + " oppure «perché sono lento in curva 6?».";
+}
+$("askf").onsubmit = e => { e.preventDefault(); const q = $("askq").value.trim(); if (q) ask(q); };
+$("askchips").innerHTML = ASK_EX.map(x => `<button type="button" class="btn" style="padding:6px 10px;font-size:13px">${x}</button>`).join("");
+$("askchips").querySelectorAll("button").forEach(b => b.onclick = () => { $("askq").value = b.textContent; ask(b.textContent); });
+
+// Il verdetto della sfida: dove ti batte l'amico e perché, dove sei più veloce tu.
+function renderSfida(rows) {
+  const box = $("sfida");
+  if (refFriend == null || !rows.length) { box.innerHTML = ""; return; }
+  const who = escH(ref.driver || "il tuo amico");
+  const nm = r => { const c = curveName(r.at); return c ? escH(c[0].toUpperCase() + c.slice(1)) : "Staccata " + r.n; };
+  const why = r => {
+    const w = [];
+    if (r.brake_delta != null && r.brake_delta <= -8) w.push(`frena ${Math.round(-r.brake_delta)} m dopo di te`);
+    if (r.vmin_delta != null && r.vmin_delta <= -4) w.push(`porta ${Math.round(-r.vmin_delta)} km/h in più a centro curva`);
+    if (r.full_delta != null && r.full_delta >= 15) w.push(`dà gas pieno ${Math.round(r.full_delta)} m prima`);
+    return w.length ? w.join(", ") : "è più veloce tra frenata e uscita";
+  };
+  const lose = rows.filter(r => r.loss > 0.03).sort((a, b) => b.loss - a.loss).slice(0, 3);
+  const win = rows.filter(r => r.loss < -0.03).sort((a, b) => a.loss - b.loss).slice(0, 2);
+  const tot = (sel.ms - ref.ms) / 1000;
+  let h = `<div style="background:var(--bg2,rgba(255,255,255,.04));border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px;line-height:1.5">
+    <b>⚔ Sfida con ${who}</b>: ${tot > 0 ? `ti batte di <b class="bad">${tot.toFixed(3)} s</b>` : tot < 0 ? `lo batti di <b class="good">${(-tot).toFixed(3)} s</b>` : "pari"}.`;
+  if (lose.length) h += `<br><b>Dove ti batte:</b><br>` + lose.map(r => `· ${nm(r)}: <span class="bad">${sgn(r.loss)}</span>, ${why(r)}`).join("<br>");
+  if (win.length) h += `<br><b>Dove sei più veloce tu:</b> ` + win.map(r => `${nm(r)} (<span class="good">${sgn(r.loss)}</span>)`).join(", ");
+  if (lose.length) h += `<br><span style="color:var(--dim);font-size:12px">Tocca 🎯 per usare il suo giro come riferimento: in pista l'ingegnere ti guida su queste curve.</span>`;
+  box.innerHTML = h + `</div>`;
+}
+let zoneRows = [];
 function renderZones() {
-  const z = sel.zones || [];
+  const cmp = diffRef() && ref && ref.trace && sel.trace;
+  const z = cmp ? compareZones() : (sel.zones || []);
+  zoneRows = z; zoneCmp = cmp ? refName() : "riferimento del coach";
+  $("zoneslbl").textContent = cmp ? `Staccate · confronto con il ${refName()}` : "Staccate · confronto con il riferimento del coach";
+  renderSfida(cmp ? z : []);
   if (!z.length) { $("zones").innerHTML = '<div class="empty">Nessun dato sulle staccate per questo giro (serve un giro di riferimento del coach).</div>'; return; }
   const f = (v0, u, inv) => { if (v0 == null) return "-"; const v = Math.round(v0);
     return `<span class="${v === 0 ? "" : (inv ? v > 0 : v < 0) ? "bad" : "good"}">${v > 0 ? "+" : ""}${v}${u}</span>`; };

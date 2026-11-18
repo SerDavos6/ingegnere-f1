@@ -89,11 +89,11 @@ fetch("/api/campionato").then(r => { if (r.status === 401) { location.href = "/l
   }
   $("table").innerHTML = j.standings.map(r => `<div class="row${r.me ? " me" : ""}">
       <div class="pos ${r.pos <= 3 ? "p" + r.pos : ""}">${r.pos}</div>
-      <div class="who"><b>${esc(r.driver)}${r.me ? " (tu)" : ""}</b><small>${r.races} ${r.races === 1 ? "gara" : "gare"} · ${r.wins} ${r.wins === 1 ? "vittoria" : "vittorie"} · ${r.podiums} ${r.podiums === 1 ? "podio" : "podi"}</small></div>
+      <div class="who"><b>${esc(r.driver)}${r.me ? " (tu)" : ""}</b><small>${r.races} ${r.races === 1 ? "gara" : "gare"} · ${r.wins} ${r.wins === 1 ? "vittoria" : "vittorie"} · ${r.podiums} ${r.podiums === 1 ? "podio" : "podi"}${r.dnf ? " · " + r.dnf + " " + (r.dnf === 1 ? "ritiro" : "ritiri") : ""}</small></div>
       <div class="t"><b class="pts mono">${r.points}</b><small class="gapp">${r.gap ? "−" + r.gap : "leader"}</small></div><span></span></div>`).join("");
   $("races").innerHTML = j.races.map(rc => `<div class="rc"><b>${esc(rc.track)}</b> <span class="hint">${day(rc.date)}${rc.category_name ? " · " + esc(rc.category_name) : ""}</span>
-      ${rc.results.map(x => `<div class="res${x.me ? " me" : ""}"><span class="mono">P${x.finish}</span>
-        <span><b>${esc(x.driver)}</b>${x.fastest ? '<span class="fl">⏱ giro più veloce</span>' : ""}<small style="color:var(--dim);display:block">${x.grid ? "partito P" + x.grid + " · " : ""}giro ${fmt(x.best_ms)}</small></span>
+      ${rc.results.map(x => `<div class="res${x.me ? " me" : ""}"><span class="mono">${x.finish ? "P" + x.finish : "RIT"}</span>
+        <span><b>${esc(x.driver)}</b>${x.fastest ? '<span class="fl">⏱ giro più veloce</span>' : ""}<small style="color:var(--dim);display:block">${x.finish ? "" : "ritirato dopo " + x.laps + " giri · "}${x.grid ? "partito P" + x.grid + " · " : ""}giro ${fmt(x.best_ms)}</small></span>
         <span class="mono">+${x.points}</span></div>`).join("")}</div>`).join("");
 }).catch(() => {});
 </script>

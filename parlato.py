@@ -28,7 +28,8 @@ def tenths(sec):
     if sec < 1:
         d = max(1, round(sec * 10))
         return "1 decimo" if d == 1 else f"{d} decimi"
-    return num(sec) + " secondi"
+    t = num(sec)
+    return t + (" secondo" if t == "1" else " secondi")
 
 
 def plural(n, one, many):

@@ -16,6 +16,15 @@ PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nomi_curve.json
 RAGGIO = 200          # metri
 MAX_NOME = 40
 _lock = threading.Lock()
+
+# Nomi già pronti, ricavati da giri veri (distanza del punto di frenata dal traguardo, in metri).
+# Valgono finché un utente non scrive un nome suo nello stesso punto.
+# Shanghai (2): da una gara vera con le auto 2026, 7 staccate.
+BUILTIN = {
+    "2": [{"m": 570, "nome": "curva 1"}, {"m": 845, "nome": "curva 3"}, {"m": 1475, "nome": "curva 6"},
+          {"m": 2250, "nome": "curva 9"}, {"m": 3030, "nome": "curva 11"}, {"m": 4655, "nome": "curva 14"},
+          {"m": 5090, "nome": "curva 16"}],
+}
 _cache = {"mtime": None, "data": {}}
 
 
@@ -37,7 +46,10 @@ def _load():
 def names(track_id):
     if track_id is None:
         return []
-    return sorted(_load().get(str(track_id), []), key=lambda x: x["m"])
+    mine = _load().get(str(track_id), [])
+    base = [dict(x, builtin=True) for x in BUILTIN.get(str(track_id), [])
+            if all(abs(x["m"] - y["m"]) > RAGGIO / 2 for y in mine)]
+    return sorted(mine + base, key=lambda x: x["m"])
 
 
 def name_at(track_id, m):

@@ -6,7 +6,7 @@ e la domanda passa all'AI (Gemini o Claude), se configurata.
 """
 import unicodedata
 
-from parlato import num, plural
+from parlato import fmt_lap_voice, num, plural, tenths
 from engineer_ai import rule_based_debrief
 
 SLICKS = {"supersoft", "soft", "medie", "dure"}
@@ -63,6 +63,9 @@ class Answers:
         if est.get("behind"):
             g = est["behind"]["gap"]
             txt += f", con {num(g)} secondi di margine su chi ti segue" if g >= 1 else ", ma molto vicino a chi arriva"
+        n = est.get("to_stop") or 0
+        if n:
+            txt += f". Di quelli davanti, {n} {'deve' if n == 1 else 'devono'} ancora fermarsi"
         return txt + "."
 
     def pit(self):
@@ -173,6 +176,33 @@ class Answers:
             return f"Carburante ok, hai {num(fl)} giri di margine."
         return f"Sei sotto di {num(fl)} giri: alza e lascia scorrere prima delle frenate."
 
+    def best(self):
+        """Il giro più veloce: in gara lo dico solo se me lo chiedi."""
+        c = self.c
+        mine = [h for h in c.history if h["valid"] and h.get("race", False) == bool(c.in_race)]
+        parts = []
+        if mine:
+            b = min(mine, key=lambda h: h["ms"])
+            parts.append(f"Il tuo giro più veloce {'in gara' if c.in_race else 'in questa sessione'} è "
+                         f"{fmt_lap_voice(b['ms'])}, al giro {b['lap']}.")
+        if c.record_past and c.record_ms:
+            parts.append(f"Il tuo record a {c.track_name} è {fmt_lap_voice(c.record_ms)}.")
+        return " ".join(parts) or "Non ho ancora un giro valido completo."
+
+    def pace(self):
+        if not self.c.in_race:
+            return self.driving()
+        p = self.c.race_pace()
+        if not p:
+            return "Il passo te lo dico dopo 3 giri puliti in gara."
+        last = next((h for h in reversed(self.c.history) if h.get("clean")), None)
+        txt = f"Il tuo passo è {fmt_lap_voice(p)}."
+        if last:
+            d = (last["ms"] - p) / 1000
+            txt += (" L'ultimo giro è in linea." if abs(d) < 0.2 else
+                    f" L'ultimo giro è {tenths(d)} {'sopra' if d > 0 else 'sotto'}.")
+        return txt
+
     def laps(self):
         rem = self._remaining()
         return f"Mancano {plural(rem, 'giro', 'giri')}." if rem else "Non è una gara a giri, o non ho ancora il dato."
@@ -205,14 +235,17 @@ class Answers:
         ("gaps", ("davanti", "dietro", "distacc", "gap", "quanto ho", "secondi da")),
         ("energy", ("batteri", "energia", " ers ", "elettric", "overtake", "ricaric")),
         ("fuel", ("carburant", "benzin", "fuel")),
+        ("best", ("giro piu veloce", "giro migliore", "miglior giro", "record", "il mio migliore", "giro veloce")),
+        ("pace", ("passo", "ritmo", "come sto andando", "come vado")),
         ("laps", ("quanti giri", "mancano", "giri mancanti")),
         ("position", ("posizione", "che posto", "in che posto")),
         ("damage", ("dann", "ala ", "alettone", "rotto")),
-        ("driving", ("dove perdo", "come vado", "staccat", "consigl", "miglior", "frenat", "debrief")),
+        ("driving", ("dove perdo", "staccat", "consigl", "miglioro", "migliorare", "frenat", "debrief")),
     ]
 
     # ------------------------------------------------------------ comandi della radio
     COMMANDS = [
+        ("help", ("aiuto", "cosa posso chiederti", "cosa posso chiedere", "che domande", "comandi")),
         ("training", ("allenamento",)),
         ("mute", ("silenzio", "stai zitto", "zitto", "basta parlare", "non parlare", "taci")),
         ("more", ("parla di piu", "parla piu", "piu messaggi", "piu informazioni")),
@@ -224,6 +257,16 @@ class Answers:
 
     def command(self, q):
         c = self.c
+        # "lavoriamo sulla frenata", "concentriamoci sull'uscita", "lavoriamo su tutto"
+        if _has(q, "lavori", "concentr"):
+            for key, words, said in (("frenata", ("frenat", "staccat", "freno"), "sulle frenate"),
+                                     ("centro", ("centro", "percorrenz", "velocita in curva", "ingresso"), "sulla velocità a centro curva"),
+                                     ("uscita", ("uscita", "gas", "trazione", "acceleratore"), "sull'uscita e il gas"),
+                                     ("tutto", ("tutto", "tutte", "normale"), "su tutto")):
+                if _has(q, *words):
+                    c.work_on = key
+                    return (f"Ok, lavoriamo {said}." + ("" if key == "tutto" else
+                            " Gli altri consigli te li lascio scritti."))
         name = next((n for n, words in self.COMMANDS if _has(q, *words)), None)
         if name is None and q.strip() in ("parla", "parla pure", "vai"):
             name = "unmute"
@@ -243,6 +286,8 @@ class Answers:
             return {1: "Ok, parlo di meno: solo le cose importanti.",
                     2: "Ok, livello normale: anche i distacchi a ogni giro.",
                     3: "Ok, parlo di più: anche i consigli di guida in gara."}[c.verbosity]
+        if name == "help":
+            return self.HELP
         if name == "repeat":
             return c.last_spoken or "Non ho ancora detto niente."
         if name == "training":
@@ -261,6 +306,11 @@ class Answers:
         cmd = self.command(q)
         if cmd is not None:
             return cmd
+        fs = self.c.race.friend.asked(q)
+        if fs:
+            txt = self.c.race.friend.answer(fs)
+            if txt:
+                return txt
         found = []
         for name, words in self.INTENTS:
             if _has(q, *words) and name not in found:
@@ -271,5 +321,5 @@ class Answers:
             return None
         return " ".join(getattr(self, n)() for n in found[:2])
 
-    HELP = ("Comandi: silenzio, parla, parla di più, parla di meno, ripeti, allenamento. Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
-            "distacchi, batteria, carburante, quanti giri mancano, dove perdo tempo, consigli d'assetto.")
+    HELP = ("Comandi: aiuto, silenzio, parla, parla di più, parla di meno, ripeti, allenamento, lavoriamo sulla frenata (o centro curva, uscita, tutto). Puoi chiedermi: mi fermo ai box?, qual è la strategia?, dove rientro?, piove?, come stanno le gomme?, "
+            "distacchi, batteria, carburante, qual è il mio passo, qual è il mio giro più veloce, come sta il mio amico, quanti giri mancano, dove perdo tempo, consigli d'assetto.")
