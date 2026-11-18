@@ -28,6 +28,14 @@ import unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NODE_MAJOR = 22
+STT_PKG = "sherpa-onnx-node@^1.12.0"     # riconoscimento vocale: installato a parte, se non va resta solo la voce in uscita
+
+
+def _npm_error(text):
+    """Le righe utili di un errore di npm (senza avvisi di aggiornamento né il percorso del log)."""
+    lines = [l for l in text.splitlines() if l.strip() and "npm notice" not in l and "complete log" not in l]
+    err = [l for l in lines if "npm error" in l or "ERR" in l] or lines
+    return " | ".join(l.replace("npm error", "").strip() for l in err[-6:])[-500:]
 WHISPER_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2"
 MODES = ("telefono", "discord", "entrambi")    # dove esce la voce dell'ingegnere
 
@@ -156,21 +164,38 @@ class Runtime:
                     open(pkg_src).read() != (open(pkg_dst).read() if os.path.exists(pkg_dst) else ""):
                 self.detail = "librerie Discord"
                 shutil.copy(pkg_src, pkg_dst)
-                env = dict(os.environ, PATH=os.path.join(self.node_dir, "bin") + os.pathsep + os.environ.get("PATH", ""),
-                           npm_config_cache=os.path.join(self.root, ".npm"))
-                r = subprocess.run([os.path.join(self.node_dir, "bin", "npm"), "install", "--omit=dev",
-                                    "--no-audit", "--no-fund", "--loglevel=error"],
-                                   cwd=self.root, env=env, capture_output=True, text=True, timeout=900)
+                r = self._npm(["install"])
                 if r.returncode != 0:
-                    raise RuntimeError("npm: " + (r.stderr or r.stdout)[-300:])
+                    print("Discord: npm install non riuscito:\n" + r.stdout[-3000:] + r.stderr[-3000:], flush=True)
+                    raise RuntimeError("npm: " + _npm_error(r.stderr + "\n" + r.stdout))
             self.state = "pronto"           # la voce in uscita funziona già: Whisper è un di più
             self._install_whisper()
         except Exception as e:
             self.state, self.detail = "errore", str(e)[:300]
             print("Discord: installazione non riuscita:", e, flush=True)
 
+    def _npm(self, args):
+        env = dict(os.environ, PATH=os.path.join(self.node_dir, "bin") + os.pathsep + os.environ.get("PATH", ""),
+                   npm_config_cache=os.path.join(self.root, ".npm"), npm_config_update_notifier="false",
+                   HOME=self.root)
+        return subprocess.run([os.path.join(self.node_dir, "bin", "npm")] + args +
+                              ["--omit=dev", "--no-audit", "--no-fund", "--no-save", "--loglevel=error"],
+                              cwd=self.root, env=env, capture_output=True, text=True, timeout=900)
+
+    def lib_path(self):
+        """sherpa-onnx su Linux vuole la cartella delle sue librerie in LD_LIBRARY_PATH."""
+        nm = os.path.join(self.root, "node_modules")
+        dirs = [os.path.join(nm, d) for d in os.listdir(nm)] if os.path.isdir(nm) else []
+        return os.pathsep.join(d for d in dirs if os.path.basename(d).startswith("sherpa-onnx-linux"))
+
     def _install_whisper(self):
         try:
+            if not os.path.isdir(os.path.join(self.root, "node_modules", "sherpa-onnx-node")):
+                self.detail = "riconoscimento vocale (libreria)"
+                r = self._npm(["install", STT_PKG])
+                if r.returncode != 0:
+                    print("Discord: sherpa-onnx non installato:\n" + (r.stderr + r.stdout)[-2000:], flush=True)
+                    raise RuntimeError(_npm_error(r.stderr + "\n" + r.stdout))
             if not self._find_whisper():
                 self.detail = "riconoscimento vocale"
                 tb = os.path.join(self.root, "whisper.tar.bz2")
@@ -258,7 +283,10 @@ class DiscordLink:
         for f in ("bot.mjs", "stt-worker.mjs"):
             shutil.copy(os.path.join(HERE, "discord", f), os.path.join(self.rt.root, f))
         bot_cfg = {"token": token, "channel": channel, "user": user, "whisper": self.rt.whisper}
-        env = dict(os.environ, BOT_CFG=json.dumps(bot_cfg))
+        env = dict(os.environ, BOT_CFG=json.dumps(bot_cfg), HOME=self.rt.root)
+        lp = self.rt.lib_path()
+        if lp:
+            env["LD_LIBRARY_PATH"] = lp + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
         self.state, self.detail = "avvio", "collego il bot"
         try:
             self.proc = subprocess.Popen([self.rt.node, os.path.join(self.rt.root, "bot.mjs")], cwd=self.rt.root,
