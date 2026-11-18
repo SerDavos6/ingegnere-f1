@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<title>Collegamento PS5</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600;
+          --good:#4cc38a; --gold:#ffd24a; --silver:#c9d1da; --bronze:#d08a4a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:820px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:16px; width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 12px; }
+  .row { display:grid; grid-template-columns:34px 1fr auto auto; gap:10px; align-items:center; padding:11px 0; }
+  .row + .row { border-top:1px solid var(--line); }
+  .row.me { background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+            margin:0 -12px; padding-left:12px; padding-right:12px; }
+  .pos { font-size:18px; font-weight:800; text-align:center; }
+  .p1 { color:var(--gold); } .p2 { color:var(--silver); } .p3 { color:var(--bronze); }
+  .who b { display:block; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .who small { color:var(--dim); font-size:12px; }
+  .t { text-align:right; } .t b { display:block; font-size:16px; } .t small { color:var(--dim); font-size:12px; }
+  .cmp { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+         font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap; }
+  .cmp.off { visibility:hidden; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; line-height:1.5; }
+  .hint { font-size:12px; color:var(--dim); line-height:1.45; }
+  .others { display:flex; flex-wrap:wrap; gap:6px; }
+  .others button { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:20px; padding:7px 12px; font-size:13px; }
+  .others button.on { border-color:var(--accent); }
+  .cats button { font-weight:800; }
+  .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .light { display:flex; align-items:center; gap:14px; padding:16px 14px; }
+  .light i { width:26px; height:26px; border-radius:50%; background:#555; flex:none; box-shadow:0 0 0 6px #ffffff10; }
+  .light.ok i { background:var(--good); box-shadow:0 0 18px var(--good); }
+  .light.attesa i { background:#ffb020; box-shadow:0 0 18px #ffb020; }
+  .light.problema i { background:#ff4d4d; box-shadow:0 0 18px #ff4d4d; }
+  .light b { font-size:18px; } .light small { display:block; color:var(--dim); font-size:13px; margin-top:3px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; padding:10px 0; font-size:14px; }
+  .kv span { color:var(--dim); } .kv b { text-align:right; }
+  .big { font-size:26px; font-weight:800; color:var(--accent); }
+  ol, ul { padding-left:20px; line-height:1.5; font-size:15px; } li { margin:6px 0; }
+  .tip { padding:10px 0; font-size:15px; line-height:1.45; } .tip + .tip { border-top:1px solid var(--line); }
+  .tip.problema { color:#ff8080; } .tip.consiglio { color:#ffd36b; } .tip.ok { color:var(--good); } .tip.info { color:var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Collegamento PS5</h1>
+</header>
+<div class="card light" id="light"><i></i><div><b id="ltitle">Controllo…</b><small id="lsub"></small></div></div>
+<div class="card">
+  <div class="lbl" style="padding-top:8px">Sulla PS5: F1 → Impostazioni → Telemetria</div>
+  <div class="kv">
+    <span>Telemetria UDP</span><b>On</b>
+    <span>Broadcast UDP</span><b>Off</b>
+    <span>Indirizzo IP</span><b class="big mono" id="ip">–</b>
+    <span>Porta</span><b class="big mono" id="port">–</b>
+    <span>Frequenza</span><b id="hz">–</b>
+    <span>Formato UDP</span><b>2025</b>
+  </div>
+</div>
+<div class="card" id="tips"></div>
+<div class="card">
+  <div class="lbl" style="padding-top:8px">Cosa arriva al server</div>
+  <div class="kv">
+    <span>Pacchetti ricevuti</span><b class="mono" id="pk">0</b>
+    <span>Ultimo dato</span><b id="age">mai</b>
+    <span>Dalla PS5 con IP</span><b class="mono" id="addr">–</b>
+    <span>Formato del gioco</span><b id="fmt">–</b>
+    <span>Telemetria al secondo</span><b class="mono" id="rate">–</b>
+  </div>
+  <div class="hint" id="types" style="padding-bottom:10px"></div>
+</div>
+<p class="hint">La pagina si aggiorna da sola ogni 2 secondi: lasciala aperta mentre cambi le impostazioni sulla PS5 ed entri in pista.</p>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
+const TITLES = { ok: ["Collegato!", "I dati della PS5 arrivano al server."], attesa: ["In attesa della PS5", ""],
+                 problema: ["C'è qualcosa da sistemare", "Leggi i consigli qui sotto."] };
+function ago(s) { if (s == null) return "mai"; if (s < 3) return "adesso"; if (s < 90) return Math.round(s) + " secondi fa";
+  if (s < 5400) return Math.round(s / 60) + " minuti fa"; return Math.round(s / 3600) + " ore fa"; }
+async function tick() {
+  try {
+    const r = await fetch("/api/collegamento");
+    if (r.status === 401) { location.href = "/login"; return; }
+    const j = await r.json();
+    $("light").className = "card light " + j.state;
+    const [t, sub] = TITLES[j.state];
+    $("ltitle").textContent = t;
+    $("lsub").textContent = j.state === "attesa" ? (j.packets ? "Il collegamento funziona: entra in una sessione." : "Nessun dato ricevuto finora.") : sub;
+    $("ip").textContent = j.cloud ? (j.server_ip || "IP del server") : (j.lan_ip || "IP del server");
+    $("port").textContent = j.udp_port;
+    $("hz").textContent = j.cloud ? "20 Hz" : "60 Hz";
+    $("pk").textContent = j.packets.toLocaleString("it-IT");
+    $("age").textContent = ago(j.age);
+    $("addr").textContent = j.addr || "–";
+    $("fmt").textContent = j.format || "–";
+    $("rate").textContent = j.rate ? j.rate + " Hz" : "–";
+    $("types").textContent = j.types.length ? "Tipi di dati ricevuti: " + j.types.join(", ") + "." : "";
+    $("tips").innerHTML = j.tips.map(x => `<div class="tip ${x.kind}">${x.kind === "passo" ? "▸ " : x.kind === "ok" ? "✅ " : x.kind === "problema" ? "⚠️ " : x.kind === "consiglio" ? "💡 " : ""}${esc(x.text)}</div>`).join("");
+  } catch (e) { $("ltitle").textContent = "Il server non risponde"; $("light").className = "card light problema"; }
+}
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>

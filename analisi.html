@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Analisi giri</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --grid:#1f262e; --txt:#e8edf2; --dim:#8b96a2;
+          --sel:#3987e5; --ref:#d95926; --brake:#e5484d; --gas:#0ca30c; --part:#fab219; --coast:#5b6672; --accent:#e10600; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { overflow-anchor:none; }
+  html,body { background:var(--bg); color:var(--txt); font-family:-apple-system,"SF Pro Text",Roboto,"Segoe UI",sans-serif; }
+  body { padding:max(10px, env(safe-area-inset-top)) 12px 24px; display:flex; flex-direction:column; gap:10px; max-width:1300px; margin:0 auto; }
+  .mono { font-family:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace; font-variant-numeric:tabular-nums; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  header h1 b { color:var(--accent); }
+  a.back { color:var(--dim); text-decoration:none; font-size:14px; border:1px solid var(--line); padding:8px 12px; border-radius:10px; }
+  select { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:15px; max-width:100%; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  #laps { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; }
+  .chip { flex:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:7px 10px; font-size:13px; text-align:left; color:var(--txt); }
+  .chip b { display:block; font-size:12px; color:var(--dim); font-weight:600; }
+  .chip.sel { border-color:var(--sel); box-shadow:inset 0 0 0 1px var(--sel); }
+  .chip.ref { border-color:var(--ref); box-shadow:inset 0 0 0 1px var(--ref); }
+  .chip .tag { font-size:10px; margin-left:4px; color:var(--dim); }
+  .chip.invalid span.mono { text-decoration:line-through; color:var(--dim); }
+  .chip.partial { border-style:dashed; } .chip.partial span.mono { color:var(--dim); }
+  .sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; }
+  .sum .v { font-size:22px; font-weight:600; margin-top:2px; }
+  .good { color:#4cc38a; } .bad { color:#ff6b72; }
+  .layout { display:grid; grid-template-columns:1fr; gap:10px; }
+  @media (min-width: 900px) { .layout { grid-template-columns: 420px 1fr; } }
+  #mapwrap { position:relative; }
+  #map { width:100%; aspect-ratio:1/1; display:block; touch-action:none; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--dim); margin-top:6px; align-items:center; }
+  .legend i { display:inline-block; width:14px; height:4px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { background:transparent; color:var(--dim); border:0; padding:7px 10px; font-size:13px; font-weight:600; }
+  .seg button.on { background:#232a32; color:var(--txt); }
+  .charts { display:flex; flex-direction:column; gap:2px; }
+  .chart { position:relative; }
+  .chart .title { position:absolute; left:46px; top:2px; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; pointer-events:none; }
+  .chart canvas { width:100%; display:block; touch-action:pan-y; }
+  #readout { display:flex; gap:14px; flex-wrap:wrap; font-size:13px; min-height:40px; align-content:flex-start; }
+  #readout span { color:var(--dim); } #readout b { font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  #zones { overflow-x:auto; }
+  th, td { white-space:nowrap; padding:7px 6px; text-align:right; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  th:first-child, td:first-child { text-align:left; }
+  tr.click { cursor:pointer; }
+  button.ren { background:none; border:0; font-size:14px; padding:2px 4px; margin-left:4px; cursor:pointer; opacity:.75; }
+  .empty { color:var(--dim); padding:30px 10px; text-align:center; }
+  .key { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); }
+  .key i { width:16px; height:3px; border-radius:2px; display:inline-block; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .btn { background:#1b2128; color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 12px;
+         font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn.main { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn[hidden] { display:none; }
+  #fmsg { font-size:13px; color:var(--dim); margin-top:8px; min-height:17px; }
+  #fmsg.ok { color:#4cc38a; } #fmsg.err { color:#ff6b72; }
+  .hint2 { font-size:12px; color:var(--dim); margin-top:6px; line-height:1.4; }
+  .rgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-top:10px; }
+  .rgrid div b { display:block; font-size:22px; font-weight:700; margin-top:2px; }
+  .rgrid div small { color:var(--dim); font-size:12px; }
+  .rcharts { display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px; }
+  @media (min-width: 700px) { .rcharts { grid-template-columns:1fr 1fr; } }
+  .rcharts canvas { width:100%; height:130px; display:block; margin-top:4px; }
+  input.txt { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:15px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Dashboard</a>
+  <h1><b>F1</b> Analisi giri</h1>
+  <select id="session"></select>
+  <button class="btn main" id="exportimg" style="margin-left:auto">🖼 Esporta grafico</button>
+</header>
+
+<div id="content">
+  <div class="card" id="racecard" hidden style="margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="lbl" style="flex:1">🏁 Riepilogo gara</div>
+      <button class="btn" id="raceshare">📤 Condividi</button>
+    </div>
+    <div class="rgrid" id="rstats"></div>
+    <div class="rcharts">
+      <div><div class="lbl">Posizione giro per giro</div><canvas id="rpos"></canvas></div>
+      <div id="rwearbox"><div class="lbl">Usura gomme (la più consumata)</div><canvas id="rwear"></canvas></div>
+    </div>
+    <div class="hint2" id="rnote"></div>
+  </div>
+  <div class="card">
+    <div class="lbl" style="margin-bottom:6px">Scegli il giro da analizzare · tieni premuto per usarlo come confronto</div>
+    <div id="laps"></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <span class="key"><i style="background:var(--sel)"></i>Giro selezionato</span>
+      <span class="key"><i style="background:var(--ref)"></i>Confronto</span>
+      <label class="key">Confronta con <select id="refsel"></select></label>
+    </div>
+  </div>
+
+  <div class="card" id="friendbox" style="margin-top:10px">
+    <div class="lbl">Sfida un amico</div>
+    <div class="btns">
+      <button class="btn" id="fexport">⬇ Esporta il giro</button>
+      <label class="btn">⬆ Carica giro amico<input type="file" id="fupload" accept=".json,application/json" hidden></label>
+      <button class="btn main" id="fuseref">🎯 Usa come riferimento del coach</button>
+      <button class="btn" id="fdelete" hidden>🗑 Elimina</button>
+    </div>
+    <div class="btns" id="fnamebox" hidden>
+      <input class="txt" id="fname" placeholder="Il tuo nome nei giri che esporti" maxlength="40">
+    </div>
+    <div id="fmsg"></div>
+  </div>
+
+  <div class="sum" style="margin-top:10px" id="sum"></div>
+
+  <div class="layout" style="margin-top:10px">
+    <div class="card" id="mapwrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px"><div class="lbl">Mappa pista</div>
+          <div class="seg" id="mapview"><button data-v="rot" title="Ruota di 90°" aria-label="Ruota">⟳</button><button data-v="flip" title="Specchia" aria-label="Specchia">⇋</button></div></div>
+        <div class="seg" id="mapmode"><button data-m="input" class="on">Freno / gas</button><button data-m="delta">Dove perdi</button></div>
+      </div>
+      <canvas id="map"></canvas>
+      <div class="legend" id="maplegend"></div>
+    </div>
+    <div class="card">
+      <div id="readout" class="mono"></div>
+      <div class="charts" id="charts"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px" id="zoneslbl">Staccate · confronto con il riferimento del coach</div>
+    <div id="sfida"></div>
+    <div id="zones"></div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px">💬 Chiedi all'ingegnere</div>
+    <form id="askf" style="display:flex;gap:8px">
+      <input id="askq" placeholder="perché sono lento in curva 6?" autocomplete="off"
+        style="flex:1;min-width:0;background:#0c0e11;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:15px">
+      <button class="btn main">Chiedi</button>
+    </form>
+    <div id="askchips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+    <div id="aska" style="margin-top:10px;font-size:14px;line-height:1.55"></div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="lbl" style="margin-bottom:6px" id="proglbl">Progressi</div>
+    <canvas id="prog" style="width:100%;height:170px;display:block"></canvas>
+    <div class="hint2" id="proginfo"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const escH = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = ms => { if (!ms) return "--:--.---"; const m = Math.floor(ms/60000); return m + ":" + ((ms%60000)/1000).toFixed(3).padStart(6,"0"); };
+const sgn = (x, d=3) => (x > 0 ? "+" : x < 0 ? "−" : "±") + Math.abs(x).toFixed(d);
+
+let sessions = [], cur = null, selLap = null, refLap = null, sel = null, ref = null, cursor = null, mapMode = "input";
+let refFriend = null, friends = [], pendingFriend = null;          // refFriend: id del giro dell'amico usato come confronto
+const cache = {};
+// c'è un confronto diverso dal giro selezionato?
+const diffRef = () => !!ref && (refFriend != null || refLap !== selLap);
+const refName = () => refFriend != null ? `giro di ${ref ? ref.driver : "un amico"}` : `giro ${refLap}`;
+async function getFriendLap(id) {
+  const k = "amico/" + id;
+  if (!cache[k]) cache[k] = fetch(`/api/friend_lap?id=${encodeURIComponent(id)}`).then(r => r.ok ? r.json() : null);
+  return cache[k];
+}
+
+// ------------------------------------------------------------ dati
+async function getLap(sid, n) {
+  const k = sid + "/" + n;
+  if (!cache[k]) cache[k] = fetch(`/api/lap?s=${encodeURIComponent(sid)}&l=${n}`).then(r => r.ok ? r.json() : null);
+  return cache[k];
+}
+function interp(tr, key, d) {
+  const D = tr.d; let lo = 0, hi = D.length - 1;
+  if (d <= D[0]) return tr[key][0];
+  if (d >= D[hi]) return tr[key][hi];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D[m] <= d) lo = m; else hi = m; }
+  const f = (d - D[lo]) / (D[hi] - D[lo]);
+  return tr[key][lo] + (tr[key][hi] - tr[key][lo]) * f;
+}
+function deltaSeries() {
+  if (!sel || !ref) return null;
+  return sel.trace.d.map((d, i) => sel.trace.t[i] - interp(ref.trace, "t", d));
+}
+
+// --------------------------------------------------------- sessioni
+async function loadSessions() {
+  sessions = await fetch("/api/sessions").then(r => { if (r.status === 401) { location.href = "/login"; return []; } return r.json(); }).catch(() => []);
+  const s = $("session");
+  s.innerHTML = "";
+  if (!sessions.length) {
+    $("content").innerHTML = '<div class="card empty">Nessun giro salvato. Fai qualche giro completo e torna qui.</div>';
+    return;
+  }
+  for (const x of sessions) {
+    const o = document.createElement("option");
+    const dt = new Date(x.started * 1000).toLocaleString("it-IT", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
+    o.value = x.id; o.textContent = `${x.track} · ${x.category_name ? x.category_name + " · " : ""}${x.session} · ${dt} · ${x.laps.length} giri`;
+    s.appendChild(o);
+  }
+  s.onchange = () => pickSession(s.value);
+  // arrivo dalla Classifica: apro l'ultima sessione su quella pista e confronto con il giro dell'amico
+  const q = new URLSearchParams(location.search);
+  const want = q.get("track") && (sessions.find(x => x.track === q.get("track") && (x.category || "") === (q.get("cat") || ""))
+                                   || sessions.find(x => x.track === q.get("track")));
+  const bySid = q.get("s") && sessions.find(x => x.id === q.get("s"));      // arrivo da "Le mie gare"
+  if (bySid) { s.value = bySid.id; pickSession(bySid.id); }
+  else if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
+  else pickSession(sessions[0].id);
+}
+// giri parziali: uscita dai box, rientro ai box, o interrotti (garage, fine sessione)
+const KINDS = { uscita: "uscita box", rientro: "rientro box", parziale: "parziale" };
+function bestLap(s) {
+  const full = s.laps.filter(l => !l.partial);
+  const v = full.filter(l => l.valid);
+  return (v.length ? v : full.length ? full : s.laps).reduce((a, b) => b.ms < a.ms ? b : a);
+}
+function pickSession(id) {
+  cur = sessions.find(s => s.id === id);
+  const best = bestLap(cur);
+  const last = cur.laps[cur.laps.length - 1];
+  refLap = best.lap; refFriend = null;
+  const full = cur.laps.filter(l => !l.partial);
+  const lastFull = full.length ? full[full.length - 1] : last;
+  selLap = lastFull.lap !== best.lap ? lastFull.lap : (full.find(l => l.lap !== best.lap) || best).lap;
+  friends = [];
+  buildRefSelect();
+  $("refsel").onchange = () => {
+    const v = $("refsel").value;
+    if (v.startsWith("F:")) { refFriend = v.slice(2); refLap = null; }
+    else { refFriend = null; refLap = +v.slice(2); }
+    load();
+  };
+  load();
+  loadCurve();
+  renderRaceSummary();
+  loadFriends();
+  loadIdeal();
+  loadProgress();
+}
+function buildRefSelect() {
+  const best = bestLap(cur), r = $("refsel"); r.innerHTML = "";
+  const mine = document.createElement("optgroup"); mine.label = "I tuoi giri";
+  for (const l of cur.laps) {
+    const o = document.createElement("option");
+    o.value = "L:" + l.lap; o.textContent = `Giro ${l.lap} · ${fmt(l.ms)}${l.lap === best.lap ? " (migliore)" : ""}${l.partial ? " (" + KINDS[l.kind || "parziale"] + ")" : ""}`;
+    mine.appendChild(o);
+  }
+  r.appendChild(mine);
+  if (friends.length) {
+    const g = document.createElement("optgroup"); g.label = "Giri degli amici";
+    for (const f of friends) {
+      const o = document.createElement("option");
+      o.value = "F:" + f.id; o.textContent = `${f.driver} · ${fmt(f.ms)}${f.source === "file" ? " (file)" : ""}`;
+      g.appendChild(o);
+    }
+    r.appendChild(g);
+  }
+  r.value = refFriend != null ? "F:" + refFriend : "L:" + refLap;
+}
+async function loadFriends() {
+  const track = cur.track;
+  const list = await fetch(`/api/friends?track=${encodeURIComponent(track)}&cat=${encodeURIComponent(cur.category || "")}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (!cur || cur.track !== track) return;
+  friends = list;
+  if (pendingFriend && list.some(f => f.id === pendingFriend)) {
+    refFriend = pendingFriend; refLap = null; pendingFriend = null;
+    buildRefSelect(); load();
+  }
+  buildRefSelect();
+  renderFriendBox();
+}
+function renderChips() {
+  const best = bestLap(cur);
+  const box = $("laps"); box.innerHTML = "";
+  for (const l of cur.laps) {
+    const b = document.createElement("button");
+    b.className = "chip" + (l.lap === selLap ? " sel" : "") + (l.lap === refLap && l.lap !== selLap ? " ref" : "") + (l.valid || l.partial ? "" : " invalid") + (l.partial ? " partial" : "");
+    const tag = l.partial ? `<span class="tag">${KINDS[l.kind || "parziale"]}</span>` : l.valid ? "" : '<span class="tag">non valido</span>';
+    b.innerHTML = `<b>Giro ${l.lap}${l.lap === best.lap ? '<span class="tag">★ migliore</span>' : ""}${tag}</b><span class="mono">${fmt(l.ms)}</span>`;
+    b.onclick = () => { selLap = l.lap; load(); };
+    let t; b.onpointerdown = () => t = setTimeout(() => { refLap = l.lap; refFriend = null; load(); }, 550);
+    b.onpointerup = b.onpointerleave = () => clearTimeout(t);
+    box.appendChild(b);
+  }
+  $("refsel").value = refFriend != null ? "F:" + refFriend : "L:" + refLap;
+}
+// ---------------------------------------------------------- giro ideale
+const idealCache = {};
+function idealHtml() {
+  const j = idealCache[cur.id];
+  if (!j) return '<span style="font-size:14px;color:var(--dim)">…</span>';
+  if (!j.ideal_ms) return '<span style="font-size:14px;color:var(--dim)">servono 2 giri validi</span>';
+  const where = (j.spots || []).map(sp => `${(sp.da_m / 1000).toFixed(1)}–${(sp.a_m / 1000).toFixed(1)} km`).join(", ");
+  return `${fmt(j.ideal_ms)}<span class="good" style="font-size:13px"> −${j.gap_s.toFixed(3)}</span>` +
+         (where ? `<div style="font-size:12px;color:var(--dim);font-family:inherit;margin-top:2px">dal migliore · tempo da trovare a ${where}</div>` : "");
+}
+async function loadIdeal() {
+  const id = cur.id;
+  if (!(id in idealCache)) idealCache[id] = await fetch(`/api/ideal?s=${encodeURIComponent(id)}`).then(r => r.json()).catch(() => ({}));
+  if (cur.id === id && $("idealcard")) $("idealcard").querySelector(".v").innerHTML = idealHtml();
+}
+
+// ---------------------------------------------------------- progressi
+async function loadProgress() {
+  const track = cur.track;
+  const list = await fetch(`/api/progress?track=${encodeURIComponent(track)}&cat=${encodeURIComponent(cur.category || "")}`).then(r => r.json()).catch(() => []);
+  if (cur.track !== track) return;
+  $("proglbl").textContent = `Progressi a ${track}${cur.category_name ? " in " + cur.category_name : ""} · giro migliore di ogni sessione`;
+  const c = $("prog"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (list.length < 2) {
+    ctx.fillStyle = css("--dim"); ctx.font = "13px -apple-system,Roboto,sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(list.length ? "Il grafico compare dalla seconda sessione su questa pista" : "Nessuna sessione valida", W / 2, H / 2);
+    $("proginfo").textContent = "";
+    return;
+  }
+  const L = 64, R = 12, T = 12, B = 22;
+  let lo = Math.min(...list.map(x => x.ms)), hi = Math.max(...list.map(x => x.ms));
+  const pad = Math.max(200, (hi - lo) * 0.15); lo -= pad; hi += pad;
+  const X = i => L + i / (list.length - 1) * (W - L - R), Y = ms => T + (ms - lo) / (hi - lo) * (H - T - B);   // più in alto = più veloce
+  ctx.font = "11px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--dim"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.strokeStyle = css("--grid");
+  for (let k = 0; k <= 3; k++) {
+    const ms = lo + (hi - lo) * k / 3, y = Math.round(Y(ms)) + .5;
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke(); ctx.fillText(fmt(Math.round(ms)), L - 6, y);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  list.forEach((x, i) => { if (list.length <= 8 || i % Math.ceil(list.length / 8) === 0) {
+    ctx.textAlign = i === 0 ? "left" : i === list.length - 1 ? "right" : "center";
+    ctx.fillText(new Date(x.started * 1000).toLocaleDateString("it-IT", {day: "2-digit", month: "2-digit"}), i === 0 ? L : i === list.length - 1 ? W - R : X(i), H); } });
+  ctx.strokeStyle = css("--sel"); ctx.lineWidth = 2; ctx.beginPath();
+  list.forEach((x, i) => i ? ctx.lineTo(X(i), Y(x.ms)) : ctx.moveTo(X(i), Y(x.ms))); ctx.stroke();
+  let best = Infinity;
+  list.forEach((x, i) => {
+    const pb = x.ms < best; best = Math.min(best, x.ms);
+    ctx.beginPath(); ctx.arc(X(i), Y(x.ms), pb ? 5 : 3.5, 0, 7);
+    ctx.fillStyle = x.id === cur.id ? "#fff" : pb ? "#4cc38a" : css("--sel"); ctx.fill();
+  });
+  const first = list[0].ms, last = list[list.length - 1].ms, top = Math.min(...list.map(x => x.ms));
+  $("proginfo").innerHTML = `${list.length} sessioni · record ${fmt(top)} · ` +
+    (last < first ? `<span class="good">${sgn((last - first) / 1000)} dalla prima</span>` : `${sgn((last - first) / 1000)} dalla prima`) +
+    ` · <span style="color:#4cc38a">●</span> nuovo record · <span style="color:#fff">●</span> sessione aperta`;
+}
+
+async function load() {
+  renderChips();
+  [sel, ref] = await Promise.all([getLap(cur.id, selLap),
+                                  refFriend != null ? getFriendLap(refFriend) : getLap(cur.id, refLap)]);
+  if (!sel) return;
+  renderFriendBox();
+  cursor = null;
+  renderSummary(); drawMap(); drawCharts(); renderZones(); renderReadout();
+}
+
+// ---------------------------------------------------------- riepilogo
+function renderSummary() {
+  const d = ref ? (sel.ms - ref.ms) / 1000 : 0;
+  const sec = k => sel[k] ? fmt(sel[k]).replace(/^0:/, "") : "-";
+  const sd = k => (ref && sel[k] && ref[k]) ? `<span class="${sel[k] <= ref[k] ? "good" : "bad"}" style="font-size:13px"> ${sgn((sel[k]-ref[k])/1000)}</span>` : "";
+  $("sum").innerHTML = `
+    <div class="card"><div class="lbl">Giro ${sel.lap}${sel.partial ? " · " + KINDS[sel.kind || "parziale"] : sel.valid ? "" : " · non valido"}</div><div class="v mono">${fmt(sel.ms)}</div></div>
+    <div class="card"><div class="lbl">vs ${refName()}</div><div class="v mono ${d <= 0 ? "good" : "bad"}">${diffRef() ? sgn(d) : "—"}</div></div>
+    <div class="card"><div class="lbl">Settore 1</div><div class="v mono">${sec("s1")}${sd("s1")}</div></div>
+    <div class="card"><div class="lbl">Settore 2</div><div class="v mono">${sec("s2")}${sd("s2")}</div></div>
+    <div class="card"><div class="lbl">Settore 3</div><div class="v mono">${sec("s3")}${sd("s3")}</div></div>
+    <div class="card"><div class="lbl">Gomme · posizione</div><div class="v">${sel.compound || "-"} <span style="font-size:14px;color:var(--dim)">${sel.tyre_age ?? ""}g · P${sel.position || "-"}</span></div></div>
+    <div class="card" id="idealcard" style="grid-column:span 2"><div class="lbl">Giro ideale</div><div class="v mono">${idealHtml()}</div></div>`;
+}
+
+// ------------------------------------------------------------- mappa
+function setupCanvas(c, h) {
+  // Ridimensiona il canvas solo quando cambia davvero: ridisegnare mentre si scorre
+  // non deve mai toccare il layout della pagina.
+  const dpr = window.devicePixelRatio || 1;
+  if (h && c.style.height !== h + "px") c.style.height = h + "px";
+  const w = c.clientWidth, H = c.clientHeight;
+  const pw = Math.round(w * dpr), ph = Math.round(H * dpr);
+  if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, H);
+  return [ctx, w, H];
+}
+// Il browser genera "movimenti" finti del mouse mentre la pagina scorre con la rotella:
+// li ignoro, così scorrendo non si ridisegna nulla.
+let lastPt = null;
+function realMove(e) {
+  if (e.pointerType === "mouse" && e.type === "pointermove" && lastPt && lastPt[0] === e.screenX && lastPt[1] === e.screenY) return false;
+  lastPt = [e.screenX, e.screenY];
+  return true;
+}
+let mapXY = null;
+// rotazione e specchio della mappa, ricordati per ogni pista
+function viewKey() { return "mappa:" + (cur ? cur.track : ""); }
+function getView() {
+  try { return JSON.parse(localStorage.getItem(viewKey())) || { rot: 0, flip: false }; }
+  catch (e) { return mapViewMem[viewKey()] || { rot: 0, flip: false }; }
+}
+const mapViewMem = {};
+function setView(v) {
+  mapViewMem[viewKey()] = v;
+  try { localStorage.setItem(viewKey(), JSON.stringify(v)); } catch (e) {}
+}
+$("mapview").onclick = e => {
+  const k = e.target.dataset.v; if (!k) return;
+  const v = getView();
+  if (k === "rot") v.rot = (v.rot + 1) % 4; else v.flip = !v.flip;
+  setView(v); drawMap();
+};
+function drawMap() {
+  const c = $("map"), [ctx, W, H] = setupCanvas(c);
+  const tr = sel.trace, n = tr.d.length;
+  const v = getView(), X = new Array(n), Z = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let x = v.flip ? -tr.x[i] : tr.x[i], z = tr.z[i];
+    for (let r = 0; r < v.rot; r++) [x, z] = [-z, x];
+    X[i] = x; Z[i] = z;
+  }
+  let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+  for (let i = 0; i < n; i++) { minx = Math.min(minx, X[i]); maxx = Math.max(maxx, X[i]); minz = Math.min(minz, Z[i]); maxz = Math.max(maxz, Z[i]); }
+  const pad = 22, s = Math.min((W - 2*pad) / (maxx - minx || 1), (H - 2*pad) / (maxz - minz || 1));
+  const ox = (W - (maxx - minx) * s) / 2, oz = (H - (maxz - minz) * s) / 2;
+  const P = i => [ox + (X[i] - minx) * s, oz + (Z[i] - minz) * s];
+  mapXY = { P, n };
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // base
+  ctx.strokeStyle = "#232a32"; ctx.lineWidth = 12; ctx.beginPath();
+  for (let i = 0; i < n; i++) { const [x, y] = P(i); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+  // colori
+  const delta = mapMode === "delta" ? deltaSeries() : null;
+  ctx.lineWidth = 5;
+  for (let i = 1; i < n; i++) {
+    let col;
+    if (mapMode === "input") {
+      const b = tr.brk[i], t = tr.thr[i];
+      col = b > 0.1 ? css("--brake") : t > 0.95 ? css("--gas") : t > 0.05 ? css("--part") : css("--coast");
+    } else if (delta) {
+      const k = Math.max(0, i - 5), slope = (delta[i] - delta[k]);   // variazione su ~15 m
+      col = slope > 0.004 ? css("--brake") : slope < -0.004 ? css("--gas") : "#3a434d";
+    } else col = "#3a434d";
+    const [x0, y0] = P(i - 1), [x1, y1] = P(i);
+    ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  }
+  // partenza
+  const [sx, sy] = P(0);
+  ctx.fillStyle = "#fff"; ctx.fillRect(sx - 2, sy - 8, 4, 16);
+  // numeri staccate
+  ctx.font = "600 11px -apple-system, Roboto, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const z of (sel.zones || [])) {
+    const i = Math.min(n - 1, Math.round((z.at - tr.d[0]) / 3));
+    if (i < 0) continue;
+    const [x, y] = P(i);
+    ctx.fillStyle = "#0b0d10"; ctx.beginPath(); ctx.arc(x + 12, y - 12, 9, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#5b6672"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#e8edf2"; ctx.fillText(z.n, x + 12, y - 11.5);
+    const nm = curveName(z.at);
+    if (nm) {
+      ctx.save(); ctx.textAlign = "left"; ctx.font = "600 10px -apple-system, Roboto, sans-serif";
+      ctx.lineWidth = 3; ctx.strokeStyle = "#0b0d10"; ctx.strokeText(nm, x + 24, y - 11.5);
+      ctx.fillStyle = "#c7d0da"; ctx.fillText(nm, x + 24, y - 11.5); ctx.restore();
+    }
+  }
+  // cursore
+  if (cursor != null) {
+    const i = Math.max(0, Math.min(n - 1, Math.round((cursor - tr.d[0]) / 3)));
+    const [x, y] = P(i);
+    ctx.fillStyle = css("--sel"); ctx.strokeStyle = "#14181d"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  $("maplegend").innerHTML = mapMode === "input"
+    ? `<span><i style="background:var(--brake)"></i>Freno</span><span><i style="background:var(--gas)"></i>Gas pieno</span><span><i style="background:var(--part)"></i>Gas parziale</span><span><i style="background:var(--coast)"></i>Rilascio</span>`
+    : (diffRef() ? `<span><i style="background:var(--brake)"></i>Perdi tempo</span><span><i style="background:var(--gas)"></i>Guadagni</span><span><i style="background:#3a434d"></i>Uguale</span> <span>rispetto al ${refName()}</span>` : `<span>Scegli un giro di confronto diverso</span>`);
+}
+$("mapmode").onclick = e => {
+  const m = e.target.dataset.m; if (!m) return;
+  mapMode = m;
+  for (const b of $("mapmode").children) b.classList.toggle("on", b.dataset.m === m);
+  drawMap();
+};
+function mapPointer(e) {
+  if (!mapXY || !realMove(e)) return;
+  const r = $("map").getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < mapXY.n; i += 2) { const [x, y] = mapXY.P(i); const dd = (x-mx)**2 + (y-my)**2; if (dd < bd) { bd = dd; best = i; } }
+  if (bd < 900) { cursor = sel.trace.d[best]; redrawCursor(); }
+}
+$("map").addEventListener("pointermove", mapPointer);
+$("map").addEventListener("pointerdown", mapPointer);
+
+// ------------------------------------------------------------ grafici
+const CHARTS = [
+  { key: "delta", title: "Delta (s)", h: 90, delta: true },
+  { key: "v", title: "Velocità (km/h)", h: 150 },
+  { key: "thr", title: "Gas (%)", h: 80, pct: true },
+  { key: "brk", title: "Freno (%)", h: 80, pct: true },
+  { key: "gear", title: "Marcia", h: 80, step: true },
+];
+const L = 44, R = 8, T = 26, B = 16;
+function buildCharts() {
+  const box = $("charts"); box.innerHTML = "";
+  for (const ch of CHARTS) {
+    const d = document.createElement("div"); d.className = "chart";
+    d.innerHTML = `<div class="title">${ch.title}</div><canvas></canvas>`;
+    box.appendChild(d); ch.canvas = d.querySelector("canvas");
+    const move = e => { if (!realMove(e)) return; const r = ch.canvas.getBoundingClientRect(); const x = e.clientX - r.left;
+      const [d0, d1] = xDomain(); cursor = d0 + (x - L) / (r.width - L - R) * (d1 - d0); cursor = Math.max(d0, Math.min(d1, cursor)); redrawCursor(); };
+    ch.canvas.addEventListener("pointermove", move);
+    ch.canvas.addEventListener("pointerdown", move);
+  }
+}
+function xDomain() { const D = sel.trace.d; return [D[0], D[D.length - 1]]; }
+function niceTicks(lo, hi, n) {
+  const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(s => s >= step0);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+function drawChart(ch) {
+  const [ctx, W, H] = setupCanvas(ch.canvas, ch.h);
+  const [d0, d1] = xDomain();
+  const X = d => L + (d - d0) / (d1 - d0) * (W - L - R);
+  let series = [];
+  if (ch.delta) {
+    const ds = deltaSeries();
+    if (ds && diffRef()) series = [{ d: sel.trace.d, y: ds, col: css("--sel") }];
+  } else {
+    const k = ch.key, mul = ch.pct ? 100 : 1;
+    if (diffRef()) series.push({ d: ref.trace.d, y: ref.trace[k].map(v => v * mul), col: css("--ref") });
+    series.push({ d: sel.trace.d, y: sel.trace[k].map(v => v * mul), col: css("--sel") });
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const s of series) for (const v of s.y) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (ch.pct) { lo = 0; hi = 100; }
+  if (ch.delta) { const m = Math.max(0.1, Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; }
+  if (ch.key === "v") { lo = Math.max(0, Math.floor(lo / 50) * 50); hi = Math.ceil(hi / 50) * 50; }
+  if (ch.step) { lo = 0; hi = 8; }
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  const Y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  ch.Y = Y; ch.X = X; ch.series = series;
+  // griglia e assi
+  ctx.font = "11px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--dim"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (const v of niceTicks(lo, hi, ch.h > 100 ? 4 : 2)) {
+    const y = Math.round(Y(v)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.fillText(ch.delta ? (v > 0 ? "+" : "") + v.toFixed(Math.abs(v) < 1 ? 2 : 1) : v, L - 6, y);
+  }
+  if (ch.delta) { ctx.strokeStyle = "#5b6672"; ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(W - R, Y(0)); ctx.stroke(); }
+  if (ch === CHARTS[CHARTS.length - 1]) {
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    for (const v of niceTicks(d0, d1, 6)) ctx.fillText(v >= 1000 ? (v/1000) + " km" : v + " m", X(v), H);
+  }
+  // linee
+  ctx.lineWidth = 2; ctx.lineJoin = "round";
+  for (const s of series) {
+    ctx.strokeStyle = s.col; ctx.beginPath();
+    for (let i = 0; i < s.d.length; i++) {
+      const x = X(s.d[i]), y = Y(s.y[i]);
+      if (!i) ctx.moveTo(x, y);
+      else if (ch.step) { ctx.lineTo(x, Y(s.y[i - 1])); ctx.lineTo(x, y); }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  if (ch.delta && !series.length) { ctx.textAlign = "center"; ctx.fillText("scegli un giro di confronto diverso", (L + W) / 2, H / 2); }
+  // cursore
+  if (cursor != null) {
+    const x = Math.round(X(cursor)) + .5;
+    ctx.strokeStyle = "#8b96a2"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, T - 6); ctx.lineTo(x, H - B); ctx.stroke();
+    for (const s of series) {
+      const v = interp({ d: s.d, y: s.y }, "y", cursor);
+      ctx.fillStyle = s.col; ctx.strokeStyle = "#14181d"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, Y(v), 4.5, 0, 7); ctx.fill(); ctx.stroke();
+    }
+  }
+}
+function drawCharts() { for (const ch of CHARTS) drawChart(ch); }
+function renderReadout() {
+  if (cursor == null) { $("readout").innerHTML = '<span>Tocca o scorri un grafico o la mappa per leggere i valori</span>'; return; }
+  const s = k => Math.round(interp(sel.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1));
+  const r = k => diffRef() ? Math.round(interp(ref.trace, k, cursor) * (k === "thr" || k === "brk" ? 100 : 1)) : null;
+  const pair = (lab, k, u) => `<span>${lab}</span> <b style="color:var(--sel)">${s(k)}${u}</b>${r(k) != null ? ` <b style="color:var(--ref)">${r(k)}${u}</b>` : ""}`;
+  const ds = deltaSeries(); let dtxt = "";
+  if (ds && diffRef()) { const v = interp({ d: sel.trace.d, y: ds }, "y", cursor); dtxt = `<span>Delta</span> <b class="${v <= 0 ? "good" : "bad"}">${sgn(v, 2)}</b>`; }
+  $("readout").innerHTML = `<span>${Math.round(cursor)} m</span>${dtxt}${pair("Vel", "v", "")}${pair("Gas", "thr", "%")}${pair("Freno", "brk", "%")}${pair("Marcia", "gear", "")}`;
+}
+let raf = 0;
+function redrawCursor() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; drawCharts(); drawMap(); renderReadout(); });
+}
+
+// ------------------------------------------------------------ riepilogo gara
+const COMP_IT = { supersoft: "Supersoft", soft: "Soft", medie: "Medie", dure: "Dure", intermedie: "Intermedie", "da bagnato": "Bagnato" };
+function raceStats(s) {
+  const laps = s.laps.filter(l => !l.partial).sort((a, b) => a.lap - b.lap);
+  if (!/gara|sprint/i.test(s.session || "") || laps.length < 3) return null;
+  const best = laps.filter(l => l.valid).reduce((a, b) => (!a || b.ms < a.ms) ? b : a, null);
+  const withPos = laps.filter(l => l.position);
+  const grid = (laps.find(l => l.grid) || {}).grid || null;
+  // gara finita o lasciata a metà (stessa regola della pagina Le mie gare)
+  const all = [...s.laps].sort((a, b) => a.lap - b.lap), lastL = all[all.length - 1] || {};
+  const total = Math.max(0, ...all.map(l => l.total_laps || 0));
+  const dnf = !(all.some(l => l.finished) || (total && lastL.lap >= total && !lastL.partial)) &&
+              (all.some(l => [4, 5, 6, 7].includes(l.result)) || !!lastL.partial || !!total);
+  const finish = !dnf && withPos.length ? withPos[withPos.length - 1].position : null;
+  // stint: cambi di mescola (o età delle gomme che torna a zero)
+  const stints = [];
+  for (const l of laps) {
+    const last = stints[stints.length - 1];
+    const newSet = !last || (l.compound && l.compound !== last.compound) || (l.tyre_age != null && last.age != null && l.tyre_age < last.age);
+    if (newSet && (l.compound || !last)) stints.push({compound: l.compound, from: l.lap, to: l.lap, age: l.tyre_age});
+    else { last.to = l.lap; last.age = l.tyre_age; }
+  }
+  const stops = laps.length ? Math.max(0, ...laps.map(l => l.pit_stops || 0)) || Math.max(0, stints.filter(x => x.compound).length - 1) : 0;
+  // costanza: giri validi, senza il primo giro, i giri dei box e quelli lenti (safety car, errori)
+  const pitLaps = new Set(stints.slice(1).flatMap(x => [x.from - 1, x.from]));
+  const clean = laps.filter(l => l.valid && l.lap > 1 && !pitLaps.has(l.lap)).map(l => l.ms);
+  let sd = null;
+  if (clean.length >= 4) {
+    const med = [...clean].sort((a, b) => a - b)[Math.floor(clean.length / 2)];
+    const ok = clean.filter(ms => ms <= med * 1.03);
+    if (ok.length >= 3) {
+      const m = ok.reduce((a, b) => a + b, 0) / ok.length;
+      sd = Math.sqrt(ok.reduce((a, b) => a + (b - m) ** 2, 0) / ok.length) / 1000;
+    }
+  }
+  return {dnf, laps, best, grid, finish, stints, stops, sd};
+}
+function drawSpark(canvas, pts, {invert = false, color = "#3987e5", min, max, label} = {}) {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const c = canvas.getContext("2d"); c.scale(dpr, dpr); c.clearRect(0, 0, w, h);
+  if (pts.length < 2) { c.fillStyle = "#8b96a2"; c.font = "12px sans-serif"; c.fillText("Dati non disponibili per questa gara", 4, h / 2); return; }
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = min ?? Math.min(...ys), y1 = max ?? Math.max(...ys);
+  const L = 30, R = 6, T = 8, B = 18;
+  const X = x => L + (x - x0) / Math.max(1, x1 - x0) * (w - L - R);
+  const Y = y => { const f = (y - y0) / Math.max(1e-9, y1 - y0); return T + (invert ? f : 1 - f) * (h - T - B); };
+  c.strokeStyle = "#1f262e"; c.lineWidth = 1; c.fillStyle = "#8b96a2"; c.font = "11px sans-serif";
+  for (const v of [y0, (y0 + y1) / 2, y1]) {
+    const yy = Y(v); c.beginPath(); c.moveTo(L, yy); c.lineTo(w - R, yy); c.stroke();
+    c.textAlign = "right"; c.fillText(label ? label(v) : Math.round(v), L - 4, yy + 4);
+  }
+  c.textAlign = "center"; c.fillText("giro " + x0, X(x0) + 14, h - 4); c.fillText(String(x1), X(x1) - 6, h - 4);
+  c.strokeStyle = color; c.lineWidth = 2.2; c.lineJoin = "round"; c.beginPath();
+  pts.forEach(([x, y], i) => { if (i) c.lineTo(X(x), Y(y)); else c.moveTo(X(x), Y(y)); });
+  c.stroke();
+}
+let raceSum = null;
+function renderRaceSummary() {
+  const r = raceStats(cur);
+  raceSum = r;
+  $("racecard").hidden = !r;
+  if (!r) return;
+  const gained = r.grid && r.finish ? r.grid - r.finish : null;
+  const sdTxt = r.sd == null ? "–" : "± " + r.sd.toFixed(2) + " s";
+  const sdVerdict = r.sd == null ? "servono più giri puliti" : r.sd < 0.3 ? "ottima" : r.sd < 0.6 ? "buona" : "da migliorare";
+  const stintTxt = r.stints.filter(x => x.compound).map(x => `${COMP_IT[x.compound] || x.compound} (${x.from}–${x.to})`).join(" → ");
+  $("rstats").innerHTML = `
+    <div><small>Partenza → arrivo</small><b class="mono">${r.grid ? "P" + r.grid : "–"} → ${r.finish ? "P" + r.finish : r.dnf ? "RIT" : "–"}</b>
+      ${!r.grid ? '<small>il gioco non ha mandato la griglia</small>' : ""}
+      ${gained != null ? `<small class="${gained > 0 ? "good" : gained < 0 ? "bad" : ""}">${gained > 0 ? "+" + gained + " posizioni" : gained < 0 ? gained + " posizioni" : "stessa posizione"}</small>` : ""}</div>
+    <div><small>Giro più veloce</small><b class="mono">${r.best ? fmt(r.best.ms) : "–"}</b><small>${r.best ? "giro " + r.best.lap : ""}</small></div>
+    <div><small>Costanza</small><b class="mono">${sdTxt}</b><small>${sdVerdict}</small></div>
+    <div><small>Soste</small><b>${r.stops}</b><small>${escH(stintTxt || "")}</small></div>`;
+  const pos = r.laps.filter(l => l.position).map(l => [l.lap, l.position]);
+  drawSpark($("rpos"), pos, {invert: true, color: css("--accent") || "#e10600", min: 1, max: Math.max(...pos.map(p => p[1]), 2), label: v => "P" + Math.round(v)});
+  const wear = r.laps.filter(l => l.wear != null).map(l => [l.lap, l.wear]);
+  $("rwearbox").hidden = wear.length < 2;
+  if (wear.length >= 2) drawSpark($("rwear"), wear, {color: "#ffb020", min: 0, max: Math.max(70, ...wear.map(p => p[1])), label: v => Math.round(v) + "%"});
+  $("rnote").textContent = pos.length < 2 ? "Posizioni e usura giro per giro sono salvate dalle gare fatte con questa versione in poi." : "";
+}
+$("raceshare").onclick = async () => {
+  const r = raceSum; if (!r) return;
+  const gained = r.grid && r.finish ? r.grid - r.finish : null;
+  const lines = [`🏁 ${cur.track} · gara`,
+    r.dnf ? "Ritirato" : r.grid && r.finish ? `Partenza P${r.grid} → arrivo P${r.finish}${gained ? ` (${gained > 0 ? "+" : ""}${gained})` : ""}` : (r.finish ? `Arrivo P${r.finish}` : ""),
+    r.best ? `Giro più veloce ${fmt(r.best.ms)} (giro ${r.best.lap})` : "",
+    r.sd != null ? `Costanza ± ${r.sd.toFixed(2)} s` : "",
+    `Soste: ${r.stops}` + (r.stints.some(x => x.compound) ? " · " + r.stints.filter(x => x.compound).map(x => COMP_IT[x.compound] || x.compound).join(" → ") : "")];
+  const text = lines.filter(Boolean).join("\n");
+  if (navigator.share) { try { await navigator.share({text}); return; } catch (e) { if (e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(text); fmsg("Riepilogo copiato: incollalo su WhatsApp.", "ok"); } catch (e) {}
+};
+
+// ------------------------------------------------------------ nomi delle curve
+let curveNames = [], curveTrack = null;
+function curveName(m) {
+  let best = null;
+  for (const c of curveNames) { const d = Math.abs(c.m - m); if (d <= 200 && (!best || d < best.d)) best = {d, nome: c.nome}; }
+  return best ? best.nome : null;
+}
+async function loadCurve() {
+  const tid = cur && cur.track_id;
+  if (tid == null) { curveNames = []; return; }
+  if (curveTrack === tid) return;
+  curveTrack = tid;
+  curveNames = await fetch(`/api/curve?track_id=${tid}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (sel) { renderZones(); drawMap(); }
+}
+async function renameCurve(m, n) {
+  const old = curveName(m) || "";
+  const nome = prompt(`Nome della staccata ${n} (per esempio "Variante del Rettifilo").\nLascia vuoto per togliere il nome.`, old);
+  if (nome === null) return;
+  curveNames = await fetch("/api/curve", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({track_id: cur.track_id, m, nome})}).then(r => r.ok ? r.json() : curveNames).catch(() => curveNames);
+  renderZones(); drawMap();
+}
+
+// ------------------------------------------------------------ staccate
+// Le staccate del giro di confronto, trovate qui nel telefono: così la tabella confronta davvero
+// con il giro scelto (anche quello di un amico) e non solo con il riferimento del coach.
+const BRAKE_ON = 0.15;
+function brakeStarts(tr, i0, i1) {
+  const out = [];
+  for (let i = Math.max(1, i0); i < i1; i++) {
+    if (tr.brk[i] >= BRAKE_ON && tr.brk[i - 1] < BRAKE_ON) {
+      let k = i, peak = 0;
+      while (k < i1 && tr.brk[k] >= BRAKE_ON) { peak = Math.max(peak, tr.brk[k]); k++; }
+      if (peak >= 0.5 || tr.d[k - 1] - tr.d[i] >= 10) out.push({ i, k });
+      i = k;
+    }
+  }
+  return out;
+}
+function findZones(tr) {
+  const n = tr.d.length, Z = [];
+  for (const b of brakeStarts(tr, 1, n)) {
+    let j = b.i, a = b.i;
+    while (j < n && !(j >= b.k && tr.thr[j] >= 0.95)) { if (tr.v[j] < tr.v[a]) a = j; j++; }
+    if (tr.v[b.i] - tr.v[a] < 15) continue;                 // solo un ritocco, non una curva
+    const z = { brake: tr.d[b.i], apex: tr.d[a], vmin: tr.v[a], full: j < n ? tr.d[j] : null };
+    z.exit = (z.full ?? z.apex) + 30;
+    const last = Z[Z.length - 1];
+    if (last && z.brake - last.exit < 120) {                 // curve in sequenza: una staccata sola
+      if (z.vmin < last.vmin) { last.apex = z.apex; last.vmin = z.vmin; }
+      last.full = z.full; last.exit = z.exit;
+    } else Z.push(z);
+  }
+  return Z;
+}
+function idxAt(tr, d) { let lo = 0, hi = tr.d.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tr.d[m] <= d) lo = m; else hi = m; } return lo; }
+function compareZones() {
+  const A = sel.trace, B = ref.trace, out = [];
+  findZones(B).forEach((z, n) => {
+    const a = z.brake - 150, b = z.exit;
+    if (a < A.d[0] || b > A.d[A.d.length - 1]) return;
+    const loss = (interp(A, "t", b) - interp(A, "t", a)) - (interp(B, "t", b) - interp(B, "t", a));
+    const i0 = idxAt(A, a), i1 = idxAt(A, b) + 1;
+    let bp = null;
+    for (const c of brakeStarts(A, i0, i1)) { const d = A.d[c.i]; if (Math.abs(d - z.brake) <= 60 && (bp == null || Math.abs(d - z.brake) < Math.abs(bp - z.brake))) bp = d; }
+    let vmin = 999, ai = i0;
+    for (let i = idxAt(A, z.brake - 50); i < i1; i++) if (A.v[i] < vmin) { vmin = A.v[i]; ai = i; }
+    let full = null;
+    for (let i = ai; i < A.d.length && A.d[i] < z.exit + 200; i++) if (A.thr[i] >= 0.95) { full = A.d[i]; break; }
+    out.push({ n: n + 1, at: z.brake, loss, brake_delta: bp == null ? null : bp - z.brake,
+               vmin_delta: vmin < 999 ? vmin - z.vmin : null, full_delta: full != null && z.full != null ? full - z.full : null });
+  });
+  return out;
+}
+// ------------------------------------------------------------ chiedi all'ingegnere
+// Risposte dai dati delle curve di questo giro, senza AI e senza chiave: "perché sono lento in curva 6?",
+// "dove perdo di più?", "come freno?", "dove esco male?", "dove vado forte?".
+let zoneCmp = "";
+const ASK_EX = ["Dove perdo di più?", "Come freno?", "Dove esco male dalle curve?", "Dove vado forte?"];
+function zoneTitle(r) { const c = curveName(r.at); return c ? c[0].toUpperCase() + c.slice(1) : "Staccata " + r.n; }
+function nrm(t) { return t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+function explainZone(r) {
+  const s = [], fix = [];
+  if (r.brake_delta != null && Math.abs(r.brake_delta) >= 8) {
+    if (r.brake_delta < 0) { s.push(`freni ${Math.round(-r.brake_delta)} m prima`); fix.push([Math.abs(r.brake_delta) / 8, `prova a frenare ${Math.round(-r.brake_delta)} metri più avanti`]); }
+    else { s.push(`freni ${Math.round(r.brake_delta)} m dopo`); if ((r.vmin_delta ?? 0) <= -3) fix.push([2, "freni troppo tardi e poi devi rallentare di più: anticipa un filo e porta velocità"]); }
+  }
+  if (r.vmin_delta != null && Math.abs(r.vmin_delta) >= 3) {
+    s.push(`a centro curva hai ${Math.abs(Math.round(r.vmin_delta))} km/h ${r.vmin_delta < 0 ? "in meno" : "in più"}`);
+    if (r.vmin_delta < 0) fix.push([Math.abs(r.vmin_delta) / 3, "rilascia il freno prima e lascia scorrere la macchina a centro curva"]);
+  }
+  if (r.full_delta != null && Math.abs(r.full_delta) >= 15) {
+    s.push(`dai gas pieno ${Math.abs(Math.round(r.full_delta))} m ${r.full_delta > 0 ? "dopo" : "prima"}`);
+    if (r.full_delta > 0) fix.push([r.full_delta / 15, "dai gas pieno prima in uscita, raddrizzando lo sterzo"]);
+  }
+  let h = `<b>${escH(zoneTitle(r))}</b>: ${r.loss > 0.02 ? `perdi <span class="bad">${r.loss.toFixed(2)} s</span>` : r.loss < -0.02 ? `guadagni <span class="good">${(-r.loss).toFixed(2)} s</span>` : "sei pari"} rispetto al ${escH(zoneCmp)}.`;
+  if (s.length) h += ` Rispetto al confronto ${s.join(", ")}.`;
+  if (r.loss > 0.02) {
+    fix.sort((a, b) => b[0] - a[0]);
+    h += fix.length ? ` <b>Cosa fare:</b> ${fix[0][1]}.` : " Frenata e velocità sono simili: il tempo lo perdi nella traiettoria, prova a entrare più largo e a sfruttare tutto il cordolo in uscita.";
+  }
+  return h;
+}
+function ask(q0) {
+  const q = nrm(q0), out = $("aska"), R = zoneRows || [];
+  if (!R.length) { out.innerHTML = "Per questo giro non ho dati sulle curve: scegli un giro completo e un giro di confronto."; return; }
+  const num = (q.match(/(?:curva|curve|staccata|t)\s*(\d+)/) || q.match(/\b(\d{1,2})\b/) || [])[1];
+  if (num) {
+    const n = +num;
+    const r = R.find(r => { const c = curveName(r.at); return c && new RegExp(`\\b${n}\\b`).test(c); })
+           || (/staccata/.test(q) || !R.some(r => curveName(r.at)) ? R.find(r => r.n === n) : null);
+    out.innerHTML = r ? explainZone(r) : `Non trovo la curva ${n} tra le staccate di questo giro. Le curve analizzate sono: ${R.map(zoneTitle).join(", ")}.`;
+    return;
+  }
+  const list = (rows, f) => rows.length ? rows.map(f).join("<br>") : "";
+  if (/frena|freno|stacc/.test(q)) {
+    const rows = R.filter(r => r.brake_delta != null && Math.abs(r.brake_delta) >= 8);
+    out.innerHTML = rows.length ? "<b>Le frenate</b> rispetto al " + escH(zoneCmp) + ":<br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${r.brake_delta < 0 ? `freni <span class="bad">${Math.round(-r.brake_delta)} m prima</span>` : `freni <span class="good">${Math.round(r.brake_delta)} m dopo</span>`}`)
+      : "Le frenate sono tutte entro 8 metri dal confronto: su quelle sei a posto.";
+    return;
+  }
+  if (/uscit|\besc[oi]\b|gas|accelera|trazion/.test(q)) {
+    const rows = R.filter(r => r.full_delta != null && r.full_delta >= 15).sort((a, b) => b.full_delta - a.full_delta);
+    out.innerHTML = rows.length ? "<b>Dove dai gas pieno più tardi:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${Math.round(r.full_delta)} m dopo`)
+      : "In uscita dai gas pieno come nel confronto, lì non perdi.";
+    return;
+  }
+  if (/centro|velocita|percorr|minima/.test(q)) {
+    const rows = R.filter(r => r.vmin_delta != null && r.vmin_delta <= -3).sort((a, b) => a.vmin_delta - b.vmin_delta);
+    out.innerHTML = rows.length ? "<b>Dove sei più lento a centro curva:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: ${Math.round(-r.vmin_delta)} km/h in meno`)
+      : "A centro curva hai la stessa velocità del confronto.";
+    return;
+  }
+  if (/forte|guadagn|meglio|bene|veloce/.test(q) && !/lent|perd/.test(q)) {
+    const rows = R.filter(r => r.loss < -0.02).sort((a, b) => a.loss - b.loss);
+    out.innerHTML = rows.length ? "<b>Dove vai più forte del confronto:</b><br>" + list(rows, r => `· ${escH(zoneTitle(r))}: <span class="good">${(-r.loss).toFixed(2)} s</span>`)
+      : "In questo giro non sei più veloce in nessuna curva.";
+    return;
+  }
+  if (/perd|lent|peggio|miglior|sbagl|tempo|dove/.test(q)) {
+    const rows = R.filter(r => r.loss > 0.02).sort((a, b) => b.loss - a.loss).slice(0, 3);
+    out.innerHTML = rows.length ? `Le curve dove perdi di più rispetto al ${escH(zoneCmp)}:<br>` + rows.map(r => "· " + explainZone(r)).join("<br>")
+      : "In questo giro non perdi tempo in nessuna curva. Ottimo!";
+    return;
+  }
+  out.innerHTML = "Non ho capito. Prova con: " + ASK_EX.map(x => `«${x}»`).join(", ") + " oppure «perché sono lento in curva 6?».";
+}
+$("askf").onsubmit = e => { e.preventDefault(); const q = $("askq").value.trim(); if (q) ask(q); };
+$("askchips").innerHTML = ASK_EX.map(x => `<button type="button" class="btn" style="padding:6px 10px;font-size:13px">${x}</button>`).join("");
+$("askchips").querySelectorAll("button").forEach(b => b.onclick = () => { $("askq").value = b.textContent; ask(b.textContent); });
+
+// Il verdetto della sfida: dove ti batte l'amico e perché, dove sei più veloce tu.
+function renderSfida(rows) {
+  const box = $("sfida");
+  if (refFriend == null || !rows.length) { box.innerHTML = ""; return; }
+  const who = escH(ref.driver || "il tuo amico");
+  const nm = r => { const c = curveName(r.at); return c ? escH(c[0].toUpperCase() + c.slice(1)) : "Staccata " + r.n; };
+  const why = r => {
+    const w = [];
+    if (r.brake_delta != null && r.brake_delta <= -8) w.push(`frena ${Math.round(-r.brake_delta)} m dopo di te`);
+    if (r.vmin_delta != null && r.vmin_delta <= -4) w.push(`porta ${Math.round(-r.vmin_delta)} km/h in più a centro curva`);
+    if (r.full_delta != null && r.full_delta >= 15) w.push(`dà gas pieno ${Math.round(r.full_delta)} m prima`);
+    return w.length ? w.join(", ") : "è più veloce tra frenata e uscita";
+  };
+  const lose = rows.filter(r => r.loss > 0.03).sort((a, b) => b.loss - a.loss).slice(0, 3);
+  const win = rows.filter(r => r.loss < -0.03).sort((a, b) => a.loss - b.loss).slice(0, 2);
+  const tot = (sel.ms - ref.ms) / 1000;
+  let h = `<div style="background:var(--bg2,rgba(255,255,255,.04));border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px;line-height:1.5">
+    <b>⚔ Sfida con ${who}</b>: ${tot > 0 ? `ti batte di <b class="bad">${tot.toFixed(3)} s</b>` : tot < 0 ? `lo batti di <b class="good">${(-tot).toFixed(3)} s</b>` : "pari"}.`;
+  if (lose.length) h += `<br><b>Dove ti batte:</b><br>` + lose.map(r => `· ${nm(r)}: <span class="bad">${sgn(r.loss)}</span>, ${why(r)}`).join("<br>");
+  if (win.length) h += `<br><b>Dove sei più veloce tu:</b> ` + win.map(r => `${nm(r)} (<span class="good">${sgn(r.loss)}</span>)`).join(", ");
+  if (lose.length) h += `<br><span style="color:var(--dim);font-size:12px">Tocca 🎯 per usare il suo giro come riferimento: in pista l'ingegnere ti guida su queste curve.</span>`;
+  box.innerHTML = h + `</div>`;
+}
+let zoneRows = [];
+function renderZones() {
+  const cmp = diffRef() && ref && ref.trace && sel.trace;
+  const z = cmp ? compareZones() : (sel.zones || []);
+  zoneRows = z; zoneCmp = cmp ? refName() : "riferimento del coach";
+  $("zoneslbl").textContent = cmp ? `Staccate · confronto con il ${refName()}` : "Staccate · confronto con il riferimento del coach";
+  renderSfida(cmp ? z : []);
+  if (!z.length) { $("zones").innerHTML = '<div class="empty">Nessun dato sulle staccate per questo giro (serve un giro di riferimento del coach).</div>'; return; }
+  const f = (v0, u, inv) => { if (v0 == null) return "-"; const v = Math.round(v0);
+    return `<span class="${v === 0 ? "" : (inv ? v > 0 : v < 0) ? "bad" : "good"}">${v > 0 ? "+" : ""}${v}${u}</span>`; };
+  let h = `<table><tr><th>Curva</th><th>Tempo</th><th>Frenata</th><th>V. minima</th><th>Gas pieno</th></tr>`;
+  for (const r of z) {
+    const nm = curveName(r.at);
+    h += `<tr class="click" data-at="${r.at}"><td>${r.n}${nm ? ` <span style="color:var(--txt);font-weight:600">${escH(nm)}</span>` : ""}
+      ${cur.track_id != null ? `<button class="ren" data-m="${Math.round(r.at)}" data-n="${r.n}" title="Dai un nome a questa curva">✏️</button>` : ""}</td>
+      <td class="mono ${r.loss > 0.03 ? "bad" : r.loss < -0.03 ? "good" : ""}">${sgn(r.loss)}</td>
+      <td class="mono">${r.brake_delta == null ? "-" : (r.brake_delta < 0 ? Math.round(-r.brake_delta) + " m prima" : r.brake_delta > 0 ? Math.round(r.brake_delta) + " m dopo" : "uguale")}</td>
+      <td class="mono">${f(r.vmin_delta, " km/h")}</td>
+      <td class="mono">${f(r.full_delta, " m", true)}</td></tr>`;
+  }
+  h += `</table><div style="font-size:12px;color:var(--dim);margin-top:6px">Tocca una riga per evidenziarla sulla mappa e sui grafici. "Gas pieno" positivo = torni sul gas più tardi.
+    Con ✏️ dai un nome alla curva: l'ingegnere lo userà anche a voce ("perdi di più in Parabolica") e vale per tutti gli utenti del server.</div>`;
+  $("zones").innerHTML = h;
+  for (const b of $("zones").querySelectorAll("button.ren")) b.onclick = e => { e.stopPropagation(); renameCurve(+b.dataset.m, b.dataset.n); };
+  for (const tr of $("zones").querySelectorAll("tr.click")) tr.onclick = () => { cursor = +tr.dataset.at; redrawCursor(); };
+}
+
+// ---------------------------------------------------------- amici
+let myUser = null;
+fetch("/settings").then(r => r.ok ? r.json() : {}).then(j => { myUser = j.user || null; $("fnamebox").hidden = !!myUser; }).catch(() => {});
+try { $("fname").value = localStorage.getItem("nome_pilota") || ""; } catch (e) {}
+$("fname").onchange = () => { try { localStorage.setItem("nome_pilota", $("fname").value.trim()); } catch (e) {} };
+function fmsg(text, cls = "") { $("fmsg").textContent = text; $("fmsg").className = cls; }
+function renderFriendBox() {
+  if (!cur) return;
+  $("fexport").textContent = `⬇ Esporta il giro ${selLap ?? ""}`;
+  $("fdelete").hidden = !(refFriend && refFriend.startsWith("f:"));
+  $("fuseref").textContent = diffRef() || refFriend ? `🎯 Usa il ${refName()} come riferimento del coach` : "🎯 Usa come riferimento del coach";
+}
+$("fexport").onclick = async () => {
+  if (!sel) return;
+  const driver = myUser || $("fname").value.trim() || "Pilota";
+  const lap = Object.assign({}, sel, { driver, track: cur.track, track_id: cur.track_id ?? null, category: cur.category || null, formato: "ingegnere-f1-giro" });
+  const name = `giro-${cur.track}-${driver}-${fmt(sel.ms).replace(/[:.]/g, "-")}.json`.replace(/\s+/g, "_");
+  const file = new File([JSON.stringify(lap)], name, { type: "application/json" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Il mio giro a ${cur.track}: ${fmt(sel.ms)}` });
+      fmsg("Giro condiviso. Il tuo amico lo carica con ⬆ Carica giro amico.", "ok");
+      return;
+    }
+  } catch (e) { if (e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  fmsg("File scaricato: mandalo al tuo amico (WhatsApp, Telegram, email).", "ok");
+};
+$("fupload").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  let lap;
+  try { lap = JSON.parse(await f.text()); } catch (err) { return fmsg("Questo file non è un giro dell'ingegnere.", "err"); }
+  const r = await fetch("/api/friend_upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(lap) });
+  const j = await r.json().catch(() => ({ error: "Errore nel caricamento." }));
+  if (j.error) return fmsg(j.error, "err");
+  if (cur && j.track.toLowerCase() === cur.track.toLowerCase()) {
+    refFriend = j.id; refLap = null;
+    await loadFriends(); load();
+    fmsg(`Caricato il giro di ${j.driver} (${fmt(j.ms)}): ora è il confronto.`, "ok");
+  } else {
+    fmsg(`Caricato il giro di ${j.driver} a ${j.track} (${fmt(j.ms)}). Lo trovi in "Confronta con" quando apri una sessione a ${j.track}.`, "ok");
+  }
+};
+$("fdelete").onclick = async () => {
+  if (!refFriend) return;
+  await fetch("/api/friend_delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: refFriend }) });
+  delete cache["amico/" + refFriend];
+  refFriend = null; refLap = bestLap(cur).lap;
+  await loadFriends(); load();
+  fmsg("Giro dell'amico eliminato.");
+};
+$("fuseref").onclick = async () => {
+  const body = refFriend ? { friend: refFriend } : { s: cur.id, l: refLap };
+  const r = await fetch("/api/use_ref", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ error: "Errore." }));
+  if (j.error) return fmsg(j.error, "err");
+  fmsg(`Fatto: a ${j.track} il coach ti confronta con ${j.owner ? "il giro di " + j.owner : "questo giro"} (${fmt(j.ms)}, ${j.zones} staccate). ` +
+       `Delta live e consigli sulle staccate useranno questo giro finché non lo batti.`, "ok");
+};
+
+// ------------------------------------------------- esporta come immagine
+// Un'immagine PNG con tempi, mappa, grafici e staccate del giro selezionato contro il confronto:
+// si condivide (WhatsApp, Telegram…) o si scarica.
+if (!CanvasRenderingContext2D.prototype.roundRect)       // browser vecchi: angoli dritti
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };
+let exportSized = false;
+function restoreSizes() {
+  if (!exportSized) return;
+  exportSized = false;
+  $("map").style.width = "";
+  for (const ch of CHARTS) ch.canvas.style.width = "";
+  drawMap(); drawCharts();
+}
+async function exportImage() {
+  if (!sel) return;
+  const btn = $("exportimg"); btn.textContent = "⏳ Preparo…"; btn.disabled = true;
+  try {
+    const S = 2, W = 1200, PAD = 28, mapW = 470, chartX = PAD + mapW + 24, chartW = W - chartX - PAD;
+    // ridisegno mappa e grafici alla misura dell'immagine (sul telefono sono stretti), poi li rimetto come prima
+    cursor = null;
+    $("map").style.width = (mapW - 20) + "px";
+    for (const ch of CHARTS) ch.canvas.style.width = chartW + "px";
+    exportSized = true;
+    drawMap(); drawCharts();
+    const chartsH = CHARTS.reduce((a, ch) => a + ch.h + 22, 0);
+    const zones = sel.zones || [];
+    const top = 150, bodyH = Math.max(mapW + 40, chartsH);
+    const zonesH = zones.length ? 60 + zones.length * 30 : 0;
+    const H = top + bodyH + zonesH + 60;
+    const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+    const x = c.getContext("2d"); x.scale(S, S);
+    const F = "-apple-system,'SF Pro Text',Roboto,'Segoe UI',sans-serif", M = "ui-monospace,Menlo,'Roboto Mono',monospace";
+    x.fillStyle = css("--bg"); x.fillRect(0, 0, W, H);
+    // intestazione
+    x.fillStyle = css("--accent"); x.fillRect(PAD, PAD, 6, 34);
+    x.fillStyle = "#e8edf2"; x.font = `800 26px ${F}`; x.textBaseline = "top";
+    x.fillText(`${cur.track} · ${cur.session}`, PAD + 18, PAD + 2);
+    x.fillStyle = css("--dim"); x.font = `500 15px ${F}`;
+    const when = new Date(cur.started * 1000).toLocaleString("it-IT", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
+    x.fillText(`${when} · Ingegnere F1`, PAD + 18, PAD + 36);
+    // riquadri dei tempi
+    const d = diffRef() ? (sel.ms - ref.ms) / 1000 : null;
+    const boxes = [
+      ["Giro " + sel.lap + (sel.valid ? "" : " (non valido)"), fmt(sel.ms), "#3987e5"],
+      ["vs " + refName(), diffRef() ? fmt(ref.ms) : "—", css("--ref")],
+      ["Distacco", d == null ? "—" : sgn(d), d == null ? "#e8edf2" : d <= 0 ? "#4cc38a" : "#ff6b72"],
+    ];
+    for (const k of ["s1", "s2", "s3"]) if (sel[k]) boxes.push([`Settore ${k[1]}`, fmt(sel[k]).replace(/^0:/, ""),
+      ref && ref[k] ? (sel[k] <= ref[k] ? "#4cc38a" : "#ff6b72") : "#e8edf2"]);
+    const ideal = idealCache[cur.id];
+    if (ideal && ideal.ideal_ms) boxes.push(["Giro ideale", fmt(ideal.ideal_ms), "#4cc38a"]);
+    const bw = (W - 2 * PAD - (boxes.length - 1) * 10) / boxes.length;
+    boxes.forEach(([lab, val, col], i) => {
+      const bx = PAD + i * (bw + 10), by = 86;
+      x.fillStyle = css("--panel"); x.strokeStyle = css("--line");
+      x.beginPath(); x.roundRect(bx, by, bw, 50, 10); x.fill(); x.stroke();
+      x.fillStyle = css("--dim"); x.font = `700 11px ${F}`; x.fillText(lab.toUpperCase().slice(0, 28), bx + 10, by + 8);
+      x.fillStyle = col; x.font = `700 20px ${M}`; x.fillText(val, bx + 10, by + 23);
+    });
+    // mappa
+    const mc = $("map");
+    x.fillStyle = css("--panel"); x.beginPath(); x.roundRect(PAD, top, mapW, mapW + 30, 12); x.fill();
+    x.drawImage(mc, PAD + 10, top + 10, mapW - 20, (mapW - 20) * mc.height / mc.width);
+    x.fillStyle = css("--dim"); x.font = `600 12px ${F}`;
+    x.fillText(mapMode === "delta" ? `Mappa: rosso dove perdi, verde dove guadagni rispetto al ${refName()}`
+                                   : "Mappa: rosso freno · verde gas pieno · giallo gas parziale · grigio rilascio",
+               PAD + 12, top + mapW + 8);
+    // grafici
+    let cy = top;
+    for (const ch of CHARTS) {
+      const h = ch.h;
+      x.fillStyle = css("--dim"); x.font = `700 12px ${F}`; x.fillText(ch.title.toUpperCase(), chartX + 46, cy);
+      x.drawImage(ch.canvas, chartX, cy + 16, chartW, h);
+      cy += h + 22;
+    }
+    x.font = `600 13px ${F}`;
+    x.fillStyle = "#3987e5"; x.fillText(`━ Giro ${sel.lap}`, chartX + 46, cy);
+    if (diffRef()) { x.fillStyle = css("--ref"); x.fillText(`━ ${refName()}`, chartX + 160, cy); }
+    // staccate
+    let zy = top + bodyH + 20;
+    if (zones.length) {
+      x.fillStyle = css("--dim"); x.font = `700 12px ${F}`;
+      x.fillText("STACCATE · CONFRONTO CON IL RIFERIMENTO DEL COACH", PAD, zy);
+      const cols = [["Staccata", PAD], ["Tempo", PAD + 160], ["Frenata", PAD + 330], ["Vel. minima", PAD + 560], ["Gas pieno", PAD + 760]];
+      zy += 24; for (const [t, cx] of cols) x.fillText(t.toUpperCase(), cx, zy);
+      x.font = `600 15px ${M}`;
+      for (const z of zones) {
+        zy += 30;
+        x.fillStyle = "#e8edf2"; x.fillText((String(z.n) + " " + (curveName(z.at) || "")).trim().slice(0, 18), PAD, zy);
+        x.fillStyle = z.loss > 0.03 ? "#ff6b72" : z.loss < -0.03 ? "#4cc38a" : "#e8edf2"; x.fillText(sgn(z.loss), PAD + 160, zy);
+        x.fillStyle = "#e8edf2";
+        const bd = z.brake_delta == null ? null : Math.round(z.brake_delta);
+        x.fillText(bd == null ? "-" : bd < 0 ? -bd + " m prima" : bd > 0 ? bd + " m dopo" : "uguale", PAD + 330, zy);
+        x.fillText(z.vmin_delta == null ? "-" : (z.vmin_delta > 0 ? "+" : "") + Math.round(z.vmin_delta) + " km/h", PAD + 560, zy);
+        x.fillText(z.full_delta == null ? "-" : (z.full_delta > 0 ? "+" : "") + Math.round(z.full_delta) + " m", PAD + 760, zy);
+      }
+    }
+    x.fillStyle = css("--dim"); x.font = `500 12px ${F}`; x.fillText("Ingegnere F1 · analisi giri", PAD, H - 32);
+    restoreSizes();
+    const blob = await new Promise(r => c.toBlob(r, "image/png"));
+    const name = `telemetria-${cur.track}-giro${sel.lap}.png`.replace(/\s+/g, "_");
+    const file = new File([blob], name, { type: "image/png" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${cur.track} · giro ${sel.lap} ${fmt(sel.ms)}` });
+        return;
+      }
+    } catch (e) { if (e.name === "AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  } finally {
+    restoreSizes();
+    btn.textContent = "🖼 Esporta grafico"; btn.disabled = false;
+  }
+}
+$("exportimg").onclick = exportImage;
+
+buildCharts();
+loadSessions();
+let rt, lastW = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (window.innerWidth === lastW) return;
+  lastW = window.innerWidth;
+  clearTimeout(rt); rt = setTimeout(() => sel && (drawMap(), drawCharts()), 150);
+});
+</script>
+</body>
+</html>

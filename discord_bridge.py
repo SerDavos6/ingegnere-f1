@@ -179,7 +179,9 @@ class Runtime:
                    npm_config_cache=os.path.join(self.root, ".npm"), npm_config_update_notifier="false",
                    HOME=self.root)
         return subprocess.run([os.path.join(self.node_dir, "bin", "npm")] + args +
-                              ["--omit=dev", "--no-audit", "--no-fund", "--no-save", "--loglevel=error"],
+                              ["--omit=dev", "--no-audit", "--no-fund", "--no-save", "--loglevel=error",
+                               # prism-media chiede versioni vecchie di opusscript tra le dipendenze "facoltative"
+                               "--legacy-peer-deps"],
                               cwd=self.root, env=env, capture_output=True, text=True, timeout=900)
 
     def lib_path(self):
