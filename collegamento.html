@@ -2,6 +2,8 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -54,11 +56,14 @@
   .tip { padding:10px 0; font-size:15px; line-height:1.45; } .tip + .tip { border-top:1px solid var(--line); }
   .tip.problema { color:#ff8080; } .tip.consiglio { color:#ffd36b; } .tip.ok { color:var(--good); } .tip.info { color:var(--dim); }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
 </head>
 <body>
 <header>
-  <a class="back" href="/">← Dashboard</a>
-  <h1><b>F1</b> Collegamento PS5</h1>
+  <a class="back" aria-label="Indietro" href="/">← Dashboard</a>
+  <h1>Collegamento PS5</h1>
 </header>
 <div class="card light" id="light"><i></i><div><b id="ltitle">Controllo…</b><small id="lsub"></small></div></div>
 <div class="card">

@@ -2,9 +2,13 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
 <link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <title>Ingegnere su Discord</title>
 <style>
   :root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b96a2; --accent:#e10600; --good:#4cc38a; --warn:#ffb020; }
@@ -24,9 +28,12 @@
   a { color:var(--accent); }
   #st { font-size:14px; }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
 </head>
 <body>
-<header><a class="back" href="/">‹ Indietro</a><h1>Ingegnere <b>su Discord</b></h1></header>
+<header><a class="back" aria-label="Indietro" href="/">‹ Indietro</a><h1>Ingegnere <b>su Discord</b></h1></header>
 
 <div class="card" id="st">Stato: carico…</div>
 
@@ -77,6 +84,13 @@
     con il suo account). Così però sentireste anche l'ingegnere dell'altro: sulla PS5 aprite la scheda della chat
     Discord (tasto PS → Chat vocale), toccate il bot dell'altro e abbassate il suo volume a zero. La PS5 se lo ricorda.</p>
   <p class="tip">Il tuo ingegnere ascolta solo te: le frasi che dici al tuo amico le ignora. Risponde solo quando cominci con «Radio».</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">🏁</span>Il riepilogo di ogni gara</h2>
+  <p>A fine gara il bot scrive in un canale di testo del server: posizione, da dove sei partito, il riassunto
+    dell'ingegnere e il link all'analisi dei giri. Crea un canale di testo, per esempio <b>gare</b>, e scrivilo nella
+    scheda 🎧 (se non lo scrivi usa un canale con "gare", "box" o "f1" nel nome, oppure il primo che trova).</p>
 </div>
 
 <div class="card">

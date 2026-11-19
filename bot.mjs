@@ -27,9 +27,9 @@ if (cfg.whisper && cfg.whisper.encoder) {
   try {
     stt = new Worker(new URL("./stt-worker.mjs", import.meta.url), { workerData: cfg.whisper });
     stt.on("message", (m) => {
-      if (m.ready) { sttReady = true; out({ ev: "stt", ok: true }); }
+      if (m.ready) { sttReady = true; out({ ev: "stt", ok: true, kind: cfg.whisper.kind }); }
       else if (m.error) { out({ ev: "stt", ok: false, msg: m.error }); }
-      else if (m.text != null) { sttJobs--; if (m.text.trim()) out({ ev: "heard", text: m.text.trim(), secs: m.secs, ms: m.ms }); }
+      else if (m.text != null) { sttJobs--; if (m.text.trim()) out({ ev: "heard", text: m.text.trim(), secs: m.secs, ms: m.ms }); else resume(); }
     });
     stt.on("error", (e) => { sttReady = false; out({ ev: "stt", ok: false, msg: String(e) }); });
   } catch (e) { out({ ev: "stt", ok: false, msg: String(e) }); }
@@ -117,11 +117,26 @@ async function isOwner(uid) {
 }
 
 const busy = new Set();
+// quando il pilota parla mentre l'ingegnere sta parlando: pausa. Se era "Radio…" il server manda "skip"
+// (l'ingegnere smette e ascolta), se parlava con l'amico "resume" (riprende da dove era).
+let pausedFor = null;
+function pauseForDriver() {
+  if (player.state.status === AudioPlayerStatus.Playing) {
+    player.pause();
+    clearTimeout(pausedFor);
+    pausedFor = setTimeout(resume, 4000);      // nessuna risposta dal server: riprendo comunque
+  }
+}
+function resume() { clearTimeout(pausedFor); pausedFor = null; if (player.state.status === AudioPlayerStatus.Paused) player.unpause(); }
+function skip() { clearTimeout(pausedFor); pausedFor = null; queue.length = 0; player.stop(true); }
+
 async function listen(uid) {
   if (!sttReady || busy.has(uid) || !conn) return;
   if (!(await isOwner(uid))) return;
   busy.add(uid);
-  const opus = conn.receiver.subscribe(uid, { end: { behavior: EndBehaviorType.AfterSilence, duration: 700 } });
+  pauseForDriver();
+  // fine frase dopo mezzo secondo di silenzio: abbastanza per non tagliare le pause, ma risponde prima
+  const opus = conn.receiver.subscribe(uid, { end: { behavior: EndBehaviorType.AfterSilence, duration: 500 } });
   const dec = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
   const chunks = []; let len = 0;
   const MAX = 48000 * 4 * 12;                 // al massimo 12 secondi
@@ -130,7 +145,7 @@ async function listen(uid) {
     if (!busy.has(uid)) return;
     busy.delete(uid);
     const pcm = Buffer.concat(chunks), secs = pcm.length / 192000;
-    if (secs < 0.6 || secs > 12 || sttJobs > 2) return;
+    if (secs < 0.35 || secs > 12 || sttJobs > 2) { resume(); return; }     // anche un "Radio" da solo, detto veloce
     // 48 kHz stereo → 16 kHz mono (media di 3 campioni, basta per la voce)
     const n = Math.floor(pcm.length / 12), f = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -146,6 +161,25 @@ async function listen(uid) {
   opus.pipe(dec);
 }
 
+// ------------------------------------------------------------ messaggi scritti (riepilogo della gara)
+function textChannel() {
+  const g = channel ? channel.guild : client.guilds.cache.first();
+  if (!g) return null;
+  const me = g.members.me;
+  const can = (c) => c.type === ChannelType.GuildText && (!me || c.permissionsFor(me)?.has(["ViewChannel", "SendMessages"]));
+  const want = String(cfg.text_channel || "").trim().toLowerCase().replace(/^#/, "");
+  const all = [...g.channels.cache.values()].filter(can);
+  return (want && all.find((c) => c.name.toLowerCase() === want || c.id === want))
+      || all.find((c) => /box|gar|ingegner|radio|f1/i.test(c.name))
+      || (g.systemChannel && can(g.systemChannel) ? g.systemChannel : null) || all[0] || null;
+}
+async function post(text) {
+  const c = textChannel();
+  if (!c) { log("nessun canale di testo dove scrivere il riepilogo"); return; }
+  await c.send({ content: text, allowedMentions: { parse: [] } });
+  out({ ev: "posted", channel: c.name });
+}
+
 client.once("ready", () => { out({ ev: "ready", name: client.user.tag, id: client.user.id }); connect(); });
 client.on("guildCreate", () => { if (!conn) connect(); });
 client.login(cfg.token).catch((e) => {
@@ -157,6 +191,9 @@ client.login(cfg.token).catch((e) => {
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
   let m; try { m = JSON.parse(line); } catch { return; }
   if (m.op === "play" && m.file) { if (conn) play(m.file, m.urgent); else fs.unlink(m.file, () => {}); }
+  else if (m.op === "skip") skip();
+  else if (m.op === "resume") resume();
+  else if (m.op === "post" && m.text) post(m.text).catch((e) => log("messaggio: " + e.message));
   else if (m.op === "reconnect") { try { conn && conn.destroy(); } catch {} conn = null; connect(); }
   else if (m.op === "quit") { try { conn && conn.destroy(); } catch {} client.destroy(); process.exit(0); }
 });

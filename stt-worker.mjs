@@ -6,13 +6,16 @@ const require = createRequire(import.meta.url);
 let rec = null;
 try {
   const sherpa = require("sherpa-onnx-node");
-  rec = new sherpa.OfflineRecognizer({
-    featConfig: { sampleRate: 16000, featureDim: 80 },
-    modelConfig: {
-      whisper: { encoder: workerData.encoder, decoder: workerData.decoder, language: "it", task: "transcribe" },
-      tokens: workerData.tokens, numThreads: 1, provider: "cpu", debug: 0,
-    },
-  });
+  const w = workerData, threads = w.threads || 1;
+  // Parakeet (veloce, lavora solo sulla durata della frase) oppure Whisper (di riserva)
+  const modelConfig = w.kind === "parakeet"
+    ? { transducer: { encoder: w.encoder, decoder: w.decoder, joiner: w.joiner }, modelType: "nemo_transducer",
+        tokens: w.tokens, numThreads: threads, provider: "cpu", debug: 0 }
+    : { whisper: { encoder: w.encoder, decoder: w.decoder, language: "it", task: "transcribe" },
+        tokens: w.tokens, numThreads: threads, provider: "cpu", debug: 0 };
+  rec = new sherpa.OfflineRecognizer({ featConfig: { sampleRate: 16000, featureDim: 80 }, modelConfig, decodingMethod: "greedy_search" });
+  // la prima frase è sempre più lenta (carica il modello in memoria): la faccio subito, a vuoto
+  try { const s = rec.createStream(); s.acceptWaveform({ sampleRate: 16000, samples: new Float32Array(16000) }); rec.decode(s); } catch {}
   parentPort.postMessage({ ready: true });
 } catch (e) {
   parentPort.postMessage({ error: String(e && e.message || e) });

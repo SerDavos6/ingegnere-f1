@@ -2,6 +2,8 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -42,11 +44,14 @@
   .cats button { font-weight:800; }
   .cats button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
 </head>
 <body>
 <header>
-  <a class="back" href="/">← Dashboard</a>
-  <h1><b>F1</b> Classifica</h1>
+  <a class="back" aria-label="Indietro" href="/">← Dashboard</a>
+  <h1>Classifica</h1>
 </header>
 <div id="cats" class="others cats"></div>
 <div id="tracks" class="others"></div>
@@ -57,6 +62,11 @@
   grafici e staccate.</p>
 
 <script>
+// il mio giro migliore su questa pista: Analisi lo apre come giro da confrontare con quello dell'amico
+function myBest(t) {
+  const m = (t.rows || []).find(r => r.me);
+  return m && m.sid ? `&s=${encodeURIComponent(m.sid)}&lap=${encodeURIComponent(m.lap)}` : "";
+}
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
@@ -92,7 +102,7 @@ function show(track) {
       <div class="pos ${r.pos <= 3 ? "p" + r.pos : ""}">${r.pos}</div>
       <div class="who"><b>${esc(r.driver)}${r.me && r.driver !== "Tu" ? " (tu)" : ""}</b><small>${esc(r.session || "")} · ${day(r.date)}</small></div>
       <div class="t mono"><b>${fmt(r.ms)}</b><small>${r.gap ? "+" + (r.gap / 1000).toFixed(3) : "—"}</small></div>
-      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&cat=${encodeURIComponent(t.category)}&friend=${encodeURIComponent(r.id)}">Confronta</a>`
+      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&cat=${encodeURIComponent(t.category)}&friend=${encodeURIComponent(r.id)}${myBest(t)}">Confronta</a>`
                        : `<span class="cmp off">Confronta</span>`}
     </div>`).join("") +
     (!t.mine ? `<div class="hint" style="padding:8px 0">Per confrontarti fai almeno un giro valido su questa pista con questa categoria.</div>` : "");

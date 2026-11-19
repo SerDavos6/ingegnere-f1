@@ -197,6 +197,10 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **Box e Impostazioni più ordinati**: ogni voce è una riga corta con il valore attuale accanto (per esempio
+  "Voce dell'ingegnere · Server · Il Veterano"); la tocchi per aprirla. Le spiegazioni lunghe sono dietro
+  "? Spiegazione". In Impostazioni restano in vista le 6 cose che si cambiano più spesso, il resto (Discord, schermo,
+  segnalazioni, altre impostazioni) è in "Avanzate". In pista e Weekend non cambiano.
 - **Domande libere senza limiti, gratis** (scheda 🧠): catena di servizi gratuiti Gemini → Groq → Cerebras →
   OpenRouter → Mistral; chi finisce le domande viene saltato per due minuti. Se un modello viene ritirato ne
   sceglie un altro da solo. Claude Haiku resta facoltativo; se finiscono tutti lo dice una volta e usa le regole.
@@ -285,7 +289,8 @@ controlla l'impostazione.
 - **Gomme sulla macchina**: le 4 gomme attorno al disegno dell'auto, colorate per temperatura (blu fredda, verde giusta,
   arancio calda, rossa troppo calda) con l'usura.
 - **Colore della dashboard**: in 👤 Profilo scegli il colore della tua scuderia preferita.
-- **🏆 Classifica**: il giro migliore di ogni utente del server per ogni pista; "Confronta" lo apre in Analisi.
+- **🏆 Classifica**: il giro migliore di ogni utente del server per ogni pista; "Confronta" lo apre in Analisi
+  contro il tuo giro valido più veloce su quella pista e categoria (non contro l'ultima sessione).
 - **Nomi delle curve**: in Analisi, ✏️ accanto a una staccata. L'ingegnere poi dice "perdi di più in Parabolica".
 - **🏁 Riepilogo gara** in Analisi: partenza → arrivo, giro più veloce, costanza, soste, grafico delle posizioni e
   dell'usura; si condivide su WhatsApp con 📤.

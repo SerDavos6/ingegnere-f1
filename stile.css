@@ -1,0 +1,59 @@
+/* Stile comune delle pagine (interfaccia v2): stessi colori, caratteri e riquadri della dashboard.
+   Caricato dopo lo stile di ogni pagina, quindi vince su quello. */
+:root { --bg:#0b0c0f; --panel:#15171c; --line:#22262d; --grid:#1e2127; --txt:#e8ecf1; --dim:#9aa3ae; --accent:#e10600;
+        --good:#4cd78a; --cond:"Barlow Condensed",-apple-system,"Segoe UI",Roboto,sans-serif; }
+html, body { background:var(--bg); color:var(--txt); font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif; }
+body { gap:10px; overscroll-behavior-y:none;
+       padding-left:max(12px, env(safe-area-inset-left)) !important; padding-right:max(12px, env(safe-area-inset-right)) !important;
+       padding-bottom:max(30px, calc(16px + env(safe-area-inset-bottom))) !important; }
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; color-scheme:dark; }
+* { -webkit-tap-highlight-color:transparent; }
+button, a, label, summary, select, input { touch-action:manipulation; }
+/* iPhone ingrandisce la pagina se il testo di un campo è sotto i 16px */
+select, input, textarea { font-size:max(16px, 1em) !important; }
+/* tabelle larghe: scorrono col dito invece di uscire dallo schermo */
+table { max-width:100%; }
+.scroll, .tblwrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+
+/* intestazione: pulsante indietro rotondo e titolo come nella dashboard */
+header { gap:12px !important; padding:4px 2px 6px; align-items:center; }
+header h1 { font-family:var(--cond); font-size:22px !important; font-weight:700; letter-spacing:.03em !important;
+            text-transform:uppercase; display:flex; align-items:center; gap:10px; }
+header h1::before { content:""; width:4px; height:26px; border-radius:2px; background:var(--accent); flex:none; }
+header h1 b { color:var(--txt) !important; }
+a.back { width:44px; height:44px; padding:0 !important; border-radius:22px !important; display:grid !important; place-items:center;
+         font-size:0 !important; background:var(--panel); border:1px solid #262a31 !important; flex:none; }
+a.back::before { content:""; width:10px; height:10px; border-left:2.5px solid var(--txt); border-bottom:2.5px solid var(--txt);
+                 transform:translateX(2px) rotate(45deg); }
+
+/* riquadri, etichette, testi */
+.card { background:var(--panel) !important; border:0 !important; border-radius:14px !important; }
+.lbl, h2 { font-size:11px !important; font-weight:600 !important; letter-spacing:.08em !important; color:var(--dim) !important;
+           text-transform:uppercase; }
+h2 { margin:6px 4px 0; }
+.hint, .hint2, .empty { color:var(--dim); }
+select, input, input.txt { background:#0e0f13 !important; border:1px solid #262a31 !important; border-radius:10px !important;
+                           color:var(--txt) !important; font-family:inherit; }
+
+/* numeri: Barlow Condensed come nella dashboard */
+.mono, .pos, .st b, .sum .v, .t b, .pts, .rgrid div b, .grid .diff b { font-family:var(--cond) !important; font-variant-numeric:tabular-nums; }
+.st b, .sum .v { font-weight:700 !important; font-size:26px !important; }
+.pos { font-weight:800 !important; font-size:22px !important; }
+.t b { font-size:19px !important; font-weight:700; }
+.p1 { color:#ffd24a !important; }
+
+/* pulsanti e linguette */
+.btn, .cmp, .others button, .cats button, button.ren { background:#15171c; border:1px solid #262a31 !important; border-radius:12px !important;
+       color:var(--txt); font-family:inherit; font-weight:600; min-height:40px; }
+.btn.main, .others button.on, .cats button.on { background:var(--accent) !important; border-color:var(--accent) !important; color:#fff !important; }
+.seg { background:#0e0f13 !important; border:1px solid var(--line) !important; border-radius:12px !important; padding:3px !important; }
+.seg button { border-radius:9px !important; font-weight:600; }
+.seg button.on { background:#262a31 !important; color:#fff !important; }
+.chip { border-radius:12px !important; border-color:#262a31 !important; background:#15171c !important; }
+.chip.sel { border-color:var(--accent) !important; box-shadow:0 0 0 1px var(--accent) inset; }
+
+/* righe di classifica ed elenchi */
+.row + .row, .race + .race, .trk + .trk, th, td { border-color:var(--line) !important; }
+.row.me { background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 20%, transparent), transparent 75%) !important; }
+th { color:var(--dim); font-weight:600; font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
