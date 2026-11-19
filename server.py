@@ -34,7 +34,9 @@ import voce_ai
 import voce_piper
 import discord_bridge
 import pronuncia
+import calendario
 import profilo
+from parlato import fmt_lap
 import storico
 import voci
 from coach import Coach
@@ -79,15 +81,22 @@ class Tenant:
                       "ids": {}, "player_idx": None, "rate": 0.0, "_sec": 0, "_n": 0, "_hist": []}
         self.coach = Coach(self.emit, data_dir=self.data_dir, ref_dir=self.ref_dir)
         cfg = engineer_ai.load_config(self.config_path)
-        self.coach.pit_loss = float(cfg.get("pit_loss", 22.0))
+        # vecchie impostazioni: 22 era il valore fisso di prima, non una scelta: diventa automatico
+        pl = cfg.get("pit_loss")
+        self.coach.pit_loss_manual = float(pl) if pl and float(pl) != 22.0 and cfg.get("pit_loss_manual") else None
+        self.coach.pit_learned = dict(cfg.get("pit_learned") or {})
+        self.coach.on_pit_learned = self._pit_learned
         self.coach.verbosity = int(cfg.get("verbosity", 2))
         self.coach.muted = bool(cfg.get("muted"))
         self.coach.training.enabled = cfg.get("training", True) is not False
         self.coach.targets = dict(cfg.get("targets") or {})
         self.coach.work_on = cfg.get("work_on") if cfg.get("work_on") in WORK_ON else "tutto"
         self.coach.prewarm = self.prewarm
+        # il tuo nome: quello scelto nelle impostazioni, se no il nome utente
+        self.coach.driver_name = cfg.get("driver_name") or ("" if name in ("io", "locale") else name.capitalize())
+        self.coach.style = cfg.get("style") if cfg.get("style") in ("umano", "tecnico") else "umano"
         self.coach.on_report = self.save_report
-        self.coach.on_race_end = self.race_summary
+        self.coach.on_race_end = self.race_end
         self.public_base = None
         self._warmed = set()
         self.audio_out = cfg.get("audio_out") if cfg.get("audio_out") in discord_bridge.MODES else "telefono"
@@ -95,7 +104,9 @@ class Tenant:
         self.coach.setups_dir = os.path.join(root, "assetti")
         self.coach.teammates = lambda: find_teammates(self)
         self.coach.friend_info = lambda: friend_info(self)
+        self.coach.send_to_friend = lambda name, text: send_to_friend(self, name, text)
         self.answers = Answers(self.coach)
+        self.answers.ai_on = lambda: bool(engineer_ai.providers(engineer_ai.load_config(self.config_path)))
 
     def broadcast(self, event, payload):
         line = f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -218,13 +229,32 @@ class Tenant:
         return snap
 
     # ---- domande
-    def ask(self, question):
-        """Prima le risposte a regole (gratis, istantanee); se la domanda è diversa, l'AI."""
+    def ask(self, question, quiet=False):
+        """Prima le risposte a regole (gratis, istantanee); se la domanda è diversa, l'AI.
+        quiet: frase sentita senza "Radio" subito dopo una risposta. Se non è una domanda per me
+        (stavi parlando con il tuo amico) non rispondo "non ho capito"."""
         with self.lock:
             answer = self.answers.answer(question)
             ctx = self.coach.context_for_ai() if answer is None else None
+        if answer is None and quiet:
+            return None
         if answer is None:
-            answer = engineer_ai.ask(ctx, question, self.config_path)
+            with self.lock:
+                guess = self.answers.guess(question)      # «intendevi le gomme?» (solo se l'AI non c'è)
+            ai = None if guess and not engineer_ai.providers(engineer_ai.load_config(self.config_path)) \
+                else engineer_ai.ask(ctx, question, self.config_path)
+            if ai and ai.get("command"):
+                # l'AI ha capito un'azione detta a parole tue: la eseguo come se l'avessi detta così
+                with self.lock:
+                    done = self.answers.answer(ai["command"])
+                print(f"[{self.name}] AI: «{question}» → comando «{ai['command']}»", flush=True)
+                answer = done or ai.get("text") or None
+            elif ai and ai.get("text"):
+                answer = ai["text"]
+                if ai.get("failed") and guess:
+                    answer += " " + guess
+            elif guess:
+                answer = guess
         if answer is None:
             answer = self._not_understood()
         self._save_radio_state()           # i comandi a voce (silenzio, parla di più…) restano salvati
@@ -378,6 +408,77 @@ class Tenant:
                     out["race"] = {"error": str(e)}
         return out
 
+    def _pit_learned(self, track, value):
+        cfg = self.load_cfg()
+        cfg.setdefault("pit_learned", {})[track] = value
+        engineer_ai.save_config(cfg, self.config_path)
+        self.emit("strategia", f"Ho misurato la tua sosta: ai box perdi circa {value:.0f} secondi su questa pista. "
+                               "Lo uso per le prossime strategie.", False, 1)
+
+    def race_end(self, me, debrief):
+        """Bandiera a scacchi: alla radio (e in cuffia su Discord) il confronto con gli amici e il campionato,
+        poi il riepilogo scritto nel canale di testo."""
+        try:
+            text = self.friends_debrief(me)
+            if text:
+                self.coach.say(text, "debrief", level=2, urgent=True)
+        except Exception as e:
+            print("Riepilogo amici non detto:", e, flush=True)
+        self.race_summary(me, debrief)
+
+    def friends_debrief(self, me):
+        """«Hai chiuso davanti a Marco, 4 posizioni. In campionato sei primo, 7 punti su di lui.»"""
+        r, pos = self.coach.race, me.get("position")
+        if not pos or me.get("result_status") in (4, 5, 6, 7):
+            return None
+        bits = []
+        friends = _friends_in_race(self)
+        for n, idx, o in friends:
+            car = r.by_idx.get(idx)
+            if not car:
+                continue
+            fin = car["position"] if car.get("result_status") in (2, 3) else None
+            if fin is None:
+                bits.append(f"{n} si è ritirato")
+            elif fin > pos:
+                d = fin - pos
+                bits.append(f"hai chiuso davanti a {n}" + (f", di {d} posizioni" if d > 1 else ""))
+            else:
+                d = pos - fin
+                bits.append(f"{n} ti ha battuto" + (f" di {d} posizioni" if d > 1 else ", per una posizione"))
+        if not friends:
+            return None
+        # campionato tra voi, con i punti di questa gara se non è ancora salvata
+        champ = championship(self)
+        table = {x["driver"]: x["points"] for x in champ["standings"]}
+        if not any(str(rc["uid"]) == str(self.coach.session_uid) for rc in champ["races"]):
+            me_user = next((u for u, t in TENANTS.items() if t is self), None)
+            places = {me_user: pos}
+            for n, idx, o in friends:
+                u = next((u for u, t in TENANTS.items() if t is o), n)
+                car = r.by_idx.get(idx)
+                places[u] = car["position"] if car and car.get("result_status") in (2, 3) else None
+            for u, p in places.items():
+                table[u] = table.get(u, 0) + (POINTS[p - 1] if p and p <= len(POINTS) else 0)
+        me_user = next((u for u, t in TENANTS.items() if t is self), None)
+        if len(table) >= 2 and me_user in table:
+            order = sorted(table.items(), key=lambda kv: -kv[1])
+            place = [u for u, _ in order].index(me_user) + 1
+            names = {next((u for u, t in TENANTS.items() if t is o), n): n for n, idx, o in friends}
+            if place == 1:
+                second = order[1]
+                d = table[me_user] - second[1]
+                bits.append(f"in campionato sei primo, {d} punti su {names.get(second[0], second[0].capitalize())}"
+                            if d else "in campionato siete pari in testa")
+            else:
+                lead = order[0]
+                bits.append(f"in campionato sei {ORD.get(place, str(place) + '°')}, a {lead[1] - table[me_user]} punti da "
+                            f"{names.get(lead[0], lead[0].capitalize())}")
+        if not bits:
+            return None
+        txt = ". ".join(b[0].upper() + b[1:] for b in bits) + "."
+        return txt
+
     def race_summary(self, me, debrief):
         """A fine gara il bot scrive il riepilogo in un canale di testo del server Discord."""
         if not self.discord.active():
@@ -395,6 +496,19 @@ class Tenant:
             lines[0] += f" · {cat}"
         if debrief:
             lines.append(debrief)
+        try:
+            extra = {}
+            for n, idx, o in _friends_in_race(self):
+                car = r.by_idx.get(idx)
+                user = next((u for u, t in TENANTS.items() if t is o), n)
+                if car and pos:
+                    fin = car["position"] if car.get("result_status") in (2, 3) else None
+                    extra[user] = "V" if (not fin or pos < fin) and res not in (4, 5, 6, 7) else "S"
+            if extra:
+                saved = any(str(rc["uid"]) == str(c.session_uid) for rc in championship(self)["races"])
+                lines += h2h_line(self, None if saved else extra)
+        except Exception as e:
+            print("Testa a testa non calcolato:", e, flush=True)
         sid = os.path.basename(c.recorder.session_dir or "")
         if self.public_base and sid:
             lines.append(f"📊 Analisi dei giri: {self.public_base}/analisi?s={urllib.parse.quote(sid)}")
@@ -472,14 +586,20 @@ class Tenant:
         cfg = engineer_ai.load_config(self.config_path)
         mask = lambda k: (k[:4] + "…" + k[-4:]) if len(k) > 10 else ("impostata" if k else "")
         return {"verbosity": self.coach.verbosity, "ai": engineer_ai.provider(cfg),
+                "ai_provider": cfg.get("ai_provider", "auto"), "ai_usage": engineer_ai.usage(self.config_path),
+                "claude_model": cfg.get("claude_model"),
                 "gemini_key": mask(cfg.get("gemini_key", "")), "anthropic_key": mask(cfg.get("anthropic_key", "")),
-                "pit_loss": self.coach.pit_loss, "user": self.name if MODE == "cloud" else None,
+                **{k: mask(cfg.get(k, "")) for k in ("groq_key", "cerebras_key", "openrouter_key", "mistral_key")},
+                "ai_chain": engineer_ai.providers(cfg),
+                "pit_loss": self.coach.pit_loss_manual, "pit_auto": self.coach.pit_loss_info(),
+                "pit_track": self.coach.track_name, "user": self.name if MODE == "cloud" else None,
                 "share_laps": cfg.get("share_laps", True) is not False,
                 "voice_engine": voice_engine(cfg)[0], "voice_engine_now": voice_engine(cfg)[1],
                 "voice_char": cfg.get("voice_char", voci.DEFAULT), "voice_chars": voci.elenco(),
                 "piper": PIPER.status(),
                 "muted": self.coach.muted, "training_on": self.coach.training.enabled,
-                "work_on": self.coach.work_on,
+                "work_on": self.coach.work_on, "driver_name": cfg.get("driver_name") or self.coach.driver_name,
+                "style": self.coach.style,
                 "audio_out": self.audio_out, "discord_token": mask(cfg.get("discord_token", "")),
                 "discord_channel": cfg.get("discord_channel", ""), "discord_user": cfg.get("discord_user", ""),
                 "discord_text": cfg.get("discord_text", ""),
@@ -497,9 +617,11 @@ class Tenant:
                 self.coach.verbosity = cfg["verbosity"] = min(3, max(1, int(body["verbosity"])))
             except (ValueError, TypeError):
                 pass
-        for k in ("gemini_key", "anthropic_key"):
+        for k in ("gemini_key", "anthropic_key", "groq_key", "cerebras_key", "openrouter_key", "mistral_key"):
             if k in body:
                 cfg[k] = str(body[k]).strip()
+        if body.get("ai_provider") in ("auto", "claude", "gemini", "off"):
+            cfg["ai_provider"] = body["ai_provider"]
         if "share_laps" in body:
             cfg["share_laps"] = bool(body["share_laps"])
         if body.get("voice_engine") in ENGINES:
@@ -541,9 +663,20 @@ class Tenant:
                     targets.pop(key, None)
                 cfg["targets"] = self.coach.targets = targets
                 self.coach.target_said = None
+        if body.get("style") in ("umano", "tecnico"):
+            self.coach.style = cfg["style"] = body["style"]
+        if "driver_name" in body:
+            cfg["driver_name"] = str(body["driver_name"] or "").strip()[:20]
+            self.coach.driver_name = cfg["driver_name"]
         if "pit_loss" in body:
             try:
-                self.coach.pit_loss = cfg["pit_loss"] = min(60.0, max(10.0, float(body["pit_loss"])))
+                v = body["pit_loss"]
+                if v in (None, "", 0):
+                    self.coach.pit_loss_manual = None          # automatico per pista
+                    cfg["pit_loss_manual"] = False
+                else:
+                    self.coach.pit_loss_manual = cfg["pit_loss"] = min(60.0, max(10.0, float(v)))
+                    cfg["pit_loss_manual"] = True
             except (ValueError, TypeError):
                 pass
         engineer_ai.save_config(cfg, self.config_path)
@@ -588,10 +721,23 @@ def friend_info(me):
             out.append({"name": name, "idx": idx, "wear": max(wear) if wear else None,
                         "compound": oc.status.get("compound"), "tyre_age": oc.status.get("tyre_age"),
                         "ers": oc.energy.now_pct, "stops": ld.get("pit_stops"),
-                        "plan_lap": plan[1] if plan[0] else None})
+                        "plan_lap": plan[1] if plan[0] else None,
+                        "team_lap": oc.race.strategy.team_lap or None,
+                        "box_lap": (oc.race.strategy.pending_box() or {}).get("lap")})
         except Exception as e:
             print("Dati amico non letti:", e, flush=True)
     return out
+
+
+def send_to_friend(me, name, text):
+    """Un messaggio dal tuo ingegnere a quello del tuo amico, che glielo dice in cuffia."""
+    me_name = me.coach.driver_name or me.name.capitalize()
+    for n, idx, o in _friends_in_race(me):
+        if n.lower() == name.lower():
+            text = text.strip()
+            o.emit("squadra", f"Messaggio da {me_name}: {text[0].upper() + text[1:]}.", True, 2)
+            return True
+    return False
 
 
 def _friends_in_race(me):
@@ -617,10 +763,12 @@ def _friends_in_race(me):
                 if theirs.get("number") and p.get("number") == theirs.get("number") and p.get("team") == theirs.get("team"):
                     idx = i
                     break
-        out.append((name, idx, o))
+        # il nome con cui lo chiami: quello che ha scelto nelle sue impostazioni, se no il nome utente
+        out.append((oc.driver_name or name.capitalize(), idx, o))
     return out
 
 
+ORD = {2: "secondo", 3: "terzo", 4: "quarto", 5: "quinto", 6: "sesto"}
 POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
 
 
@@ -668,7 +816,100 @@ def championship(me):
         r["pos"] = i + 1
         r["gap"] = table[0]["points"] - r["points"]
     results.sort(key=lambda r: r["date"], reverse=True)
-    return {"cloud": MODE == "cloud", "standings": table, "races": results}
+    return {"cloud": MODE == "cloud", "standings": table, "races": results, "h2h": head_to_head(me, results)}
+
+
+CAL_PATH = os.path.join(BASE, "calendario.json")       # condiviso: lo stesso campionato per tutti
+
+
+def calendar_view(me):
+    cal = calendario.load(CAL_PATH)
+    try:
+        mine = storico.gare(me.data_dir)
+    except Exception:
+        mine = {"races": [], "records": []}
+    races = [{"track": r["track"], "date": r["date"]} for r in mine["races"]]
+    try:
+        races += [{"track": rc["track"], "date": rc["date"]} for rc in championship(me)["races"]]
+    except Exception:
+        pass
+    i, done = calendario.progress(cal, races)
+    out = {"tracks": cal["tracks"], "created": cal.get("created"), "next_index": i, "done": done,
+           "all_tracks": sorted(set(P.TRACKS.values())), "preset": calendario.F1_2026, "next": None}
+    if i < len(cal["tracks"]):
+        try:
+            prof = profilo.build(me.data_dir).get("tracks", [])
+        except Exception:
+            prof = []
+        out["next"] = calendario.next_info(cal["tracks"][i], mine.get("records") or [], leaderboard(me),
+                                           mine["races"], prof)
+        out["next"]["spoken"] = calendario.spoken(out["next"])
+    return out
+
+
+def head_to_head(me, results=None):
+    """Tu contro ogni amico: chi è arrivato davanti nelle gare insieme e chi è più veloce su ogni pista."""
+    if MODE != "cloud":
+        return []
+    if results is None:
+        results = championship(me)["races"]
+    my_name = next((n for n, t in TENANTS.items() if t is me), None)
+    out = {}
+    for rc in results:
+        mine = next((x for x in rc["results"] if x["me"]), None)
+        if not mine:
+            continue
+        for x in rc["results"]:
+            if x["me"]:
+                continue
+            h = out.setdefault(x["driver"], {"friend": x["driver"], "races": 0, "me_ahead": 0, "him_ahead": 0,
+                                             "last": [], "tracks": []})
+            h["races"] += 1
+            a, b = mine["finish"], x["finish"]
+            if a and (not b or a < b):
+                h["me_ahead"] += 1
+                h["last"].append("V")
+            elif b and (not a or b < a):
+                h["him_ahead"] += 1
+                h["last"].append("S")
+    # giro migliore per pista (stessa categoria di macchina)
+    for row in leaderboard(me):
+        mine = next((r for r in row["rows"] if r["me"]), None)
+        for r in row["rows"]:
+            if r["me"] or r["driver"] == my_name:
+                continue
+            h = out.setdefault(r["driver"], {"friend": r["driver"], "races": 0, "me_ahead": 0, "him_ahead": 0,
+                                             "last": [], "tracks": []})
+            h["tracks"].append({"track": row["track"], "category_name": row["category_name"],
+                                "me_ms": mine["ms"] if mine else None, "him_ms": r["ms"]})
+    for h in out.values():
+        h["last"] = h["last"][:5]                       # le gare sono già dalla più recente
+        both = [t for t in h["tracks"] if t["me_ms"] and t["him_ms"]]
+        h["faster_me"] = sum(1 for t in both if t["me_ms"] < t["him_ms"])
+        h["faster_him"] = sum(1 for t in both if t["him_ms"] < t["me_ms"])
+        h["tracks"].sort(key=lambda t: (t["me_ms"] is None or t["him_ms"] is None, t["track"]))
+    return sorted(out.values(), key=lambda h: -h["races"])
+
+
+def h2h_line(me, extra=None):
+    """«Testa a testa con Marco: 5 a 3 per te nelle gare insieme, più veloce tu su 4 piste su 6.»
+    extra: {amico: "V"/"S"} per la gara appena finita, se non è ancora tra quelle salvate."""
+    lines = []
+    for h in head_to_head(me):
+        a, b = h["me_ahead"], h["him_ahead"]
+        if extra and h["friend"] in extra:
+            a += extra[h["friend"]] == "V"
+            b += extra[h["friend"]] == "S"
+        if not (a or b or h["faster_me"] or h["faster_him"]):
+            continue
+        txt = f"🤝 Testa a testa con {h['friend'].capitalize()}: "
+        txt += (f"{a} a {b} " + ("per te" if a > b else "per lui" if b > a else "pari")) if a or b else "nessuna gara insieme"
+        n = h["faster_me"] + h["faster_him"]
+        if n:
+            k = max(h['faster_me'], h['faster_him'])
+            txt += f", più veloce {'tu' if h['faster_me'] >= h['faster_him'] else 'lui'} su {k} {'pista' if k == 1 else 'piste'} su {n}"
+        lines.append(txt + ".")
+    return lines
 
 
 def setups_view(me, track_id=None):
@@ -784,6 +1025,81 @@ def backup_loop():
             except Exception as e:
                 print(f"[{t.name}] backup automatico non riuscito: {e}", flush=True)
         time.sleep(3600)
+
+
+WORK_TIP = {"frenata": "frenata", "centro": "centro", "uscita": "uscita", "traiettoria": "tutto"}
+
+
+def weekly_text(t):
+    """Il programma della settimana: com'è andata negli ultimi 7 giorni e su cosa lavorare."""
+    week = time.time() - 7 * 86400
+    sess = [m for m in recorder.list_sessions(t.data_dir) if (m.get("started") or 0) >= week]
+    if not sess:
+        return None
+    g = storico.gare(t.data_dir)
+    races = [r for r in g.get("races", []) if (r.get("date") or 0) >= week]
+    laps = sum(len(m.get("laps", [])) for m in sess)
+    name = t.coach.driver_name
+    pl = lambda n, a, b: f"{n} {a if n == 1 else b}"
+    lines = [f"📅 **La tua settimana{', ' + name if name else ''}**: {pl(len(sess), 'sessione', 'sessioni')}, "
+             f"{pl(laps, 'giro', 'giri')}" + (f", {pl(len(races), 'gara', 'gare')}" if races else "") + "."]
+    if races:
+        res = [f"{r['track']} {'RIT' if r.get('dnf') else 'P' + str(r['finish']) if r.get('finish') else '–'}" for r in races[:6]]
+        lines.append("🏁 " + " · ".join(res))
+    recs = [r for r in g.get("records", []) if (r.get("date") or 0) >= week and r.get("sessions", 0) >= 2]
+    if recs:
+        lines.append("⏱️ Record migliorati: " + ", ".join(f"{r['track']} {fmt_lap(r['ms'])}" for r in recs[:4]))
+    try:
+        p = profilo.build(t.data_dir)
+        w = (p.get("weak") or [None])[0]
+        if w:
+            lines.append(f"🎯 Su cosa lavorare: **{w['label'].lower()}** ({w['share']}% del tempo che lasci nelle curve). "
+                         f"Nell'app: Impostazioni → Su cosa lavorare → {WORK_TIP.get(w['kind'], 'tutto').capitalize()}.")
+        if p.get("improving"):
+            a, b = p["improving"]["before"], p["improving"]["after"]
+            lines.append(("📈 Stai migliorando: " if b < a else "📉 Questa settimana un po' meno: ")
+                         + f"da {a:.2f} a {b:.2f} secondi lasciati nelle curve a giro.")
+    except Exception as e:
+        print("Programma della settimana: profilo non letto:", e, flush=True)
+    try:
+        nx = calendar_view(t).get("next")
+        if nx:
+            lines.append("🗓️ " + nx["spoken"])
+    except Exception as e:
+        print("Calendario non letto:", e, flush=True)
+    try:
+        lines += h2h_line(t)
+    except Exception as e:
+        print("Testa a testa non calcolato:", e, flush=True)
+    return "\n".join(lines)
+
+
+def weekly_loop():
+    """Ogni lunedì mattina il bot scrive su Discord il programma della settimana."""
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Rome")
+    except Exception:
+        tz = None
+    import datetime
+    time.sleep(300)
+    while True:
+        now = datetime.datetime.now(tz)
+        if now.weekday() == 0 and now.hour >= 9:
+            for t in list(TENANTS.values()):
+                try:
+                    cfg = t.load_cfg()
+                    if not t.discord.active() or time.time() - cfg.get("weekly_t", 0) < 6 * 86400:
+                        continue
+                    txt = weekly_text(t)
+                    cfg["weekly_t"] = time.time()
+                    engineer_ai.save_config(cfg, t.config_path)
+                    if txt:
+                        t.discord.post(txt)
+                        print(f"[{t.name}] programma della settimana inviato su Discord", flush=True)
+                except Exception as e:
+                    print(f"[{t.name}] programma della settimana non inviato: {e}", flush=True)
+        time.sleep(1800)
 
 
 def state_loop():
@@ -1114,6 +1430,8 @@ class Handler(BaseHTTPRequestHandler):
             self._static("profilo.html")
         elif path == "/api/profilo":
             self._json(profilo.build(t.data_dir))
+        elif path == "/api/calendario":
+            self._json(calendar_view(t))
         elif path == "/api/campionato":
             self._json(championship(t))
         elif path == "/api/assetti":
@@ -1213,7 +1531,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     line = q.get(timeout=15)
                 except queue.Empty:
-                    line = ": ping\n\n"
+                    line = "event: ping\ndata: 1\n\n"     # evento vero: la pagina capisce che la linea è viva
                 self.wfile.write(line.encode())
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
@@ -1309,6 +1627,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/use_ref":
             out = t.use_reference(body)
             return self._json(out, 400 if "error" in out else 200)
+        if self.path == "/api/calendario":
+            tracks = body.get("tracks")
+            if not isinstance(tracks, list):
+                return self._json({"error": "tracks mancante"}, 400)
+            calendario.save(CAL_PATH, tracks, set(P.TRACKS.values()))
+            return self._json(calendar_view(t))
         if self.path == "/api/briefing":
             with t.lock:
                 txt = t.coach.race.briefing() if t.coach.in_race else t.coach.practice.briefing_text()
@@ -1391,6 +1715,7 @@ def main():
         threading.Thread(target=t.discord.configure, args=(t.load_cfg(),), daemon=True).start()
     threading.Thread(target=state_loop, daemon=True).start()
     threading.Thread(target=backup_loop, daemon=True).start()
+    threading.Thread(target=weekly_loop, daemon=True).start()
     print("=" * 60)
     if MODE == "cloud":
         print(f" Modalità SERVER SU INTERNET, utenti: {', '.join(f'{n} (UDP {t.udp_port})' for n, t in TENANTS.items())}")

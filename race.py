@@ -10,6 +10,11 @@ import re
 from distacchi import GapTimer
 from parlato import fmt_lap_voice, num, plural, tenths
 from amico_live import FriendWatch
+from squadra import TeamPlay
+from decisioni import Decisions
+from segui import Follow
+from tattica import Tactics
+from qualifica import QualiBoard
 from strategia import Strategy
 
 # nomi generici che il gioco manda al posto dell'ID online nascosto (varie lingue)
@@ -111,6 +116,11 @@ class RaceEngineer:
         self.start_grid = None        # posizione di partenza (a fine gara il gioco a volte manda 0)
         self.strategy = Strategy(self)
         self.friend = FriendWatch(self)
+        self.team = TeamPlay(self)
+        self.dec = Decisions(self)
+        self.follow = Follow(self)
+        self.tactics = Tactics(self)
+        self.quali = QualiBoard(self)
 
     # ---------------------------------------------------------- utilità
     @property
@@ -197,12 +207,26 @@ class RaceEngineer:
     def on_participants(self, names):
         self.names = names
 
+    def corner_here(self):
+        """La curva dove sei adesso (per gli avvisi sui limiti della pista)."""
+        c = self.c
+        d = (c.last_lapdata or {}).get("lap_distance")
+        if d is None or not c.ref:
+            return None
+        for z in c.ref.zones:
+            if z["brake"] - 120 <= d <= z["exit"] + 200:
+                return c.zone_label(z)
+        return None
+
     def on_event(self, ev):
         say, me_idx = self.c.say, self.c.player_idx
         code = ev["code"]
         if code == "RTMT":
             if ev["car"] != me_idx:
                 self._retired(ev["car"], ev.get("reason", 0))
+            return
+        if code == "LGOT":
+            self.dec.on_lights_out()
             return
         if code == "RDFL":
             say("Bandiera rossa! Rallenta e rientra ai box.", "gara", level=1, urgent=True)
@@ -219,7 +243,8 @@ class RaceEngineer:
             self.warnings += 1
             if ev["infringement"] in TRACK_LIMITS:
                 n = self.warnings
-                txt = (f"Avvertimento per {what}. " +
+                where = self.corner_here()
+                txt = (f"Avvertimento per {what}{' in ' + where if where else ''}. " +
                        ("È il primo." if n == 1 else f"Sono {n} avvertimenti."))
                 if n >= 2:
                     txt += " Attento ai limiti della pista, al prossimo rischi una penalità."
@@ -294,6 +319,8 @@ class RaceEngineer:
         self.prev_pos = {c["idx"]: c["position"] for c in self.cars} or self.prev_pos
         self.cars = cars
         self.by_idx = {c["idx"]: c for c in cars}
+        if self.c.is_quali:
+            self.quali.on_laps(cars)
         me = self.me()
         if not me or not self.is_race:
             self.prev_pit = {c["idx"]: c["pit_status"] for c in cars}
@@ -349,7 +376,7 @@ class RaceEngineer:
                       and me["lap_num"] - self.drs_warned_lap >= 2):
                     self.drs_warned_lap = me["lap_num"]
                     n = self.name(behind["idx"])
-                    say(self.c.frasi("dentro_secondo", nome=n, Nome=cap(n), gap=num(gap)), "gara", level=1, urgent=True)
+                    say(self.c.frasi("dentro_secondo", nome=n, Nome=cap(n), gap=self.c.gap_text(gap)), "gara", level=1, urgent=True)
             else:
                 self.close_since = None
         else:
@@ -357,9 +384,13 @@ class RaceEngineer:
 
         if self.start_grid is None and me.get("grid_position"):
             self.start_grid = me["grid_position"]
+        self.dec.on_lapdata(me)                  # com'è andata la partenza, dopo la prima curva
+        self.follow.on_laps(me)                  # il pilota che mi hai chiesto di seguire
+        self.tactics.on_live(me)                 # chi ti segue in scia prima del rettilineo
         # radio di squadra: il compagno (un amico del server) è subito davanti o dietro
         if stable:
             self.friend.on_live(me)
+            self.strategy.on_live(me)
         if me["lap_num"] > 1 and stable and me["pit_status"] == 0:
             for off, where in ((-1, "davanti"), (1, "dietro")):
                 car = self.rel(off)
@@ -370,7 +401,7 @@ class RaceEngineer:
                 if 0 < gap < 1.0 and me["lap_num"] - self.mate_close.get(mate, -10) >= 3:
                     self.mate_close[mate] = me["lap_num"]
                     team = self.same_team(car["idx"])
-                    say(f"{where.capitalize()} c'è {self.mate_word(car['idx'])} {mate}, a {num(gap)}. " +
+                    say(f"{where.capitalize()} c'è {self.mate_word(car['idx'])} {mate}, a {self.c.gap_text(gap)}. " +
                         ("Se lo attacchi fallo pulito, niente contatti." if off < 0 else
                          "Lascia spazio in staccata, non buttiamo via punti per la squadra." if team else
                          "Difenditi pulito, niente contatti tra amici."),
@@ -400,7 +431,7 @@ class RaceEngineer:
                 # la posizione la dico a fine giro (come in una gara vera)
                 lvl = 3 if me["lap_num"] <= 1 else 2
                 if pos < self.pos_announced:
-                    say(self.c.frasi("sorpasso", p=pos), "gara", level=lvl)
+                    say(self.c.with_name(self.c.frasi("sorpasso", p=pos)), "gara", level=lvl)
                 else:
                     say(self.c.frasi("perso", p=pos), "gara", level=lvl)
             self.pos_announced = pos
@@ -509,7 +540,7 @@ class RaceEngineer:
         if ahead and me["pit_status"] == 0:
             gap = self.gap_between(ahead, me)
             hist["ahead"] = (ahead["idx"], gap)
-            txt = fr("davanti", nome=self.name(ahead["idx"]), gap=num(gap))
+            txt = fr("davanti", nome=self.name(ahead["idx"]), gap=self.c.gap_text(gap))
             p = prev.get("ahead")
             if p and p[0] == ahead["idx"]:
                 diff = p[1] - gap
@@ -525,7 +556,7 @@ class RaceEngineer:
         if behind and behind["pit_status"] == 0:
             gap = self.gap_between(me, behind)
             hist["behind"] = (behind["idx"], gap)
-            txt = fr("dietro", nome=self.name(behind["idx"]), gap=num(gap))
+            txt = fr("dietro", nome=self.name(behind["idx"]), gap=self.c.gap_text(gap))
             p = prev.get("behind")
             if p and p[0] == behind["idx"]:
                 diff = p[1] - gap
@@ -543,8 +574,10 @@ class RaceEngineer:
             side = "davanti" if car["position"] < me["position"] else "dietro"
             txt = f"{self.mate_word(midx)} {mname} è P{car['position']}"
             if g and g < 60:
-                txt += f", a {num(g)} {side}"
+                txt += f", a {self.c.gap_text(g)} {side}"
             parts.append(txt)
+        # le cose che mi chiedi spesso te le dico da solo a fine giro
+        parts += self.c.habit_parts()
         if remaining != 1:
             say(". ".join(p[0].upper() + p[1:] for p in parts) + ".", "gara", level=2)
 
@@ -580,6 +613,10 @@ class RaceEngineer:
         self._stint_lap(me, lap)
         self._undercut(me, remaining)
         self.friend.on_lap(me, remaining)
+        self.team.on_lap(me)
+        self.dec.on_lap(me)
+        self.follow.on_lap(me, remaining)
+        self.tactics.on_lap(me, remaining)
         self.strategy.on_lap(me, remaining)
 
     # ------------------------------------------------------ briefing prima del via
@@ -767,7 +804,7 @@ class RaceEngineer:
             gap = self.gap_between(ahead, me)
             if 0 < gap < gain:
                 self.undercut_said.add(("ahead", ahead["idx"], me["pit_stops"]))
-                self.c.say(f"Undercut possibile {prep('su', self.name(ahead['idx']))}: è a {num(gap)} e con le gomme nuove "
+                self.c.say(f"Undercut possibile {prep('su', self.name(ahead['idx']))}: è a {self.c.gap_text(gap)} e con le gomme nuove "
                            f"guadagni circa {num(round(gain, 1))}. Se ti fermi ora e lui resta fuori, gli esci davanti.",
                            "strategia", level=1, urgent=True)
         if (behind and behind["pit_status"] == 0 and behind["pit_stops"] == me["pit_stops"]
@@ -775,7 +812,7 @@ class RaceEngineer:
             gap = self.gap_between(me, behind)
             if 0 < gap < gain:
                 self.undercut_said.add(("behind", behind["idx"], me["pit_stops"]))
-                self.c.say(f"Attento all'undercut {prep('di', self.name(behind['idx']))}: è a {num(gap)}. "
+                self.c.say(f"Attento all'undercut {prep('di', self.name(behind['idx']))}: è a {self.c.gap_text(gap)}. "
                            "Se si ferma prima di te può passarti, al suo pit ti fermi anche tu per coprirlo.",
                            "strategia", level=1, urgent=True)
 
@@ -872,7 +909,20 @@ class RaceEngineer:
                               "team": (self.names.get(car["idx"]) or {}).get("team"), "compound": t.get("compound"),
                               "pit": car["pit_status"] > 0})
             out["tower"] = tower
+            out["follow"] = self.follow.snapshot()
         return out
+
+    def drivers_for_ai(self):
+        """Chi c'è in gara, per capire «quello della Ferrari», «chi è terzo»…"""
+        out = []
+        for car in sorted(self.cars, key=lambda c: c["position"] or 99):
+            if car["idx"] == self.c.player_idx:
+                continue
+            p = self.names.get(car["idx"]) or {}
+            t = self.tyres.get(car["idx"]) or {}
+            out.append({"nome": self.name(car["idx"], voice=False), "squadra": TEAMS.get(p.get("team")),
+                        "pos": car["position"], "gomme": t.get("compound"), "eta_gomme": t.get("tyre_age")})
+        return out[:22]
 
     def context(self):
         snap = self.snapshot()

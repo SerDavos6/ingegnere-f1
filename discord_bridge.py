@@ -37,7 +37,12 @@ def _npm_error(text):
     lines = [l for l in text.splitlines() if l.strip() and "npm notice" not in l and "complete log" not in l]
     err = [l for l in lines if "npm error" in l or "ERR" in l] or lines
     return " | ".join(l.replace("npm error", "").strip() for l in err[-6:])[-500:]
-WHISPER_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2"
+# riconoscimento vocale: Parakeet (NVIDIA, 25 lingue europee) è molto più veloce di Whisper sul server piccolo,
+# perché lavora solo sulla durata vera della frase (Whisper elabora sempre 30 secondi). Whisper resta di riserva.
+STT_MODELS = [
+    ("parakeet", "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"),
+    ("whisper", "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2"),
+]
 MODES = ("telefono", "discord", "entrambi")    # dove esce la voce dell'ingegnere
 
 
@@ -199,39 +204,92 @@ class Runtime:
                 if r.returncode != 0:
                     print("Discord: sherpa-onnx non installato:\n" + (r.stderr + r.stdout)[-2000:], flush=True)
                     raise RuntimeError(_npm_error(r.stderr + "\n" + r.stdout))
-            if not self._find_whisper():
-                self.detail = "riconoscimento vocale"
-                tb = os.path.join(self.root, "whisper.tar.bz2")
-                _download(WHISPER_URL, tb, 600)
-                os.makedirs(self.models, exist_ok=True)
-                with tarfile.open(tb) as tf:
-                    _safe_extract(tf, self.models)
-                os.remove(tb)
+            # se c'è già un modello lo uso subito; poi, se serve, scarico quello più veloce e i bot ripartono
             self.whisper = self._find_whisper()
-            print("Discord: riconoscimento vocale", "pronto" if self.whisper else "non trovato", flush=True)
-            for cb in list(self.on_whisper):
+            self._notify_whisper()
+            for kind, url in STT_MODELS:
+                if self._find_whisper(kind):
+                    break
                 try:
-                    cb()
+                    self.detail = f"riconoscimento vocale ({kind}, qualche minuto)"
+                    tb = os.path.join(self.root, kind + ".tar.bz2")
+                    _download(url, tb, 1800)
+                    os.makedirs(os.path.join(self.models, kind), exist_ok=True)
+                    with tarfile.open(tb) as tf:
+                        _safe_extract(tf, os.path.join(self.models, kind))
+                    os.remove(tb)
+                    if self._find_whisper(kind):
+                        break
                 except Exception as e:
-                    print("Discord:", e, flush=True)
+                    print(f"Discord: modello {kind} non installato: {e}", flush=True)
+            self.whisper = self._find_whisper()
+            print("Discord: riconoscimento vocale", (self.whisper or {}).get("kind", "non trovato"), flush=True)
+            self._notify_whisper()
         except Exception as e:
             print("Discord: riconoscimento vocale non installato:", e, flush=True)
 
-    def _find_whisper(self):
+    def _notify_whisper(self):
+        kind = (self.whisper or {}).get("kind")
+        if not kind or kind == getattr(self, "_notified", None):
+            return
+        self._notified = kind
+        for cb in list(self.on_whisper):
+            try:
+                cb()
+            except Exception as e:
+                print("Discord:", e, flush=True)
+
+    def _find_whisper(self, only=None):
+        """Il modello di riconoscimento vocale installato: prima Parakeet (veloce), poi Whisper."""
         if not os.path.isdir(self.models):
             return None
-        files = []
-        for d, _, fs in os.walk(self.models):
-            files += [os.path.join(d, f) for f in fs]
-        pick = lambda key: (sorted([f for f in files if key in os.path.basename(f) and f.endswith(".onnx")],
-                                   key=lambda f: ("int8" not in f, f)) or [None])[0]
-        tokens = next((f for f in files if f.endswith("tokens.txt")), None)
-        enc, dec = pick("encoder"), pick("decoder")
-        return {"encoder": enc, "decoder": dec, "tokens": tokens} if enc and dec and tokens else None
+        for kind, _ in STT_MODELS:
+            if only and kind != only:
+                continue
+            files = []
+            for d, _, fs in os.walk(self.models):
+                files += [os.path.join(d, f) for f in fs]
+            if kind == "parakeet":
+                files = [f for f in files if "parakeet" in f]
+            else:
+                files = [f for f in files if "parakeet" not in f]
+            pick = lambda key: (sorted([f for f in files if key in os.path.basename(f) and f.endswith(".onnx")],
+                                       key=lambda f: ("int8" not in f, f)) or [None])[0]
+            tokens = next((f for f in files if f.endswith("tokens.txt")), None)
+            enc, dec, joi = pick("encoder"), pick("decoder"), pick("joiner")
+            if kind == "parakeet" and enc and dec and joi and tokens:
+                return {"kind": "parakeet", "encoder": enc, "decoder": dec, "joiner": joi, "tokens": tokens,
+                        "threads": max(1, min(4, os.cpu_count() or 1))}
+            if kind == "whisper" and enc and dec and tokens:
+                return {"kind": "whisper", "encoder": enc, "decoder": dec, "tokens": tokens,
+                        "threads": max(1, min(4, os.cpu_count() or 1))}
+        return None
 
 
 # ------------------------------------------------------------------ il bot di un utente
-WAKE = re.compile(r"^\W*(?:ehi\s+|ok\s+|hey\s+)?(radio|box radio|ingegnere)\b[\s,.:!?-]*", re.I)
+WAKE = re.compile(r"^\W*(?:ehi\s+|ok\s+|hey\s+|ei\s+|allora\s+)?(radio|box radio|ingegnere)\b[\s,.:!?-]*", re.I)
+_WAKE_LIKE = ("radio", "radi", "radiu", "radios", "radioh", "ladio", "rado", "raddio", "ingegnere", "ingegner")
+
+
+def wake_split(text):
+    """Il testo dopo la parola "Radio", anche se la trascrizione la storpia un po' ("Radiu", "Radi,", "Ehi radio").
+    None se la frase non comincia con "Radio" (stai parlando con il tuo amico)."""
+    import difflib
+    t = _norm(text)
+    m = WAKE.match(t)
+    if m:
+        return t[m.end():]
+    words = re.findall(r"[a-z]+", t)
+    for i, w in enumerate(words[:3]):
+        if w in _WAKE_LIKE or difflib.SequenceMatcher(None, w, "radio").ratio() >= 0.8:
+            # tolgo tutto fino a quella parola compresa
+            pos = 0
+            for w2 in words[:i + 1]:
+                pos = t.index(w2, pos) + len(w2)
+            return t[pos:]
+        if w not in ("ehi", "ei", "ok", "hey", "allora", "ah", "eh", "senti"):
+            break
+    return None
 
 
 def _norm(t):
@@ -250,6 +308,8 @@ class DiscordLink:
         self.voice_in = None          # None = non so ancora, True/False
         self.heard = []               # ultime frasi sentite (per la pagina di diagnosi)
         self.listen_until = 0         # dopo un "Radio" da solo, la frase seguente è la domanda
+        self.stt_kind = None
+        self.ask_t = None             # quando ho capito l'ultima domanda (per misurare il tempo di risposta)
         self.out_q = queue.Queue(maxsize=20)
         self.lock = threading.Lock()
         runtime.on_whisper.append(lambda: self.configure(self.t.load_cfg()))
@@ -262,7 +322,7 @@ class DiscordLink:
         channel = (cfg.get("discord_channel") or "").strip()
         mode = cfg.get("audio_out") if cfg.get("audio_out") in MODES else "telefono"
         want = bool(token and channel) and mode != "telefono"
-        key = (token, channel, (cfg.get("discord_user") or "").strip(), bool(self.rt.whisper),
+        key = (token, channel, (cfg.get("discord_user") or "").strip(), (self.rt.whisper or {}).get("kind"),
                (cfg.get("discord_text") or "").strip()) if want else None
         if key == self.cfg_key and (not want or self.proc and self.proc.poll() is None):
             return
@@ -349,6 +409,7 @@ class DiscordLink:
             print(f"[{self.t.name}] discord: {self.detail}", flush=True)
         elif e == "stt":
             self.voice_in = bool(ev.get("ok"))
+            self.stt_kind = ev.get("kind")
             if not ev.get("ok"):
                 print(f"[{self.t.name}] discord: niente voce in ingresso ({ev.get('msg')})", flush=True)
         elif e == "heard":
@@ -359,21 +420,47 @@ class DiscordLink:
     def _heard(self, text, ms=None):
         """Il pilota ha parlato su Discord: rispondo solo se la frase comincia con "Radio"."""
         self.heard = (self.heard + [{"t": time.time(), "text": text, "ms": ms}])[-8:]
-        m = WAKE.match(_norm(text))
-        if m:
-            q = _norm(text)[m.end():].strip(" ,.!?")
+        rest = wake_split(text)
+        quiet = rest is None
+        if rest is not None:
+            q = rest.strip(" ,.!?")
         elif time.time() < self.listen_until:
-            q = _norm(text).strip(" ,.!?")          # hai detto solo "Radio": questa è la domanda
+            q = _norm(text).strip(" ,.!?")          # subito dopo un "Radio" o una risposta: è per me
         else:
-            return                                  # sta parlando con l'amico, non con me
+            self._cmd({"op": "resume"})             # stava parlando con l'amico: l'ingegnere riprende
+            return
+        if not quiet:
+            self._cmd({"op": "skip"})               # mi hai interrotto con "Radio": smetto e ti ascolto
+        else:
+            self._cmd({"op": "resume"})
         self.listen_until = 0
-        self.t.emit("pilota", f"🎙️ {text.strip()}", False, 1)
+        self.ask_t = time.time()
+        self.ask_entry = self.heard[-1]
+        self.ask_entry["asked"] = True
+        if not quiet:
+            self.t.emit("pilota", f"🎙️ {text.strip()}", False, 1)
         if not q:
             # solo "Radio": rispondo subito e per qualche secondo ascolto la domanda anche senza "Radio"
             self.listen_until = time.time() + 8
             self.t.emit("ingegnere", random.choice(("Dimmi.", "Ti ascolto.", "Vai, ti sento.")), True, 2)
             return
-        threading.Thread(target=self.t.ask, args=(q,), daemon=True).start()
+        def ask():
+            if self.t.ask(q, quiet=quiet) is None:
+                return                              # non era per me: niente risposta
+            if quiet:
+                self.t.emit("pilota", f"🎙️ {text.strip()}", False, 1)
+            # per qualche secondo dopo la risposta puoi chiedere altro senza ridire "Radio"
+            self.listen_until = time.time() + 10
+        threading.Thread(target=ask, daemon=True).start()
+
+    def _cmd(self, m):
+        p = self.proc
+        if p and p.poll() is None:
+            try:
+                p.stdin.write(json.dumps(m) + "\n")
+                p.stdin.flush()
+            except Exception:
+                pass
 
     # ---- voce in uscita
     def active(self):
@@ -406,6 +493,11 @@ class DiscordLink:
                 if p and p.poll() is None:
                     p.stdin.write(json.dumps({"op": "play", "file": path, "urgent": prio >= 2}) + "\n")
                     p.stdin.flush()
+                    if self.ask_t and kind != "pilota":
+                        # tempo dalla fine della domanda alla risposta: riconoscimento + risposta + voce
+                        h = getattr(self, "ask_entry", None) or {}
+                        h["reply_s"] = round(time.time() - self.ask_t + (h.get("ms") or 0) / 1000, 1)
+                        self.ask_t = None
             except Exception as e:
                 print(f"[{self.t.name}] discord: audio non inviato ({e})", flush=True)
 
@@ -423,7 +515,7 @@ class DiscordLink:
         txt = {"spento": "spento", "avvio": self.detail or "avvio…", "connesso": f"bot {self.bot_name} collegato, {self.detail}",
                "nel_canale": f"nel canale «{self.channel}» di {self.guild}", "errore": self.detail}
         return {"state": self.state, "text": txt.get(self.state, self.state), "bot": self.bot_name,
-                "channel": self.channel, "guild": self.guild, "voice_in": self.voice_in,
+                "channel": self.channel, "guild": self.guild, "voice_in": self.voice_in, "stt_kind": self.stt_kind,
                 "runtime": self.rt.status(), "heard": self.heard[-5:],
                 # link per invitare il bot nel tuo server: vedere i canali, entrare, parlare, attività vocale
                 "invite": f"https://discord.com/oauth2/authorize?client_id={self.bot_id}&scope=bot&permissions=36703232"

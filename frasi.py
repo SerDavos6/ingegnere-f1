@@ -71,7 +71,7 @@ T = {
     "pos_mancano": ["P{p}, mancano {n} giri", "Sei P{p}, {n} giri alla fine", "P{p}, ne mancano {n}",
                     "Posizione {p}, ancora {n} giri"],
     "pos": ["P{p}", "Sei P{p}", "Posizione {p}"],
-    "davanti": ["davanti {nome} a {gap}", "{nome} è davanti a {gap}", "hai {nome} a {gap}", "distacco su {nome}: {gap}"],
+    "davanti": ["davanti {nome} a {gap}", "{nome} è davanti a {gap}", "hai {nome} a {gap}", "{nome} è davanti, a {gap}"],
     "recuperi": ["recuperi {d} al giro", "gli prendi {d} al giro", "stai chiudendo, {d} al giro", "guadagni {d} al giro"],
     "perdi_giro": ["perdi {d} al giro", "si allontana di {d} al giro", "ti scappa di {d} al giro", "lui è più veloce di {d}"],
     "dietro": ["dietro {nome} a {gap}", "{nome} ti segue a {gap}", "alle spalle {nome} a {gap}", "dietro hai {nome}, a {gap}"],

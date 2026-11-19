@@ -23,6 +23,10 @@ class Strategy:
         self.last_plan = None
         self.last_plan_lap = -99
         self.box_called = set()
+        self.box_pending = None       # chiamata box in attesa della tua risposta (sì / allunghiamo)
+        self.extend_until = 0         # "allunghiamo": non richiamo prima di questo giro
+        self.team_lap = 0             # soste divise con il compagno: il giro deciso per noi
+        self.rain_hold = 0            # pioggia in arrivo: niente sosta per le slick prima di questo giro
 
     # ------------------------------------------------------------- dati
     @property
@@ -170,9 +174,26 @@ class Strategy:
             self.last_plan, self.last_plan_lap = key, lap
             say(("" if first else "Cambio di piano. ") + self.describe(p), "strategia", level=1 if first else 2)
 
-        # box adesso
-        if p["stop"] and p.get("compound") and p["lap"] == lap and (lap, me["pit_stops"]) not in self.box_called:
+        # box adesso (o di nuovo, dopo un "allunghiamo")
+        plap = p.get("lap")
+        due = plap is not None and (plap == lap or (self.extend_until and lap >= self.extend_until and plap <= lap))
+        if self.team_lap and not self.extend_until:
+            due = plap is not None and lap == self.team_lap
+        if self.rain_hold and lap < self.rain_hold:
+            due = False
+        if self.box_pending and self.box_pending["stops"] != me["pit_stops"]:
+            self.box_pending = None                  # la sosta è fatta
+        if p["stop"] and p.get("compound") and due and (lap, me["pit_stops"]) not in self.box_called:
             self.box_called.add((lap, me["pit_stops"]))
+            mate = self.r.team.hold_box(me)
+            if mate:
+                # il compagno davanti si ferma adesso: noi il giro dopo, per non aspettare dietro di lui ai box
+                self.extend_until = lap + 1
+                say(f"{mate} si ferma questo giro: noi entriamo al prossimo, così non facciamo la fila ai box.",
+                    "strategia", level=1, urgent=True)
+                return
+            self.extend_until = 0
+            self.team_lap = 0
             est = self.r.rejoin_estimate(self.c.pit_loss)
             txt = f"Box, box questo giro. Montiamo le {p['compound']}."
             if est:
@@ -180,7 +201,41 @@ class Strategy:
                 if est.get("ahead"):
                     txt += f", dietro {est['ahead']['name']}"
                 txt += "."
+            txt += " Confermi?"
+            self.box_pending = {"lap": lap, "stops": me["pit_stops"], "t": self.c.now, "comp": p["compound"],
+                                "state": "chiesto", "reminded": False}
             say(txt, "strategia", level=1, urgent=True)
+
+    # ---------------------------------------------------- la tua risposta alla chiamata box
+    def pending_box(self):
+        b = self.box_pending
+        return b if b and b["state"] in ("chiesto", "confermato") and self.c.now - b["t"] < 90 else None
+
+    def answer_box(self, yes):
+        b = self.pending_box()
+        if not b:
+            return None
+        me = self.r.me()
+        lap = me["lap_num"] if me else b["lap"]
+        if yes:
+            b["state"] = "confermato"
+            name = self.c.driver_name
+            return (f"Ricevuto{', ' + name if name else ''}. Box questo giro, prepariamo le {b['comp']}. "
+                    "Ti chiamo io all'ingresso.")
+        self.box_pending = None
+        self.extend_until = lap + 2
+        return "Ok, allunghiamo. Tieni d'occhio le gomme: te lo richiedo tra due giri."
+
+    def on_live(self, me):
+        """All'ultimo settore del giro di sosta: "box, box, entra ai box"."""
+        b = self.pending_box()
+        if not b or b["reminded"] or me["lap_num"] != b["lap"] or me["pit_status"]:
+            return
+        length = self.c.session.get("track_length") or 0
+        d = me.get("lap_distance") or 0
+        if length and d > length - 700:
+            b["reminded"] = True
+            self.c.say("Box, box. Entra ai box.", "strategia", level=1, urgent=True)
 
     # ---------------------------------------------------- safety car
     def sc_advice(self, sc):

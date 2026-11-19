@@ -3,7 +3,18 @@
 :root { --bg:#0b0c0f; --panel:#15171c; --line:#22262d; --grid:#1e2127; --txt:#e8ecf1; --dim:#9aa3ae; --accent:#e10600;
         --good:#4cd78a; --cond:"Barlow Condensed",-apple-system,"Segoe UI",Roboto,sans-serif; }
 html, body { background:var(--bg); color:var(--txt); font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif; }
-body { gap:10px; }
+body { gap:10px; overscroll-behavior-y:none;
+       padding-left:max(12px, env(safe-area-inset-left)) !important; padding-right:max(12px, env(safe-area-inset-right)) !important;
+       padding-bottom:max(30px, calc(16px + env(safe-area-inset-bottom))) !important; }
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; color-scheme:dark; }
+* { -webkit-tap-highlight-color:transparent; }
+button, a, label, summary, select, input { touch-action:manipulation; }
+/* iPhone ingrandisce la pagina se il testo di un campo è sotto i 16px */
+select, input, textarea { font-size:max(16px, 1em) !important; }
+/* tabelle larghe: scorrono col dito invece di uscire dallo schermo */
+table { max-width:100%; }
+.scroll, .tblwrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
 
 /* intestazione: pulsante indietro rotondo e titolo come nella dashboard */
 header { gap:12px !important; padding:4px 2px 6px; align-items:center; }

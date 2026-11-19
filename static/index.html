@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#08090b">
 <title>Ingegnere di pista</title>
@@ -20,6 +21,10 @@
     --r:16px;
   }
   * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; color-scheme:dark; }
+  body { overscroll-behavior-y:none; }            /* niente "tira per ricaricare" durante la gara (Android) */
+  button, a, label, summary, .chip, input, select { touch-action:manipulation; }   /* niente zoom col doppio tocco */
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
   html,body { background:var(--bg); color:var(--txt); min-height:100%;
     font-family:-apple-system,"SF Pro Display","Segoe UI",Roboto,sans-serif; }
   body { padding:max(10px,env(safe-area-inset-top)) 12px calc(118px + env(safe-area-inset-bottom)); }
@@ -112,10 +117,11 @@
   .sa b { display:block; font-size:12px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; }
   .sa p { font-size:14px; margin-top:3px; line-height:1.35; }
   .sa p span { color:var(--dim); }
-  select.inp { background:#0c0e11; border:1px solid var(--line); color:var(--txt); border-radius:12px; padding:11px; font-size:15px; width:100%; }
+  select.inp { background:#0c0e11; border:1px solid var(--line); color:var(--txt); border-radius:12px; padding:11px; font-size:16px; width:100%; }
   input[type=range] { width:100%; accent-color:var(--red); padding:0; border:0; background:none; }
   .seg.two { grid-template-columns:1fr 1fr; }
   .chk { display:flex !important; flex-direction:row !important; align-items:center; gap:10px; }
+  .chk[style*="none"] { display:none !important; }   /* righe nascoste da codice (vibrazione, condivisione) */
   .chk input { flex:none; width:22px; height:22px; accent-color:var(--red); }
 
   /* ---------- avversari ---------- */
@@ -387,7 +393,7 @@
   .grp:first-child { margin-top:0; }
 
   /* iPad in orizzontale e PC: barra delle sezioni a sinistra, mappa grande a sinistra, numeri a destra */
-  @media (orientation:landscape) and (min-width:900px) {
+  @media (orientation:landscape) and (min-width:640px) {
     body { padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 14px calc(104px + env(safe-area-inset-left)); }
     .top { margin-bottom:10px; }
     .dock { left:0; right:auto; top:0; bottom:0; width:calc(92px + env(safe-area-inset-left)); display:flex; flex-direction:column;
@@ -407,6 +413,20 @@
     #v-more.on, #v-box.on, #v-weekend.on { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
     #v-more.on > *, #v-box.on > *, #v-weekend.on > * { margin:0; }
   }
+  /* telefono in orizzontale (schermo basso): tutto più compatto per stare in una schermata */
+  @media (orientation:landscape) and (max-height:520px) {
+    body { padding-top:max(8px,env(safe-area-inset-top)); }
+    .dock { width:calc(78px + env(safe-area-inset-left)); padding-top:8px; padding-bottom:8px; gap:6px; }
+    body { padding-left:calc(88px + env(safe-area-inset-left)); }
+    .dock .nav button { padding:6px 0; }
+    .dock .btns button { height:46px; font-size:11px; }
+    .pos { font-size:64px; }
+    #minimap canvas { min-height:min(60vh,300px); }
+    .top { margin-bottom:6px; }
+  }
+  .devlist { display:grid; grid-template-columns:1fr auto; gap:4px 10px; margin-top:10px; font-size:13px; }
+  .devlist span:nth-child(odd) { color:var(--dim); }
+  .devlist b.ok { color:var(--good); } .devlist b.no { color:var(--warn); }
   @media (orientation:landscape) and (min-width:1300px) {
     #v-more.on, #v-box.on, #v-weekend.on { grid-template-columns:1fr 1fr 1fr; }
     #v-race.on { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
@@ -427,10 +447,18 @@
   body.ears { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   .row2.intab { margin-top:10px; }
   .row2.intab .card { background:#0e0f13; }
-  @media (orientation:landscape) and (min-width:900px) {
+  @media (orientation:landscape) and (min-width:640px) {
     body.ears { padding-bottom:14px; }
     body.ears #earline { margin-top:auto; flex-direction:column; text-align:center; font-size:11px; }
   }
+
+  #secs { order:1; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .sec { background:var(--panel); border-radius:12px; padding:7px 10px; display:flex; align-items:baseline; justify-content:space-between; gap:6px; border-bottom:3px solid #262a31; }
+  .sec small { font-size:11px; font-weight:700; color:var(--dim); letter-spacing:.06em; }
+  .sec b { font-family:var(--cond); font-size:22px; font-weight:700; line-height:1; }
+  .sec.good { border-bottom-color:var(--good); } .sec.good b { color:var(--good); }
+  .sec.bad { border-bottom-color:var(--bad); } .sec.bad b { color:var(--bad); }
+  .sec.live b { font-style:italic; } .sec.old { opacity:.55; }
 </style>
 </head>
 <body>
@@ -496,6 +524,7 @@
       <div id="qclock" style="display:none">Tempo <b id="qtime">–</b></div>
     </div>
   </div>
+  <div class="secs" id="secs" style="display:none"><div class="sec" id="sec0"></div><div class="sec" id="sec1"></div><div class="sec" id="sec2"></div></div>
   <div class="rivals2" id="rivals" style="display:none">
     <div class="card gapt"><div class="gi"><span class="lbl" id="ahl">Davanti</span><span class="gn" id="ahn">–</span><span class="gnote" id="aht"></span></div><b class="gv num" id="ahg">–</b></div>
     <div class="card gapt"><div class="gi"><span class="lbl" id="bhl">Dietro</span><span class="gn" id="bhn">–</span><span class="gnote" id="bht"></span></div><b class="gv num" id="bhg">–</b></div>
@@ -669,6 +698,12 @@
 <div class="view" id="v-more">
   <div class="grp">Voce e Discord</div>
 
+  <div class="card" id="stylecard">
+    <div class="lbl">💬 Come parla l'ingegnere</div>
+    <div class="seg" id="stylesel"><button data-s="umano" class="on">Umano</button><button data-s="tecnico">Tecnico</button></div>
+    <div class="hint" id="stylehint">Umano: "un secondo e mezzo", ti chiama per nome e ogni tanto ti incoraggia. Tecnico: numeri precisi ("1 virgola 4"), niente frasi in più.</div>
+  </div>
+
   <div class="card" id="voicecard">
     <div class="lbl">🔊 Voce dell'ingegnere</div>
     <div class="seg" id="vmode"><button data-m="dev">Telefono</button><button data-m="piper" class="on">Server</button><button data-m="ai">Voce AI</button></div>
@@ -752,6 +787,15 @@
 
   <div class="grp">Dati e collegamenti</div>
 
+  <div class="card" id="devcard">
+    <div class="lbl">📱 Questo dispositivo</div>
+    <div class="hint" id="devinst"></div>
+    <div class="ask" id="instrow" style="display:none"><button class="btn red" id="instbtn" style="flex:1">Installa l'app</button></div>
+    <label class="chk" id="vibrow" style="display:none;margin-top:8px;font-size:14px"><input type="checkbox" id="vibchk">
+      <span>Vibra per gli avvisi importanti (box, safety car, bandiere)</span></label>
+    <div class="devlist" id="devlist"></div>
+  </div>
+
   <a class="card linkbtn" href="/collegamento"><span>🔌 Controllo del collegamento con la PS5</span><span>›</span></a>
 
   <div class="card" id="repcard">
@@ -762,14 +806,40 @@
     <div class="ask"><a class="btn" id="repdl" href="/api/segnalazioni?scarica=1" style="flex:1;text-align:center;text-decoration:none">⬇ Scarica le segnalazioni</a></div>
   </div>
 
+  <div class="card" id="aicard">
+    <div class="lbl">🧠 Domande libere</div>
+    <div class="hint">Le domande che l'ingegnere conosce (box, gomme, distacchi, meteo, batteria, segui…) hanno sempre
+      una risposta subito e gratis, anche dette con parole tue. Per <b>qualsiasi altra domanda</b>, e per i comandi detti
+      a modo tuo («tieni d'occhio quello della Ferrari»), serve un'AI:</div>
+    <div class="hint" style="margin-top:6px"><b>Servizi gratuiti</b>: ognuno ha un limite di domande al giorno, ma
+      l'ingegnere li prova <b>in fila</b>: quando uno finisce passa da solo al successivo. Con due o tre chiavi in pratica
+      non finiscono mai. Bastano email e un clic su "Create API key":<br>
+      <b>Gemini</b> → aistudio.google.com · <b>Groq</b> (velocissimo) → console.groq.com ·
+      <b>Cerebras</b> (velocissimo) → cloud.cerebras.ai · <b>OpenRouter</b> → openrouter.ai/keys ·
+      <b>Mistral</b> → console.mistral.ai (piano "Experiment").<br>
+      <b>Claude</b> (Haiku): facoltativo, a pagamento, pochi centesimi ogni cento domande (platform.claude.com).</div>
+    <div class="set" style="margin-top:8px">
+      <label>Chiave Gemini <input id="gkey" placeholder="incolla qui la chiave" autocomplete="off"></label>
+      <label>Chiave Groq <input id="grkey" placeholder="gsk_…" autocomplete="off"></label>
+      <label>Chiave Cerebras <input id="cbkey" placeholder="csk-…" autocomplete="off"></label>
+      <label>Chiave OpenRouter <input id="orkey" placeholder="sk-or-…" autocomplete="off"></label>
+      <label>Chiave Mistral <input id="mskey" placeholder="incolla qui la chiave" autocomplete="off"></label>
+      <label>Chiave Claude <input id="akey" placeholder="sk-ant-…" autocomplete="off"></label>
+      <label>Quale usare <select class="inp" id="aiprov">
+        <option value="gemini">Prima i gratuiti, Claude solo di riserva</option>
+        <option value="auto">Claude prima, i gratuiti di riserva</option>
+        <option value="off">Nessuna AI (solo domande conosciute)</option></select></label>
+      <div style="display:flex;gap:8px;align-items:center"><button id="aisave" class="btn red">Salva</button><span id="aiinfo" class="hint"></span></div>
+    </div>
+    <div class="devlist" id="aiuse"></div>
+  </div>
+
   <details class="card" id="settings">
     <summary class="linkbtn"><span>⚙️ Impostazioni</span><span>›</span></summary>
     <div class="set">
-      <p>Le domande tipiche (box, rientro, meteo, gomme, distacchi, carburante) hanno sempre una risposta gratuita.
-         Per le <b>domande libere</b> serve una chiave AI: <b>Gemini</b> ha un piano gratuito (aistudio.google.com → Get API key).</p>
-      <label>Chiave Gemini <input id="gkey" placeholder="incolla qui la chiave" autocomplete="off"></label>
-      <label>Chiave Claude (facoltativa, a pagamento) <input id="akey" placeholder="sk-ant-…" autocomplete="off"></label>
-      <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1"></label>
+      <label>Come ti chiama l'ingegnere <input id="dname" maxlength="20" placeholder="il tuo nome" autocomplete="off"></label>
+      <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1" placeholder="automatico"></label>
+      <div class="hint" id="plossinfo" style="margin-top:-4px"></div>
       <label class="chk" id="sharerow" style="display:none"><input type="checkbox" id="share">
         <span>Condividi i miei giri migliori con gli altri utenti del server (per il confronto in Analisi)</span></label>
       <label class="chk"><input type="checkbox" id="wake">
@@ -1343,6 +1413,7 @@ function addMsg(m) {
     $("farMsg").textContent = m.text;
   }
   if (m.speak && !m.phone_mute) say(m.text, m.priority, m.kind);   // con "solo Discord" parla il bot
+  if (m.speak && m.priority >= 2) buzz(m);
 }
 
 // ---------- stato ----------
@@ -1437,6 +1508,7 @@ function render(s) {
   fl.className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
   $("ers").textContent = s.ers == null ? "–" : s.ers + "%";
   renderMach(s, race);
+  renderSecs(s);
   renderProg(s);
   renderRace(s.race, s);
   if (farOn) renderFar(s);
@@ -1454,6 +1526,21 @@ function renderMach(s, race) {
   $("mfuel").textContent = s.fuel_laps == null ? "–" : signed(s.fuel_laps, 1);
   $("mfuel").className = "num " + (s.fuel_laps == null ? "" : s.fuel_laps < 0 ? "bad" : "good");
   $("dlbl1").textContent = !race ? "" : s.pace_ms ? "sul passo gara " + fmt(s.pace_ms) : s.target_ms ? "sull'obiettivo " + fmt(s.target_ms) : "sul migliore";
+}
+function renderSecs(s) {
+  const x = s.sectors || {}, now = x.now || [], last = x.last;
+  const has = s.delta != null || now.length || last;
+  $("secs").style.display = has ? "" : "none";
+  if (!has) return;
+  for (let i = 0; i < 3; i++) {
+    let v = null, cls = "";
+    if (i < now.length) v = now[i];
+    else if (i === x.cur && x.live != null) { v = x.live; cls = "live"; }
+    else if (last && i >= now.length) { v = last[i]; cls = "old"; }
+    const el = $("sec" + i);
+    el.className = "sec " + cls + (v == null ? "" : v <= -0.05 ? " good" : v >= 0.05 ? " bad" : " even");
+    el.innerHTML = `<small>S${i + 1}</small><b class="num">${v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2)}</b>`;
+  }
 }
 function renderProg(s) {
   const p = s.practice || {};
@@ -1610,7 +1697,7 @@ function drawMini(s) {
   if (key !== outlineKey && !outlineBusy) loadOutline(key);
   const c = $("mm"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
   if (!W) return;
-  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
   const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
   if (!outline || !s.outline_v) {
     ctx.fillStyle = "#8a919b"; ctx.font = "600 13px -apple-system,Roboto,sans-serif"; ctx.textAlign = "center";
@@ -1696,8 +1783,12 @@ function renderRace(r, s) {
   rival("ahn", "ahg", r.ahead, false);
   rival("bhn", "bhg", r.behind, true);
   renderStrat(r);
-  $("mates").innerHTML = (r.mates || []).map(m => `<span class="chip on">🤝 ${esc(m.name)} P${m.position}</span>`).join("");
-  $("mates").style.display = (r.mates || []).length ? "" : "none";
+  const fo = r.follow;
+  const foChip = fo ? `<span class="chip on" title="Lo segui: «Radio, basta seguire» per smettere">👁 ${esc(fo.name)} P${fo.pos}` +
+    (fo.pit ? " · box" : fo.gap != null ? ` · ${fo.gap > 0 ? "+" : "−"}${Math.abs(fo.gap).toFixed(1)}` : "") +
+    (fo.compound ? ` · ${esc(fo.compound)}${fo.age != null ? " " + fo.age : ""}` : "") + `</span>` : "";
+  $("mates").innerHTML = (r.mates || []).map(m => `<span class="chip on">🤝 ${esc(m.name)} P${m.position}</span>`).join("") + foChip;
+  $("mates").style.display = (r.mates || []).length || fo ? "" : "none";
   $("pitw").textContent = r.pit_ideal ? `giri ${r.pit_ideal}–${r.pit_latest}` : (r.pit_stops ? r.pit_stops + " soste" : "–");
 }
 
@@ -1722,7 +1813,7 @@ function showVoiceSettings() {
   let h = "";
   if (vEngine === "piper" || vEngine === "ai") {
     if (piperState.state !== "pronta") h += `Voce del server: ${piperState.text || "non disponibile"}. `;
-    if (vEngine === "ai" && vEngineNow !== "ai") h += "Per la voce AI inserisci la chiave Gemini in ⚙️ Impostazioni. ";
+    if (vEngine === "ai" && vEngineNow !== "ai") h += "Per la voce AI inserisci la chiave Gemini nella scheda 🧠 Domande libere. ";
     if (vEngineNow === "dev") h += "Intanto parla il telefono. ";
     if (vEngine === "ai") h += "Con la quota gratuita finita non cambia voce: per non avere limiti scegli Server. ";
     if (ch && ch.nota && vEngine === "piper") h += "Con questo personaggio " + ch.nota + ". ";
@@ -1862,7 +1953,11 @@ function showDiscord(d) {
   if (d.state === "nel_canale") t += d.voice_in ? " · ti sento quando dici «Radio, …»" : d.voice_in === false ? " · solo voce in uscita (riconoscimento vocale non ancora pronto)" : "";
   if (d.runtime && d.runtime.state === "scarico") t += `<br>La prima volta il server installa Discord: ${esc(d.runtime.text)} (qualche minuto).`;
   if (d.invite && d.state !== "nel_canale") t += `<br><a href="${d.invite}" target="_blank" style="color:var(--accent)">➕ Invita il bot nel tuo server Discord</a>`;
-  if (d.heard && d.heard.length) t += `<br>Ultima frase sentita: «${esc(d.heard[d.heard.length - 1].text)}»`;
+  if (d.heard && d.heard.length) {
+    const h = d.heard[d.heard.length - 1];
+    t += `<br>Ultima frase sentita: «${esc(h.text)}»` + (h.ms ? ` · capita in ${(h.ms / 1000).toFixed(1)} s` : "") +
+         (h.reply_s ? ` · risposta dopo ${h.reply_s.toFixed(1)} s` : "") + (h.asked === undefined ? " · ignorata (non comincia con «Radio»)" : "");
+  }
   $("dstat").innerHTML = t;
 }
 async function loadAutoBackups() {
@@ -1898,6 +1993,8 @@ $("dsave").onclick = async () => {
   if (!document.querySelector("#aout button.on") || document.querySelector("#aout button.on").dataset.o === "telefono") { body.audio_out = "discord"; setAout("discord"); }
   await postSettings(body); $("dtoken").value = ""; setTimeout(pollDiscord, 800);
 };
+function setStyle(v) { document.querySelectorAll("#stylesel button").forEach(b => b.classList.toggle("on", b.dataset.s === v)); }
+document.querySelectorAll("#stylesel button").forEach(b => b.onclick = () => { setStyle(b.dataset.s); postSettings({ style: b.dataset.s }); });
 function setWork(w) { document.querySelectorAll("#worksel button").forEach(b => b.classList.toggle("on", b.dataset.w === w)); }
 document.querySelectorAll("#worksel button").forEach(b => b.onclick = () => { setWork(b.dataset.w); postSettings({ work_on: b.dataset.w }); });
 async function saveGoal(v) {
@@ -1958,16 +2055,36 @@ $("verb").onclick = async e => {
   try { await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({verbosity: v})}); } catch (e) {}
 };
 
+// iPhone (e a volte Android) chiude la linea quando l'app va in background o lo schermo si spegne,
+// e non sempre la riapre da solo: se per 40 secondi non arriva niente (il server manda un "ping" ogni 15),
+// o se torni sull'app dopo un po', la riapro io.
+let es = null, lastEvt = Date.now();
 function connect() {
-  const es = new EventSource("/events");
-  es.addEventListener("msg", e => addMsg(JSON.parse(e.data)));
-  es.addEventListener("state", e => { const s = JSON.parse(e.data); render(s); if (s.verbosity) showVerb(s.verbosity); });
+  if (es) { try { es.close(); } catch (e) {} }
+  lastEvt = Date.now();
+  es = new EventSource("/events");
+  const alive = () => { lastEvt = Date.now(); };
+  es.addEventListener("ping", alive);
+  es.addEventListener("msg", e => { alive(); addMsg(JSON.parse(e.data)); });
+  es.addEventListener("state", e => { alive(); const s = JSON.parse(e.data); render(s); if (s.verbosity) showVerb(s.verbosity); });
+  es.onopen = alive;
   es.onerror = () => {
     $("dot").classList.remove("on");
     fetch("/state").then(r => { if (r.status === 401) location.href = "/login"; }).catch(() => {});
   };
 }
 connect();
+setInterval(() => {
+  if (document.visibilityState === "visible" && Date.now() - lastEvt > 40000) connect();
+}, 5000);
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt > 5000 && (Date.now() - lastEvt > 5000 || !es || es.readyState === 2)) connect();
+  try { if ("speechSynthesis" in window) speechSynthesis.resume(); } catch (e) {}   // Chrome Android la mette in pausa
+});
+window.addEventListener("pageshow", e => { if (e.persisted) connect(); });   // Safari: pagina ripresa dalla cache
+window.addEventListener("online", () => connect());
 showView(store.get("vista", "race"));
 
 // ---------- domande ----------
@@ -1988,14 +2105,33 @@ async function loadSettings() {
     const s = await fetch("/settings").then(r => r.json());
     $("gkey").placeholder = s.gemini_key ? "salvata: " + s.gemini_key : "incolla qui la chiave";
     $("akey").placeholder = s.anthropic_key ? "salvata: " + s.anthropic_key : "sk-ant-…";
-    $("ploss").value = s.pit_loss;
+    [["grkey", "groq_key", "gsk_…"], ["cbkey", "cerebras_key", "csk-…"], ["orkey", "openrouter_key", "sk-or-…"],
+     ["mskey", "mistral_key", "incolla qui la chiave"]].forEach(([id, k, ph]) => { $(id).placeholder = s[k] ? "salvata: " + s[k] : ph; });
+    $("ploss").value = s.pit_loss || "";
+    const pa = s.pit_auto || [];
+    $("plossinfo").textContent = s.pit_loss ? `Scelto da te. Lascia vuoto per il valore automatico per pista.` :
+      pa.length ? `Automatico${s.pit_track ? " a " + s.pit_track : ""}: ${Math.round(pa[0])} s` +
+      ({ misurato: ", misurato nelle tue soste", pista: ", valore tipico della pista (lo correggo con le tue soste)", standard: ", valore standard" }[pa[1]] || "") : "";
+    $("dname").value = s.driver_name || "";
+    setStyle(s.style || "umano");
     setWork(s.work_on || "tutto");
     setAout(s.audio_out || "telefono");
     $("dtoken").placeholder = s.discord_token ? "salvato: " + s.discord_token : "incolla il token";
     $("dchan").value = s.discord_channel || ""; $("duser").value = s.discord_user || ""; $("dtext").value = s.discord_text || "";
     showDiscord(s.discord);
     loadReports(); loadAutoBackups();
-    $("setinfo").textContent = s.ai ? "Domande libere con " + s.ai : "Solo risposte gratuite a regole";
+    $("setinfo").textContent = "";
+    $("aiprov").value = s.ai_provider === "auto" && !s.anthropic_key ? "gemini" : (s.ai_provider || "gemini");
+    $("aiinfo").textContent = (s.ai_chain || []).length ? "In fila: " + s.ai_chain.join(" → ") : "Nessuna AI: solo domande conosciute";
+    const u = s.ai_usage || {};
+    const rows = [];
+    const mese = u.month ? new Date(u.month + "-01").toLocaleDateString("it-IT", {month: "long"}) : "questo mese";
+    if (u.claude && (u.claude.q || u.claude.errors)) rows.push([`Claude a ${mese}`, `${u.claude.q} domande · ${u.claude.usd < 0.01 && u.claude.q ? "meno di 1 centesimo" : "$" + u.claude.usd.toFixed(2)}`]);
+    [["gemini", "Gemini"], ["groq", "Groq"], ["cerebras", "Cerebras"], ["openrouter", "OpenRouter"], ["mistral", "Mistral"]].forEach(([k, n]) => {
+      if (u[k] && (u[k].q || u[k].errors)) rows.push([`${n} a ${mese}`, `${u[k].q} domande (oggi ${u[k].today || 0})`]);
+    });
+    if (u.claude && u.claude.today) rows.push(["Claude oggi", `${u.claude.today} domande`]);
+    $("aiuse").innerHTML = rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join("");
     if (s.user) {
       $("userline").style.display = "block"; $("uname").textContent = s.user;
       $("profile").style.display = ""; $("pname").textContent = s.user;
@@ -2011,11 +2147,18 @@ async function loadSettings() {
   } catch (e) {}
 }
 $("saveset").onclick = async () => {
-  const body = { pit_loss: +$("ploss").value, share_laps: $("share").checked };
+  const body = { pit_loss: $("ploss").value ? +$("ploss").value : null, share_laps: $("share").checked, driver_name: $("dname").value.trim() };
+  await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  loadSettings();
+};
+$("aisave").onclick = async () => {
+  const body = { ai_provider: $("aiprov").value };
   if ($("gkey").value.trim()) body.gemini_key = $("gkey").value.trim();
   if ($("akey").value.trim()) body.anthropic_key = $("akey").value.trim();
+  [["grkey", "groq_key"], ["cbkey", "cerebras_key"], ["orkey", "openrouter_key"], ["mskey", "mistral_key"]]
+    .forEach(([id, k]) => { if ($(id).value.trim()) body[k] = $(id).value.trim(); });
   await fetch("/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-  $("gkey").value = $("akey").value = "";
+  ["gkey", "akey", "grkey", "cbkey", "orkey", "mskey"].forEach(id => { $(id).value = ""; });
   loadSettings();
 };
 // ---------- colore della dashboard ----------
@@ -2061,6 +2204,53 @@ document.addEventListener("pointerdown", keepAwake);
 keepAwake();
 
 // ---------- app installabile ----------
+// ---------- questo dispositivo: installazione, vibrazione, cosa funziona ----------
+const UA = navigator.userAgent;
+const isAndroid = /Android/.test(UA);
+const isStandalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const canVibrate = "vibrate" in navigator && !isIOS;
+let vibOn = store.get("vibra", "on") === "on";
+function buzz(m) {
+  if (!canVibrate || !vibOn || document.visibilityState !== "visible") return;
+  const strong = /box|safety|bandiera|penalit/i.test(m.text) || m.kind === "strategia";
+  if (strong || ["avviso", "meteo"].includes(m.kind)) try { navigator.vibrate(strong ? [180, 90, 180] : 120); } catch (e) {}
+}
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; renderDevice(); });
+window.addEventListener("appinstalled", () => { installEvt = null; renderDevice(); });
+$("instbtn").onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch (e) {}
+  installEvt = null; renderDevice();
+};
+$("vibchk").checked = vibOn;
+$("vibchk").onchange = () => { vibOn = $("vibchk").checked; store.set("vibra", vibOn ? "on" : "off"); if (vibOn) buzz({text: "box", kind: "strategia"}); };
+function renderDevice() {
+  const who = isIOS ? "iPhone / iPad" : isAndroid ? "Android" : "computer";
+  let inst;
+  if (isStandalone) inst = `Su ${who}, app installata ✓.`;
+  else if (isIOS) inst = /CriOS|FxiOS|EdgiOS/.test(UA)
+    ? "Per installarla apri questa pagina in <b>Safari</b>, poi tocca <b>Condividi</b> → <b>Aggiungi alla schermata Home</b>."
+    : "Per installarla: tocca <b>Condividi</b> (il quadrato con la freccia) → <b>Aggiungi alla schermata Home</b>. Si apre a tutto schermo, senza barre.";
+  else if (installEvt) inst = "Puoi installarla come un'app: si apre a tutto schermo e la trovi tra le app.";
+  else if (isAndroid) inst = "Per installarla: menu ⋮ di Chrome → <b>Installa app</b> (o <b>Aggiungi a schermata Home</b>).";
+  else inst = "Dal PC puoi installarla dall'icona ⊕ nella barra degli indirizzi di Chrome o Edge.";
+  $("devinst").innerHTML = inst;
+  $("instrow").style.display = installEvt && !isStandalone ? "" : "none";
+  $("vibrow").style.display = canVibrate ? "" : "none";
+  const ok = (v, yes, no) => `<b class="${v ? "ok" : "no"}">${v ? yes : no}</b>`;
+  const rows = [
+    ["Voce del telefono", ok("speechSynthesis" in window, "sì", "no")],
+    ["Microfono («Radio»)", ok(micOk, "sì", "no")],
+    ["Schermo sempre acceso", ok("wakeLock" in navigator, "sì", isIOS ? "aggiorna iOS (16.4+)" : "no")],
+    ["Vibrazione", ok(canVibrate, "sì", isIOS ? "non su iPhone" : "no")],
+    ["Connessione sicura", ok(window.isSecureContext, "sì", "no")],
+  ];
+  $("devlist").innerHTML = rows.map(([a, b]) => `<span>${a}</span>${b}`).join("");
+}
+renderDevice();
+
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 // ---------- profilo ----------

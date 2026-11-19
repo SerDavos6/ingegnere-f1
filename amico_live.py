@@ -125,7 +125,7 @@ class FriendWatch:
             bits = [f"{f['name']} è P{car['position']}"]
             gap, _ = self._gap(f, me)
             if gap is not None and abs(gap) < 60:
-                bits[0] += f", a {num(abs(gap))} {'davanti' if gap > 0 else 'dietro'}"
+                bits[0] += f", a {self.c.gap_text(gap)} {'davanti' if gap > 0 else 'dietro'}"
             if f.get("compound"):
                 g = f"gomme {f['compound']}"
                 if f.get("tyre_age") is not None:

@@ -32,5 +32,22 @@ def tenths(sec):
     return t + (" secondo" if t == "1" else " secondi")
 
 
+def gap_voice(g):
+    """Un distacco detto come lo direbbe un ingegnere: "8 decimi", "un secondo e mezzo", "circa 4 secondi"."""
+    g = abs(g)
+    if g < 0.25:
+        return "un soffio"
+    if g < 0.95:
+        d = max(2, round(g * 10))
+        return f"{d} decimi"
+    if g < 10:
+        h = round(g * 2) / 2                      # al mezzo secondo
+        whole, half = int(h), h - int(h) >= 0.5
+        base = "un secondo" if whole == 1 else f"{whole} secondi"
+        txt = base + (" e mezzo" if half else "")
+        return ("circa " + txt) if g >= 3 else txt
+    return f"circa {round(g)} secondi"
+
+
 def plural(n, one, many):
     return f"{n} {one if n == 1 else many}"

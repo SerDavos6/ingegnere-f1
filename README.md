@@ -130,8 +130,11 @@ Tre voci tra cui scegliere: **Telefono**, **Server** (di default) e **Voce AI**.
 - **Risposte gratuite** e immediate, senza internet, per: box sì/no (con la gomma da montare),
   dove rientri dopo il pit, meteo, gomme, distacchi, posizione, carburante, giri mancanti, danni,
   dove perdi tempo.
-- **Domande libere**: in ⚙️ Impostazioni incolla una chiave **Gemini** (piano gratuito, da
-  aistudio.google.com) oppure Claude (a pagamento). Le domande tipiche usano comunque le risposte gratuite.
+- **Domande libere**: nella scheda 🧠 incolla una o più chiavi gratuite: **Gemini** (aistudio.google.com),
+  **Groq** (console.groq.com), **Cerebras** (cloud.cerebras.ai), **OpenRouter** (openrouter.ai/keys),
+  **Mistral** (console.mistral.ai). L'ingegnere le prova in fila: quando uno finisce le domande gratuite passa
+  al successivo, così in pratica non finiscono mai. Claude (a pagamento) è facoltativo.
+  Le domande tipiche usano comunque le risposte gratuite.
 - **Dove rientri**: usa la stima del gioco quando c'è, altrimenti i distacchi più i secondi persi
   con un pit stop (22 di default, modificabili nelle impostazioni).
 
@@ -194,6 +197,32 @@ Se hai iniziato a giocare solo dopo il Season Pack, il gioco imposta da solo il 
 controlla l'impostazione.
 
 ## Novità (novembre 2026)
+- **Domande libere senza limiti, gratis** (scheda 🧠): catena di servizi gratuiti Gemini → Groq → Cerebras →
+  OpenRouter → Mistral; chi finisce le domande viene saltato per due minuti. Se un modello viene ritirato ne
+  sceglie un altro da solo. Claude Haiku resta facoltativo; se finiscono tutti lo dice una volta e usa le regole.
+  Comandi a parole tue («tieni d'occhio quello della Ferrari» → segui). Conto di domande e spesa del mese.
+- **Capisce di più anche senza AI**: sinonimi (copertoni, benza, alettone, previsioni…), parole storpiate dal
+  riconoscimento vocale, «intendevi le gomme?» quando non è sicuro.
+- **Duelli**: dopo 2 giri di lotta l'ingegnere dice dove ricaricare la batteria e dove usarla per attaccare
+  o difenderti; se chi ti segue è in scia prima del rettilineo: «difendi l'interno alla staccata di curva 14».
+- **Pioggia in arrivo con la sosta**: se la sosta prevista cade poco prima della pioggia, allunga e ci si
+  ferma direttamente per le intermedie; sul bagnato, se sta per smettere, niente gomme nuove da bagnato.
+- **Ultimi giri**: le gomme arrivano in fondo? «Puoi spingere» o «gestisci».
+- **Soste divise con il compagno** (stessa squadra): chi è davanti anticipa, l'altro allunga.
+- **Fine gara con gli amici**: alla radio (e in cuffia su Discord) chi è arrivato davanti e com'è il campionato;
+  su Discord il testa a testa.
+- **Campionato**: testa a testa con ogni amico (gare e piste), calendario condiviso con la prossima gara,
+  i record lì e le curve da curare (anche nel programma della settimana su Discord).
+- **iPhone e Android**: telefono in orizzontale con la barra a sinistra (come su iPad); la linea con il server si
+  riapre da sola quando torni sull'app o riaccendi lo schermo; niente zoom sui campi di testo (iPhone) e niente
+  "tira per ricaricare" (Android); vibrazione per box/safety car/bandiere su Android; scheda «Questo dispositivo»
+  in Impostazioni con installazione dell'app e cosa funziona sul telefono. Tutte le pagine installabili.
+- **«Radio, segui Norris»** (anche «segui la P3», «segui il mio amico», «segui chi è davanti»): ogni 2 giri
+  posizione, distacco e se recuperi; quando entra ai box, che gomme monta e dove rientra; se si ritira.
+  «Radio, basta seguire» per smettere. Nell'app compare la casella 👁. Si può chiedere di chiunque:
+  «Radio, dov'è Leclerc?».
+- **Riepilogo del giro in qualifica**: posizione provvisoria, distacco dalla pole e da chi ti sta davanti,
+  dentro o fuori dal taglio di Q1/Q2 e di quanto, settore in cui perdi rispetto alla pole, tempo per un altro giro.
 - **«Radio, segnala»**: salva il momento (pista, giro, ultimi messaggi) quando l'ingegnere sbaglia; si scaricano
   dalle Impostazioni. **«Radio, mi senti?»** → "Sì, forte e chiaro". «Radio» da solo → "Dimmi" e ascolta la domanda.
 - **Prove libere con un programma**: giri veloci, poi prova lunga di 8 giri; misura passo, calo e usura per mescola
@@ -358,7 +387,7 @@ solo al primo avvio, se manca.
 - `cloud/install.sh`, `CLOUD.md`: installazione su Oracle Cloud
 - `config.json`: chiavi AI e secondi persi al pit (creato dalle impostazioni)
 - `static/analisi.html`: pagina di analisi giri
-- `engineer_ai.py`: domande libere all'AI (Gemini gratuito o Claude)
+- `engineer_ai.py`: domande libere all'AI (catena di servizi gratuiti, Claude facoltativo)
 - `server.py`: ricezione UDP + dashboard web + voce
 - `static/index.html`: dashboard per il telefono
 - `simulator.py`: genera telemetria finta per i test

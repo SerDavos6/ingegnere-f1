@@ -2,6 +2,8 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -57,6 +59,27 @@
   .res.me b { color:var(--accent); }
   .rc { padding:10px 0; } .rc + .rc { border-top:1px solid var(--line); }
   .fl { color:#b48cff; font-size:12px; margin-left:4px; }
+  .nx h3 { font:800 30px/1.1 'Barlow Condensed', sans-serif; margin-bottom:6px; }
+  .nx .say { color:var(--dim); font-size:14px; margin:6px 0 10px; }
+  .kv { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 12px; font-size:14px; }
+  .kv b { text-align:right; }
+  .kv span:nth-child(odd) { color:var(--dim); }
+  .cl { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .cl span { padding:6px 9px; border-radius:10px; border:1px solid var(--line); font-size:13px; display:inline-flex; gap:6px; align-items:center; }
+  .cl span.done { opacity:.45; text-decoration:line-through; } .cl span.nxt { border-color:var(--accent, #e10600); font-weight:700; }
+  .cl button { background:none; border:0; color:var(--dim); font-size:15px; padding:0 2px; cursor:pointer; }
+  .calrow { display:flex; gap:8px; flex-wrap:wrap; } .calrow select { flex:1; min-width:150px; }
+  .calrow select, .calrow button.b { background:#0c0e11; color:inherit; border:1px solid var(--line); border-radius:10px; padding:9px 10px; }
+  .calrow button.b { font-weight:700; cursor:pointer; }
+  .hh { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; text-align:center; }
+  .hh .n { font-weight:700; font-size:15px; } .hh .sc { font:800 40px/1 'Barlow Condensed', sans-serif; }
+  .hh .sc .w { color:var(--good, #2ecc71); } .hh small { display:block; color:var(--dim); font-size:12px; }
+  .form { display:flex; gap:4px; justify-content:center; margin:8px 0 4px; }
+  .form span { width:22px; height:22px; border-radius:6px; font:700 12px/22px Inter, sans-serif; }
+  .form .V { background:rgba(46,204,113,.18); color:#2ecc71; } .form .S { background:rgba(255,77,77,.16); color:#ff6b6b; }
+  .tr { display:grid; grid-template-columns:1fr auto auto; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:14px; }
+  .tr .mono { font-variant-numeric:tabular-nums; } .tr .best { color:#2ecc71; font-weight:700; }
+  .tr small { color:var(--dim); display:block; font-size:11px; }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -67,10 +90,16 @@
   <a class="back" aria-label="Indietro" href="/">← Dashboard</a>
   <h1>Campionato</h1>
 </header>
+<h2>Prossima gara</h2>
+<div class="card" id="next"><div class="empty">Carico…</div></div>
+<h2 id="h2hh">Testa a testa</h2>
+<div id="h2h"><div class="card"><div class="empty">Carico…</div></div></div>
 <h2>Classifica piloti</h2>
 <div class="card" id="table"><div class="empty">Carico…</div></div>
 <h2>Gare</h2>
 <div class="card" id="races"><div class="empty">Carico…</div></div>
+<h2>Calendario</h2>
+<div class="card" id="cal"><div class="empty">Carico…</div></div>
 <p class="hint">Contano le gare online fatte insieme sullo stesso server: stessa sessione del gioco, almeno due di voi.
   Si riconoscono da sole, non serve fare niente. Punti come in F1 dalla posizione d'arrivo in gara (25, 18, 15, 12, 10,
   8, 6, 4, 2, 1). Compaiono gli amici che condividono i giri (⚙️ Impostazioni nella dashboard).</p>
@@ -82,9 +111,25 @@ const day = t => t ? new Date(t * 1000).toLocaleDateString("it-IT", {day: "2-dig
 try { const c = localStorage.getItem("colore"); if (c) document.documentElement.style.setProperty("--accent", c); } catch (e) {}
 fetch("/api/campionato").then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); }).then(j => {
   if (!j.cloud) {
+    $("h2h").innerHTML = ""; $("h2hh").style.display = "none";
     $("table").innerHTML = $("races").innerHTML = '<div class="empty">Il campionato c\'è sul server su internet, dove ognuno ha il suo utente.<br>Qui in casa sei da solo.</div>';
     return;
   }
+  const h = j.h2h || [];
+  $("h2h").innerHTML = h.length ? h.map(x => {
+    const a = x.me_ahead, b = x.him_ahead;
+    const tr = x.tracks.filter(t => t.me_ms || t.him_ms).map(t => {
+      const mb = t.me_ms && (!t.him_ms || t.me_ms < t.him_ms), hb = t.him_ms && (!t.me_ms || t.him_ms < t.me_ms);
+      const d = t.me_ms && t.him_ms ? (t.me_ms - t.him_ms) / 1000 : null;
+      return `<div class="tr"><span>${esc(t.track)}<small>${esc(t.category_name || "")}${d != null ? " · " + (d < 0 ? "tu più veloce di " : "lui più veloce di ") + Math.abs(d).toFixed(3) + " s" : ""}</small></span>
+        <span class="mono ${mb ? "best" : ""}">${fmt(t.me_ms)}</span><span class="mono ${hb ? "best" : ""}">${fmt(t.him_ms)}</span></div>`;
+    }).join("");
+    return `<div class="card"><div class="hh"><div class="n">Tu<small>più veloce su ${x.faster_me} ${x.faster_me === 1 ? "pista" : "piste"}</small></div>
+      <div class="sc"><span class="${a > b ? "w" : ""}">${a}</span> – <span class="${b > a ? "w" : ""}">${b}</span><small>${x.races} ${x.races === 1 ? "gara" : "gare"} insieme</small></div>
+      <div class="n">${esc(x.friend)}<small>più veloce su ${x.faster_him} ${x.faster_him === 1 ? "pista" : "piste"}</small></div></div>
+      ${x.last.length ? `<div class="form">${x.last.map(r => `<span class="${r}" title="${r === "V" ? "davanti tu" : "davanti lui"}">${r === "V" ? "✓" : "✗"}</span>`).join("")}</div>` : ""}
+      ${tr ? `<div style="margin-top:8px"><div class="tr" style="border:0;color:var(--dim);font-size:12px"><span>Pista</span><span>Tu</span><span>${esc(x.friend)}</span></div>${tr}</div>` : ""}</div>`;
+  }).join("") : '<div class="card"><div class="empty">Quando fai gare o giri sulle stesse piste di un amico, qui vedi chi è più forte.</div></div>';
   if (!j.standings.length) {
     $("table").innerHTML = '<div class="empty">Ancora nessuna gara fatta insieme.<br>Entrate nella stessa lobby online e fate una gara: compare qui da sola.</div>';
     $("races").innerHTML = '<div class="empty">–</div>';
@@ -99,6 +144,37 @@ fetch("/api/campionato").then(r => { if (r.status === 401) { location.href = "/l
         <span><b>${esc(x.driver)}</b>${x.fastest ? '<span class="fl">⏱ giro più veloce</span>' : ""}<small style="color:var(--dim);display:block">${x.finish ? "" : "ritirato dopo " + x.laps + " giri · "}${x.grid ? "partito P" + x.grid + " · " : ""}giro ${fmt(x.best_ms)}</small></span>
         <span class="mono">+${x.points}</span></div>`).join("")}</div>`).join("");
 }).catch(() => {});
+
+// ---------- calendario e prossima gara
+let CAL = null;
+function renderCal(c) {
+  CAL = c;
+  const n = c.next;
+  if (!c.tracks.length) $("next").innerHTML = '<div class="empty">Crea il calendario qui sotto: poi vedi la prossima pista con i tuoi record e cosa curare.</div>';
+  else if (!n) $("next").innerHTML = '<div class="empty">🏆 Calendario finito! Creane uno nuovo qui sotto.</div>';
+  else {
+    const lr = n.last_race;
+    const rows = [];
+    n.records.forEach(r => rows.push([`Tuo record${r.category_name ? " (" + esc(r.category_name) + ")" : ""}`, fmt(r.ms)]));
+    n.friends.forEach(r => rows.push([`Record di ${esc(r.driver)}${r.category_name ? " · " + esc(r.category_name) : ""}`, fmt(r.ms)]));
+    if (lr) rows.push(["Ultima gara qui", lr.dnf || !lr.finish ? "ritiro" : "P" + lr.finish + (lr.grid ? " (dalla P" + lr.grid + ")" : "")]);
+    n.corners.forEach(cr => rows.push([esc(cr.name), esc(cr.tip.split(" (")[0]) + ` <small style="color:var(--dim)">−${cr.avg.toFixed(2)} s</small>`]));
+    $("next").innerHTML = `<div class="nx"><small class="hint">Gara ${c.next_index + 1} di ${c.tracks.length}</small><h3>${esc(n.track)}</h3>
+      <div class="say">${esc(n.spoken)}</div>${rows.length ? `<div class="kv">${rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join("")}</div>` : ""}</div>`;
+  }
+  $("cal").innerHTML = `<div class="cl">${c.tracks.map((t, i) => `<span class="${i < c.next_index ? "done" : i === c.next_index ? "nxt" : ""}">${i + 1}. ${esc(t)}<button aria-label="Togli" data-i="${i}">×</button></span>`).join("") || '<span style="border:0;color:var(--dim)">Nessuna pista</span>'}</div>
+    <div class="calrow"><select id="caladd">${c.all_tracks.map(t => `<option>${esc(t)}</option>`).join("")}</select>
+    <button class="b" id="calbtn">Aggiungi</button><button class="b" id="calpre">Calendario F1 2026</button></div>
+    <p class="hint" style="margin-top:8px">Il calendario è lo stesso per tutti voi. Quando fate una gara sulla prossima pista, passa da solo alla successiva.</p>`;
+  $("cal").querySelectorAll("button[data-i]").forEach(b => b.onclick = () => { const t = CAL.tracks.slice(); t.splice(+b.dataset.i, 1); saveCal(t); });
+  $("calbtn").onclick = () => saveCal(CAL.tracks.concat([$("caladd").value]));
+  $("calpre").onclick = () => { if (!CAL.tracks.length || confirm("Sostituire il calendario con quello della F1 2026?")) saveCal(CAL.preset.filter(t => CAL.all_tracks.includes(t))); };
+}
+function saveCal(tracks) {
+  fetch("/api/calendario", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({tracks})})
+    .then(r => r.json()).then(renderCal).catch(() => {});
+}
+fetch("/api/calendario").then(r => r.ok ? r.json() : null).then(c => c && renderCal(c)).catch(() => {});
 </script>
 </body>
 </html>
