@@ -459,7 +459,30 @@
   .sec.good { border-bottom-color:var(--good); } .sec.good b { color:var(--good); }
   .sec.bad { border-bottom-color:var(--bad); } .sec.bad b { color:var(--bad); }
   .sec.live b { font-style:italic; } .sec.old { opacity:.55; }
-</style>
+
+  /* righe compatte di Box e Altro: chiuse mostrano il valore, aperte il contenuto; le spiegazioni dietro "?" */
+  .srow { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); grid-column:1 / -1; }
+  .srow > summary { list-style:none; display:flex; align-items:center; gap:10px; padding:14px; cursor:pointer; font-weight:700; }
+  .srow > summary::-webkit-details-marker { display:none; }
+  .srow .rtit { flex:none; }
+  .srow .rval { flex:0 1 auto; margin-left:auto; min-width:0; text-align:right; color:var(--dim); font-weight:500; font-size:13px;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .srow .chev { color:var(--dim); flex:none; transition:transform .15s; }
+  .srow[open] > summary .chev { transform:rotate(90deg); }
+  .srow.link { display:flex; align-items:center; gap:10px; padding:14px; font-weight:700; text-decoration:none; color:inherit; }
+  .rowb { padding:0 14px 14px; }
+  .rowb .card { background:none; border:none; padding:0; margin-top:10px; border-radius:0; }
+  .rowb .card:first-of-type { margin-top:0; }
+  .srow.one .rowb > .card > .lbl:first-child { display:none; }
+  .rowb.hh .hint:not([id]), .rowb.hh .set > p:not([id]) { display:none; }
+  .rowb.hh #setup .hint { display:block; }
+  .rowb.hh.help .hint:not([id]), .rowb.hh.help .set > p:not([id]) { display:block; }
+  .rhelp { display:block; margin:0 0 6px auto; background:none; border:none; color:var(--dim); font-size:12px; padding:2px 0; }
+  .rowb.help .rhelp { color:var(--txt); }
+  .srow.adv > summary .rtit { color:var(--dim); }
+  .srow.adv > .rowb { display:flex; flex-direction:column; gap:8px; }
+  .srow.adv .srow { background:var(--panel2); }
+  </style>
 </head>
 <body>
 
@@ -640,7 +663,10 @@
       <div class="stat"><span class="lbl">Migliore</span><b class="num" id="best">–</b></div>
     </div>
   </div>
-  <div class="card">
+  <details class="srow one" id="r-tele">
+    <summary><span class="rtit">Telemetria live</span><span class="rval" id="r-tele-v"></span><span class="chev">›</span></summary>
+    <div class="rowb">
+<div class="card">
     <div class="grid3">
       <div class="stat"><span class="lbl">Velocità</span><b class="num" id="spd">–</b></div>
       <div class="stat"><span class="lbl">Marcia</span><b class="num" id="gear">–</b></div>
@@ -648,15 +674,23 @@
     </div>
     <div class="bars"><div id="thr"><i></i></div><div id="brk"><i></i></div></div>
   </div>
-
-  <div class="card" id="setupcard">
+    </div>
+  </details>
+  <details class="srow one" id="r-setup">
+    <summary><span class="rtit">Consigli d'assetto</span><span class="rval" id="r-setup-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="setupcard">
     <div class="lbl">🔧 Assetto</div>
     <div class="setup" id="setup"><div class="hint">Fai almeno 2 giri completi con lo stesso assetto: qui ti dico cosa cambiare.</div></div>
     <div class="hint">Calcolato da quanto scivolano le gomme anteriori e posteriori in curva, dai bloccaggi e dalle temperature.
       Si azzera quando torni nel garage. Sono indicazioni: cambia una cosa alla volta e riprova.</div>
   </div>
-
-  <div class="card">
+    </div>
+  </details>
+  <details class="srow one" id="r-ask">
+    <summary><span class="rtit">Scrivi all'ingegnere</span><span class="rval" id="r-ask-v"></span><span class="chev">›</span></summary>
+    <div class="rowb">
+<div class="card">
     <div class="lbl">Scrivi all'ingegnere</div>
     <div class="ask">
       <input id="q" placeholder="Es. mi fermo ai box?" enterkeyhint="send">
@@ -664,14 +698,21 @@
     </div>
     <div class="ask"><button class="btn" id="debrief" style="flex:1">📋 Debrief della sessione</button></div>
   </div>
-
-  <div class="card">
+    </div>
+  </details>
+  <details class="srow one" id="r-log">
+    <summary><span class="rtit">Tutti i messaggi</span><span class="rval" id="r-log-v"></span><span class="chev">›</span></summary>
+    <div class="rowb">
+<div class="card">
     <div class="lbl">Tutti i messaggi</div>
     <div id="log"></div>
   </div>
-
-
-  <div class="card" id="backupcard">
+    </div>
+  </details>
+  <details class="srow one" id="r-bk">
+    <summary><span class="rtit">Backup dei dati</span><span class="rval" id="r-bk-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="backupcard">
     <div class="lbl">💾 Backup dei dati</div>
     <div class="hint">Scarica in un file tutti i tuoi giri, i riferimenti, i giri degli amici e le impostazioni. Tienilo sul
       telefono o sul PC: se il server si rompe o lo cambi, lo ricarichi qui e ritrovi tutto. Le registrazioni delle
@@ -681,8 +722,12 @@
     <div class="hint" id="bkinfo"></div>
     <div class="hint" id="bkauto" style="margin-top:6px"></div>
   </div>
-
-  <div class="card" id="reccard">
+    </div>
+  </details>
+  <details class="srow one" id="r-rec">
+    <summary><span class="rtit">Registra la sessione</span><span class="rval" id="r-rec-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="reccard">
     <div class="lbl">⏺ Registra la sessione</div>
     <div class="hint">Salva tutti i dati che manda la PS5, così come arrivano. Poi scarichi il file e lo puoi mandare:
       serve a rivedere la sessione identica e a correggere quello che non va. Con la telemetria a 20 Hz una gara di
@@ -691,20 +736,16 @@
     <div class="hint" id="recstat"></div>
     <div id="reclist" class="setup"></div>
   </div>
-
+    </div>
+  </details>
 </div>
 
-<!-- =============== IMPOSTAZIONI =============== -->
+<!-- =============== IMPOSTAZIONI (Altro: righe corte, il resto in Avanzate) =============== -->
 <div class="view" id="v-more">
-  <div class="grp">Voce e Discord</div>
-
-  <div class="card" id="stylecard">
-    <div class="lbl">💬 Come parla l'ingegnere</div>
-    <div class="seg" id="stylesel"><button data-s="umano" class="on">Umano</button><button data-s="tecnico">Tecnico</button></div>
-    <div class="hint" id="stylehint">Umano: "un secondo e mezzo", ti chiama per nome e ogni tanto ti incoraggia. Tecnico: numeri precisi ("1 virgola 4"), niente frasi in più.</div>
-  </div>
-
-  <div class="card" id="voicecard">
+  <details class="srow one" id="r-voice">
+    <summary><span class="rtit">Voce dell'ingegnere</span><span class="rval" id="r-voice-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="voicecard">
     <div class="lbl">🔊 Voce dell'ingegnere</div>
     <div class="seg" id="vmode"><button data-m="dev">Telefono</button><button data-m="piper" class="on">Server</button><button data-m="ai">Voce AI</button></div>
     <div class="hint" id="vmodehint"></div>
@@ -728,25 +769,17 @@
     <div class="hint" id="ainote"></div>
     <div class="hint" id="vnote" style="color:var(--warn)"></div>
   </div>
-
-  <div class="card" id="dsccard">
-    <div class="lbl">🎧 Voce nelle cuffie della PS5 (Discord)</div>
-    <div class="seg" id="aout"><button data-o="telefono" class="on">Telefono</button><button data-o="discord">Discord</button><button data-o="entrambi">Entrambi</button></div>
-    <div class="hint">Un bot Discord tuo entra in un canale vocale e parla con la voce del server. Dalla PS5 entri nello
-      stesso canale (tasto PS → Base di gioco → Discord) e senti l'ingegnere nelle cuffie, insieme al gioco.
-      Se dici «Radio, …» nel microfono delle cuffie, ti risponde: sente solo te, non il tuo amico.
-      <a href="/discord" style="color:var(--accent)">Guida passo passo</a></div>
-    <div class="set" id="dscset">
-      <label>Token del bot <input id="dtoken" placeholder="incolla il token" autocomplete="off"></label>
-      <label>Canale vocale <input id="dchan" placeholder="es. Box radio" autocomplete="off"></label>
-      <label>Il tuo nome utente Discord <input id="duser" placeholder="es. serdavos" autocomplete="off"></label>
-      <label>Canale di testo per il riepilogo delle gare (facoltativo) <input id="dtext" placeholder="es. gare" autocomplete="off"></label>
-      <div class="ask"><button class="btn main" id="dsave" style="flex:1">Salva e collega</button></div>
     </div>
-    <div class="hint" id="dstat"></div>
+  </details>
+  <details class="srow" id="r-talk">
+    <summary><span class="rtit">Come parla</span><span class="rval" id="r-talk-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="stylecard">
+    <div class="lbl">💬 Come parla l'ingegnere</div>
+    <div class="seg" id="stylesel"><button data-s="umano" class="on">Umano</button><button data-s="tecnico">Tecnico</button></div>
+    <div class="hint" id="stylehint">Umano: "un secondo e mezzo", ti chiama per nome e ogni tanto ti incoraggia. Tecnico: numeri precisi ("1 virgola 4"), niente frasi in più.</div>
   </div>
-
-  <div class="card">
+<div class="card">
     <div class="lbl">Quanto parla l'ingegnere</div>
     <div class="seg" id="verb"><button data-v="1">Poco</button><button data-v="2" class="on">Normale</button><button data-v="3">Tanto</button></div>
     <div class="hint">Poco: solo cose importanti. Normale: anche i distacchi a ogni giro. Tanto: anche consigli di guida in gara.</div>
@@ -757,26 +790,31 @@
     <div class="hint">A voce, con 📻 Radio: «Radio, silenzio» · «Radio, parla» · «Radio, parla di più» ·
       «Radio, parla di meno» · «Radio, ripeti».</div>
   </div>
-
-  <div class="grp">Come ti allena l'ingegnere</div>
-
-  <div class="card" id="workcard">
+    </div>
+  </details>
+  <details class="srow" id="r-work">
+    <summary><span class="rtit">Su cosa lavorare</span><span class="rval" id="r-work-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="workcard">
     <div class="lbl">🎯 Su cosa lavorare</div>
     <div class="seg" id="worksel" style="grid-template-columns:repeat(4,1fr)"><button data-w="tutto" class="on">Tutto</button><button data-w="frenata">Frenata</button><button data-w="centro">Centro curva</button><button data-w="uscita">Uscita</button></div>
     <div class="hint">L'ingegnere ti dà a voce solo quel tipo di consiglio, e prima della curva ti ricorda cosa fare
       sulle 1-2 curve dove perdi di più («Curva 14, puoi frenare 15 metri dopo»). Gli altri consigli restano scritti.
       A voce: «Radio, lavoriamo sulla frenata».</div>
   </div>
-
-  <div class="card" id="traincard">
+<div class="card" id="traincard">
     <div class="lbl">🧠 Allenamento mirato (prova libera e time trial)</div>
     <label class="chk" style="margin-top:6px;font-size:14px"><input type="checkbox" id="trainchk">
       <span>Lavora su una staccata alla volta</span></label>
     <div class="hint" id="trainhint">Dopo un paio di giri l'ingegnere sceglie la staccata dove perdi di più e ti parla solo di
       quella, finché non la sistemi. Poi passa alla prossima. A voce: «Radio, allenamento».</div>
   </div>
-
-  <div class="card" id="goalcard">
+    </div>
+  </details>
+  <details class="srow one" id="r-goal">
+    <summary><span class="rtit">Tempo obiettivo</span><span class="rval" id="r-goal-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="goalcard">
     <div class="lbl">🎯 Tempo obiettivo</div>
     <div class="hint" id="goalhint">Entra in pista: l'obiettivo vale per la pista e la categoria di macchina che stai guidando.</div>
     <div class="goalrow"><input class="inp" id="goal" placeholder="es. 1:20.500" inputmode="decimal" autocomplete="off">
@@ -784,29 +822,13 @@
     <div class="hint">Con un obiettivo il delta e la barra sono calcolati su quel tempo, e a fine giro l'ingegnere ti dice
       quanto ti manca. Quando lo raggiungi te lo dice.</div>
   </div>
-
-  <div class="grp">Dati e collegamenti</div>
-
-  <div class="card" id="devcard">
-    <div class="lbl">📱 Questo dispositivo</div>
-    <div class="hint" id="devinst"></div>
-    <div class="ask" id="instrow" style="display:none"><button class="btn red" id="instbtn" style="flex:1">Installa l'app</button></div>
-    <label class="chk" id="vibrow" style="display:none;margin-top:8px;font-size:14px"><input type="checkbox" id="vibchk">
-      <span>Vibra per gli avvisi importanti (box, safety car, bandiere)</span></label>
-    <div class="devlist" id="devlist"></div>
-  </div>
-
-  <a class="card linkbtn" href="/collegamento"><span>🔌 Controllo del collegamento con la PS5</span><span>›</span></a>
-
-  <div class="card" id="repcard">
-    <div class="lbl">📝 Segnalazioni</div>
-    <div class="hint">Quando l'ingegnere dice una cosa sbagliata, di' «Radio, segnala» (o «hai sbagliato»): salvo il momento,
-      la pista, il giro e gli ultimi messaggi. Poi scarica il file e mandalo a chi sistema l'app.</div>
-    <div class="hint" id="replist"></div>
-    <div class="ask"><a class="btn" id="repdl" href="/api/segnalazioni?scarica=1" style="flex:1;text-align:center;text-decoration:none">⬇ Scarica le segnalazioni</a></div>
-  </div>
-
-  <div class="card" id="aicard">
+    </div>
+  </details>
+  <a class="srow link" id="r-ps5" href="/collegamento"><span class="rtit">Collegamento PS5</span><span class="rval" id="r-ps5-v"></span><span class="chev">›</span></a>
+  <details class="srow one" id="r-ai">
+    <summary><span class="rtit">AI per le domande</span><span class="rval" id="r-ai-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="aicard">
     <div class="lbl">🧠 Domande libere</div>
     <div class="hint">Le domande che l'ingegnere conosce (box, gomme, distacchi, meteo, batteria, segui…) hanno sempre
       una risposta subito e gratis, anche dette con parole tue. Per <b>qualsiasi altra domanda</b>, e per i comandi detti
@@ -833,26 +855,11 @@
     </div>
     <div class="devlist" id="aiuse"></div>
   </div>
-
-  <details class="card" id="settings">
-    <summary class="linkbtn"><span>⚙️ Impostazioni</span><span>›</span></summary>
-    <div class="set">
-      <label>Come ti chiama l'ingegnere <input id="dname" maxlength="20" placeholder="il tuo nome" autocomplete="off"></label>
-      <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1" placeholder="automatico"></label>
-      <div class="hint" id="plossinfo" style="margin-top:-4px"></div>
-      <label class="chk" id="sharerow" style="display:none"><input type="checkbox" id="share">
-        <span>Condividi i miei giri migliori con gli altri utenti del server (per il confronto in Analisi)</span></label>
-      <label class="chk"><input type="checkbox" id="wake">
-        <span>Tieni lo schermo acceso mentre la dashboard è aperta <span id="wakeinfo"></span></span></label>
-      <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="btn red">Salva</button><span id="setinfo"></span></div>
-      <p id="gamehint"></p>
-      <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="text-decoration:underline">Esci</a></p>
     </div>
   </details>
-
-  <details class="card" id="profile" style="display:none">
-    <summary class="linkbtn"><span>👤 Profilo</span><span>›</span></summary>
-    <div class="set">
+<details class="srow one" id="profile" style="display:none">
+    <summary><span class="rtit">Profilo e colore</span><span class="rval" id="profile-v"></span><span class="chev">›</span></summary>
+    <div class="rowb"><div class="set">
       <p>Sei collegato come <b id="pname"></b>. <span id="pgame"></span></p>
       <div class="lbl">Cambia nome utente</div>
       <label>Nuovo nome (minuscole, numeri, _) <input id="pnew" autocapitalize="none" autocomplete="off"></label>
@@ -869,12 +876,79 @@
       <a href="/admin" class="btn" id="adminlink" style="text-align:center;text-decoration:none;display:none">🛠 Gestione server (solo tu)</a>
       <a href="/logout" class="btn" style="text-align:center;text-decoration:none;display:block">Esci</a>
     </div>
+  </div>
   </details>
-
-  <div class="card" id="dispcard">
+  <details class="srow adv" id="r-adv">
+    <summary><span class="rtit">Avanzate</span><span class="rval"></span><span class="chev">›</span></summary>
+    <div class="rowb">
+  <details class="srow one" id="r-dsc">
+    <summary><span class="rtit">Voce in cuffia (Discord)</span><span class="rval" id="r-dsc-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="dsccard">
+    <div class="lbl">🎧 Voce nelle cuffie della PS5 (Discord)</div>
+    <div class="seg" id="aout"><button data-o="telefono" class="on">Telefono</button><button data-o="discord">Discord</button><button data-o="entrambi">Entrambi</button></div>
+    <div class="hint">Un bot Discord tuo entra in un canale vocale e parla con la voce del server. Dalla PS5 entri nello
+      stesso canale (tasto PS → Base di gioco → Discord) e senti l'ingegnere nelle cuffie, insieme al gioco.
+      Se dici «Radio, …» nel microfono delle cuffie, ti risponde: sente solo te, non il tuo amico.
+      <a href="/discord" style="color:var(--accent)">Guida passo passo</a></div>
+    <div class="set" id="dscset">
+      <label>Token del bot <input id="dtoken" placeholder="incolla il token" autocomplete="off"></label>
+      <label>Canale vocale <input id="dchan" placeholder="es. Box radio" autocomplete="off"></label>
+      <label>Il tuo nome utente Discord <input id="duser" placeholder="es. serdavos" autocomplete="off"></label>
+      <label>Canale di testo per il riepilogo delle gare (facoltativo) <input id="dtext" placeholder="es. gare" autocomplete="off"></label>
+      <div class="ask"><button class="btn main" id="dsave" style="flex:1">Salva e collega</button></div>
+    </div>
+    <div class="hint" id="dstat"></div>
+  </div>
+    </div>
+  </details>
+  <details class="srow" id="r-dev">
+    <summary><span class="rtit">Schermo e dispositivo</span><span class="rval" id="r-dev-v"></span><span class="chev">›</span></summary>
+    <div class="rowb">
+<div class="card" id="devcard">
+    <div class="lbl">📱 Questo dispositivo</div>
+    <div class="hint" id="devinst"></div>
+    <div class="ask" id="instrow" style="display:none"><button class="btn red" id="instbtn" style="flex:1">Installa l'app</button></div>
+    <label class="chk" id="vibrow" style="display:none;margin-top:8px;font-size:14px"><input type="checkbox" id="vibchk">
+      <span>Vibra per gli avvisi importanti (box, safety car, bandiere)</span></label>
+    <div class="devlist" id="devlist"></div>
+  </div>
+<div class="card" id="dispcard">
     <div class="lbl">📱 Schermo</div>
     <div class="ask"><button class="btn" id="farbtn" style="flex:1">🔭 Vista da lontano (telefono vicino alla TV)</button></div>
   </div>
+    </div>
+  </details>
+  <details class="srow one" id="r-rep">
+    <summary><span class="rtit">Segnala un problema</span><span class="rval" id="r-rep-v"></span><span class="chev">›</span></summary>
+    <div class="rowb hh"><button class="rhelp" type="button">? Spiegazione</button>
+<div class="card" id="repcard">
+    <div class="lbl">📝 Segnalazioni</div>
+    <div class="hint">Quando l'ingegnere dice una cosa sbagliata, di' «Radio, segnala» (o «hai sbagliato»): salvo il momento,
+      la pista, il giro e gli ultimi messaggi. Poi scarica il file e mandalo a chi sistema l'app.</div>
+    <div class="hint" id="replist"></div>
+    <div class="ask"><a class="btn" id="repdl" href="/api/segnalazioni?scarica=1" style="flex:1;text-align:center;text-decoration:none">⬇ Scarica le segnalazioni</a></div>
+  </div>
+    </div>
+  </details>
+<details class="srow one" id="settings">
+    <summary><span class="rtit">Altre impostazioni</span><span class="rval" id="settings-v"></span><span class="chev">›</span></summary>
+    <div class="rowb"><div class="set">
+      <label>Come ti chiama l'ingegnere <input id="dname" maxlength="20" placeholder="il tuo nome" autocomplete="off"></label>
+      <label>Secondi persi con un pit stop <input id="ploss" type="number" min="10" max="60" step="1" placeholder="automatico"></label>
+      <div class="hint" id="plossinfo" style="margin-top:-4px"></div>
+      <label class="chk" id="sharerow" style="display:none"><input type="checkbox" id="share">
+        <span>Condividi i miei giri migliori con gli altri utenti del server (per il confronto in Analisi)</span></label>
+      <label class="chk"><input type="checkbox" id="wake">
+        <span>Tieni lo schermo acceso mentre la dashboard è aperta <span id="wakeinfo"></span></span></label>
+      <div style="display:flex;gap:8px;align-items:center"><button id="saveset" class="btn red">Salva</button><span id="setinfo"></span></div>
+      <p id="gamehint"></p>
+      <p id="userline" style="display:none">Collegato come <b id="uname"></b> · <a href="/logout" style="text-decoration:underline">Esci</a></p>
+    </div>
+  </div>
+  </details>
+    </div>
+  </details>
 </div>
 
 <!-- =============== PULSANTI =============== -->
@@ -2278,6 +2352,40 @@ loadSettings();
 setMicUI();
 if (!micOk) mic(micHint(), "err");
 else if (listenWanted) mic("Radio accesa · tocca lo schermo per far partire il microfono", "armed");
+
+// ---------- righe di Box e Altro: valore attuale accanto al titolo, "?" per le spiegazioni ----------
+document.querySelectorAll(".rhelp").forEach(b => b.onclick = () => {
+  const box = b.parentNode, on = box.classList.toggle("help");
+  b.textContent = on ? "Nascondi la spiegazione" : "? Spiegazione";
+});
+function rowVal(id, txt) { const e = $(id); if (e && e.textContent !== txt) e.textContent = txt || ""; }
+function segOn(id) { const b = document.querySelector("#" + id + " button.on"); return b ? b.textContent.trim() : ""; }
+function updateRows() {
+  try {
+    const vm = segOn("vmode"), cs = $("csel"), ch = cs && cs.selectedOptions[0] ? cs.selectedOptions[0].textContent.trim() : "";
+    rowVal("r-voice-v", vm + (vm && vm !== "Telefono" && ch ? " · " + ch : ""));
+    rowVal("r-talk-v", [segOn("verb"), segOn("stylesel"), $("mutechk").checked ? "silenzio radio" : ""].filter(Boolean).join(" · "));
+    rowVal("r-work-v", segOn("worksel") + ($("trainchk").checked ? " · allenamento mirato" : ""));
+    const g = ($("goalhint").textContent.match(/: ([^:]+)\.$/) || [])[1];
+    rowVal("r-goal-v", g && g !== "nessuno" ? g : "nessuno");
+    const on = $("psdot").classList.contains("on");
+    rowVal("r-ps5-v", on ? "dati in arrivo" : "nessun dato");
+    $("r-ps5-v").style.color = on ? "var(--good)" : "";
+    const ai = $("aiinfo").textContent || "";
+    rowVal("r-ai-v", /^In fila: /.test(ai) ? ai.replace(/^In fila: /, "") : "nessuna");
+    rowVal("profile-v", $("pname").textContent);
+    rowVal("r-dsc-v", segOn("aout") === "Telefono" ? "spenta" : segOn("aout"));
+    rowVal("settings-v", $("dname").value ? "ti chiama " + $("dname").value : "");
+    rowVal("r-tele-v", $("spd").textContent !== "–" ? $("spd").textContent + " km/h · marcia " + $("gear").textContent : "");
+    const nset = $("setup").querySelectorAll(":scope > *:not(.hint)").length;
+    rowVal("r-setup-v", nset ? nset + (nset === 1 ? " consiglio" : " consigli")
+      : /equilibrato/.test($("setup").textContent) ? "equilibrato" : "servono 2 giri");
+    const nlog = $("log").children.length;
+    rowVal("r-log-v", nlog ? nlog + " messaggi" : "");
+    rowVal("r-rec-v", /Ferma/.test($("recbtn").textContent) ? "● in corso" : "");
+  } catch (e) {}
+}
+setInterval(updateRows, 1000); updateRows();
 </script>
 </body>
 </html>

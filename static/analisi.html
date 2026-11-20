@@ -225,12 +225,27 @@ async function loadSessions() {
   s.onchange = () => pickSession(s.value);
   // arrivo dalla Classifica: apro l'ultima sessione su quella pista e confronto con il giro dell'amico
   const q = new URLSearchParams(location.search);
-  const want = q.get("track") && (sessions.find(x => x.track === q.get("track") && (x.category || "") === (q.get("cat") || ""))
-                                   || sessions.find(x => x.track === q.get("track")));
-  const bySid = q.get("s") && sessions.find(x => x.id === q.get("s"));      // arrivo da "Le mie gare"
-  if (bySid) { s.value = bySid.id; pickSession(bySid.id); }
-  else if (want) { pendingFriend = q.get("friend"); s.value = want.id; pickSession(want.id); }
+  const bySid = q.get("s") && sessions.find(x => x.id === q.get("s"));      // da "Le mie gare" o dalla Classifica
+  const friend = q.get("friend");
+  // dalla Classifica: il mio giro valido più veloce su quella pista e categoria (non l'ultima sessione, che può essere la gara)
+  const mine = q.get("track") && !bySid && myBestOn(q.get("track"), q.get("cat") || "");
+  if (friend) pendingFriend = friend;
+  if (bySid) { s.value = bySid.id; pickSession(bySid.id, q.get("lap") ? +q.get("lap") : null); }
+  else if (mine) { s.value = mine.s.id; pickSession(mine.s.id, mine.l.lap); }
   else pickSession(sessions[0].id);
+}
+function myBestOn(track, cat) {
+  let out = null;
+  for (const pass of [true, false]) {          // prima la stessa categoria, poi qualsiasi sulla pista
+    for (const x of sessions) {
+      if (x.track !== track || (pass && (x.category || "") !== cat)) continue;
+      for (const l of x.laps)
+        if (l.valid && !l.partial && (!out || l.ms < out.l.ms)) out = {s: x, l};
+    }
+    if (out) return out;
+  }
+  const any = sessions.find(x => x.track === track);
+  return any ? {s: any, l: bestLap(any)} : null;
 }
 // giri parziali: uscita dai box, rientro ai box, o interrotti (garage, fine sessione)
 const KINDS = { uscita: "uscita box", rientro: "rientro box", parziale: "parziale" };
@@ -239,7 +254,7 @@ function bestLap(s) {
   const v = full.filter(l => l.valid);
   return (v.length ? v : full.length ? full : s.laps).reduce((a, b) => b.ms < a.ms ? b : a);
 }
-function pickSession(id) {
+function pickSession(id, wantLap = null) {
   cur = sessions.find(s => s.id === id);
   const best = bestLap(cur);
   const last = cur.laps[cur.laps.length - 1];
@@ -247,6 +262,7 @@ function pickSession(id) {
   const full = cur.laps.filter(l => !l.partial);
   const lastFull = full.length ? full[full.length - 1] : last;
   selLap = lastFull.lap !== best.lap ? lastFull.lap : (full.find(l => l.lap !== best.lap) || best).lap;
+  if (wantLap != null && cur.laps.some(l => l.lap === wantLap)) selLap = wantLap;   // giro richiesto (es. il mio più veloce)
   friends = [];
   buildRefSelect();
   $("refsel").onchange = () => {

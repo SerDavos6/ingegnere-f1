@@ -62,6 +62,11 @@
   grafici e staccate.</p>
 
 <script>
+// il mio giro migliore su questa pista: Analisi lo apre come giro da confrontare con quello dell'amico
+function myBest(t) {
+  const m = (t.rows || []).find(r => r.me);
+  return m && m.sid ? `&s=${encodeURIComponent(m.sid)}&lap=${encodeURIComponent(m.lap)}` : "";
+}
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const fmt = ms => { if (!ms) return "–"; const m = Math.floor(ms / 60000); return m + ":" + ((ms % 60000) / 1000).toFixed(3).padStart(6, "0"); };
@@ -97,7 +102,7 @@ function show(track) {
       <div class="pos ${r.pos <= 3 ? "p" + r.pos : ""}">${r.pos}</div>
       <div class="who"><b>${esc(r.driver)}${r.me && r.driver !== "Tu" ? " (tu)" : ""}</b><small>${esc(r.session || "")} · ${day(r.date)}</small></div>
       <div class="t mono"><b>${fmt(r.ms)}</b><small>${r.gap ? "+" + (r.gap / 1000).toFixed(3) : "—"}</small></div>
-      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&cat=${encodeURIComponent(t.category)}&friend=${encodeURIComponent(r.id)}">Confronta</a>`
+      ${r.id && t.mine ? `<a class="cmp" href="/analisi?track=${encodeURIComponent(t.track)}&cat=${encodeURIComponent(t.category)}&friend=${encodeURIComponent(r.id)}${myBest(t)}">Confronta</a>`
                        : `<span class="cmp off">Confronta</span>`}
     </div>`).join("") +
     (!t.mine ? `<div class="hint" style="padding:8px 0">Per confrontarti fai almeno un giro valido su questa pista con questa categoria.</div>` : "");
